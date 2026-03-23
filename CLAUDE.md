@@ -33,10 +33,19 @@ Tests connect to AltTester Desktop at `127.0.0.1:13000`. The Explorer must be in
 
 ### View hierarchy
 
-- `BaseView` (abstract) — reusable interaction methods (`ClickObject`, `WaitForObject`, `WaitForObjectNotBePresent`, `IsObjectPresent`, `SetText`, `GetText`) with built-in timeout handling and Allure step tracking
+- `BaseView` (abstract) — reusable interaction methods with built-in timeout handling and Allure step tracking:
+  - `ClickObject(locator, timeout)` — Wait for object then click
+  - `TapObject(locator, count, timeout)` — Multi-tap support
+  - `WaitForObject(locator, timeout)` — Wait for object to appear
+  - `WaitForObjectWhichContains(locator)` — Partial name match
+  - `WaitForObjectNotBePresent(locator, timeout)` — Wait for disappearance
+  - `IsObjectPresent(locator)` — Check presence without throwing
+  - `FindObject(locator)` — Direct find (throws if not found)
+  - `SetText(locator, text, timeout)` — Set input field text
+  - `GetText(locator, timeout)` — Read text content
   - `AuthenticationMainScreenView`, `SplashScreenView`, `LoadingScreenView`, `MainMenuView`
   - `ExplorePanelView` — contains section instances (`.Events`, `.Places`, `.Communities`, `.Navmap`, `.Backpack`, `.Gallery`, `.Settings`)
-- `BaseSection` (extends `BaseView`) — adds section locator + `IsSectionVisible()`/`WaitForSectionVisible()`. Lives in `Tests/Views/ExplorePanelSections/`.
+- `BaseSection` (extends `BaseView`) — adds section locator + `IsSectionVisible()`/`WaitForSectionVisible()`. Lives in `Tests/Views/ExplorePanelSections/`. Other panels with sections follow the same pattern in their own subfolder (e.g., `Views/ChatPanelSections/`).
 
 ### Test lifecycle (BaseTest)
 
@@ -49,11 +58,11 @@ All test classes inherit `BaseTest` and use its pre-initialized view properties 
 
 ## Coding Conventions
 
-- **Locators**: `private readonly (By, string)` tuples with `_` prefix (e.g., `_closeButtonLocator`). Prefer `By.ID` (UUID-based).
+- **Locators**: `private readonly (By, string)` tuples with `_` prefix (e.g., `_closeButtonLocator`). Strategy preference: `By.ID` (UUID, most stable) > `By.NAME` > `By.PATH` > `By.TAG`/`By.LAYER`/`By.COMPONENT`/`By.TEXT`.
 - **C# style**: Use `var` when able. Fields start with `_`, constants are `ALL_CAPS`.
 - **Waits**: Use `BaseView` wait methods. Never use `Thread.Sleep` directly in tests. `Wait(seconds)` only for brief animation pauses (< 1s).
-- **Reporting**: Use `Reporter.Log()` (not `Console.WriteLine`). Add `[AllureStep("description")]` to public view methods.
-- **Tests**: Attributes `[TestFixture]`/`[AllureSuite]` on class, `[Test]`/`[AllureTest]` on methods. Tests must be independent.
+- **Reporting**: Use `Reporter.Log()` (not `Console.WriteLine`). Use `Reporter.TakeScreenshot()` for manual screenshots at checkpoints. Add `[AllureStep("description")]` to public view methods.
+- **Tests**: Attributes `[TestFixture]`/`[AllureSuite]` on class, `[Test]`/`[AllureTest]` on methods. Use `[TestCase]` for parameterized tests. Tests must be independent.
 - **Global usings** are in `GlobalUsings.cs` — don't add per-file usings for things already there.
 
 ### Naming
@@ -65,6 +74,7 @@ All test classes inherit `BaseTest` and use its pre-initialized view properties 
 | View class | `{Screen}View` | `MainMenuView` |
 | Section class | `{Name}Section` | `EventsSection` |
 | Locator field | `_{element}Locator` | `_closeButtonLocator` |
+| Public view method | `{Action}{Subject}` | `WaitForPanelOpen` |
 
 ### Namespaces
 

@@ -18,7 +18,7 @@ Use [MetaForge](https://github.com/decentraland/metaforge) to handle the full wo
 metaforge explorer test <PR-number-or-branch>
 ```
 
-See the [Automation Testing docs](../docs/automation-testing.md) for MetaForge setup and options.
+See the [Automation Testing docs](https://github.com/decentraland/unity-explorer/blob/dev/docs/automation-testing.md) in the Explorer repo for MetaForge setup and options.
 
 ### Manual
 
