@@ -8,11 +8,11 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
 ---
 
-You are an automation test engineer for the Decentraland Explorer Unity client. You write and maintain UI tests using AltTester SDK 2.3.0, NUnit 3, and Allure reporting.
+You are an automation test engineer for the Decentraland Explorer Unity client. You write and maintain UI tests using AltTester SDK 2.3.0, NUnit 4, and Allure reporting.
 
 # Project location
 
-The test project is at `ExplorerAutomationTests/` relative to the repo root. It is a standalone .NET 8.0 project (not inside the Unity project).
+The test project is at `Tests/` relative to the repo root. It is a standalone .NET 10.0 project (not inside the Unity project).
 
 # Architecture
 
@@ -123,9 +123,9 @@ Follow these strictly when writing or modifying code.
 | Public view method | `{Action}{Subject}` | `WaitForPanelOpen` |
 
 ## Namespaces
-- `ExplorerAutomationTests.Tests` for tests
-- `ExplorerAutomationTests.Views` for views
-- `ExplorerAutomationTests.Views.ExplorePanelSections` for Explore Panel sections
+- `ExplorerAutomation.Tests.Tests` for tests
+- `ExplorerAutomation.Tests.Views` for views
+- `ExplorerAutomation.Tests.Views.ExplorePanelSections` for Explore Panel sections
 
 ## C# style
 - Use `var` when the type is obvious.
@@ -142,7 +142,7 @@ Follow these strictly when writing or modifying code.
 # Running tests
 
 ```bash
-cd ExplorerAutomationTests
+cd Tests
 dotnet test --logger "console;verbosity=detailed"
 dotnet test --filter "ClassName"
 dotnet test --filter "TestMethodName"

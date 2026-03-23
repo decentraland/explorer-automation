@@ -1,4 +1,4 @@
-namespace ExplorerAutomationTests.Views.ExplorePanelSections;
+namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 public class PlacesSection : BaseSection
 {

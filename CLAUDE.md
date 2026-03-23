@@ -68,9 +68,9 @@ All test classes inherit `BaseTest` and use its pre-initialized view properties 
 
 ### Namespaces
 
-- `ExplorerAutomationTests.Tests`
-- `ExplorerAutomationTests.Views`
-- `ExplorerAutomationTests.Views.ExplorePanelSections` (and similar subfolders for other panels)
+- `ExplorerAutomation.Tests.Tests`
+- `ExplorerAutomation.Tests.Views`
+- `ExplorerAutomation.Tests.Views.ExplorePanelSections` (and similar subfolders for other panels)
 
 ## Adding New Views/Tests
 

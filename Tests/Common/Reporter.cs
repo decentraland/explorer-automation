@@ -1,4 +1,4 @@
-namespace ExplorerAutomationTests.Common;
+namespace ExplorerAutomation.Tests.Common;
 
 public static class Reporter
 {

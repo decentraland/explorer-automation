@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
 
-    <RootNamespace>ExplorerAutomationTests</RootNamespace>
+    <RootNamespace>ExplorerAutomation.Tests</RootNamespace>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

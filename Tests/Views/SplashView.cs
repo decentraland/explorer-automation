@@ -1,4 +1,4 @@
-namespace ExplorerAutomationTests.Views;
+namespace ExplorerAutomation.Tests.Views;
 
 public class SplashScreenView : BaseView
 {

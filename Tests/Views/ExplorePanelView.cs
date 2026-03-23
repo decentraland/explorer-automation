@@ -1,6 +1,6 @@
-using ExplorerAutomationTests.Views.ExplorePanelSections;
+using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
-namespace ExplorerAutomationTests.Views;
+namespace ExplorerAutomation.Tests.Views;
 
 public class ExplorePanelView : BaseView
 {
