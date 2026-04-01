@@ -2,8 +2,8 @@ namespace ExplorerAutomation.Tests.Common;
 
 public static class Reporter
 {
-    public static AltDriver AltDriver { get; set; }
-
+    private static readonly Dictionary<string, string> _unityLogs = new();
+    
     public static void Log(string message)
     {
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -15,7 +15,7 @@ public static class Reporter
 
     public static void TakeScreenshot(string customName = null)
     {
-        if (AltDriver == null)
+        if (CommonStuff.AltDriver == null)
         {
             Log("Cannot take screenshot: AltDriver not set");
             return;
@@ -36,7 +36,7 @@ public static class Reporter
             var fileName = customName ?? $"screenshot_{timestamp}";
             var screenshotPath = Path.Combine(screenshotDirectory, $"{fileName}.png");
 
-            AltDriver.GetPNGScreenshot(screenshotPath);
+            CommonStuff.AltDriver.GetPNGScreenshot(screenshotPath);
             AllureApi.Step($"Screenshot taken: {fileName}",
                 () => { AllureApi.AddAttachment(name: fileName, content: File.ReadAllBytes(screenshotPath), type: "image/png"); });
         }
@@ -81,5 +81,62 @@ public static class Reporter
                 Log($"Failed to attach file to Allure: {ex.Message}");
             }
         });
+    }
+
+    [AllureBefore("Setup Unity log listener")]
+    public static void SetupUnityLogListener()
+    {
+        if (CommonStuff.AltDriver != null)
+        {
+            Reporter.Log("Setting up Unity log listener");
+            CommonStuff.AltDriver.AddNotificationListener<AltLogNotificationResultParams>(
+                NotificationType.LOG,
+                LogCallback,
+                true
+            );
+        }
+    }
+
+    private static void LogCallback(AltLogNotificationResultParams logParams)
+    {
+        var projectDirectory = Directory.GetCurrentDirectory();
+        var logDirectory = Path.Combine(projectDirectory, "screenshots");
+
+        if (!Directory.Exists(logDirectory))
+            Directory.CreateDirectory(logDirectory);
+
+        var testName = TestContext.CurrentContext.Test.Name;
+        var filename = testName + "-UnityLogs.txt";
+        var filepath = Path.Combine(logDirectory, filename);
+
+        var log = logParams;
+
+        using (var sw = new StreamWriter(filepath, true))
+        {
+            sw.WriteLine($"{log.message}");
+            sw.WriteLine($"StackTrace : {log.stackTrace}");
+            sw.WriteLine(log);
+        }
+
+        _unityLogs.TryAdd(filename, filepath);
+    }
+
+    [AllureAfter("Attach Unity logs to Allure report")]
+    public static void AddUnityLogsToAllure()
+    {
+        foreach (var item in _unityLogs)
+        {
+            var attachmentName = TestContext.CurrentContext.Test.Name + "-" + item.Key;
+            try
+            {
+                Reporter.AttachFileToAllure(item.Value, attachmentName);
+            }
+            catch (Exception)
+            {
+                Reporter.Log("No Unity logs found.");
+            }
+
+            _unityLogs.Remove(item.Key);
+        }
     }
 }

@@ -1,23 +1,6 @@
 namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
-public abstract class BaseSection : BaseView
+public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLocator)
 {
-    private readonly (By, string) _sectionLocator;
 
-    protected BaseSection(AltDriver altDriver, (By, string) sectionLocator) : base(altDriver)
-    {
-        _sectionLocator = sectionLocator;
-    }
-
-    [AllureStep("Check if section is visible")]
-    public bool IsSectionVisible()
-    {
-        return IsObjectPresent(_sectionLocator);
-    }
-
-    [AllureStep("Wait for section to be visible")]
-    public void WaitForSectionVisible(int timeoutSeconds = 10)
-    {
-        WaitForObject(_sectionLocator, timeoutSeconds);
-    }
 }
