@@ -76,7 +76,6 @@ public class BaseTest
         Thread.Sleep(TimeSpan.FromSeconds(seconds));
     }
 
-
     #region Input Helpers
 
     [AllureStep("Press key")]

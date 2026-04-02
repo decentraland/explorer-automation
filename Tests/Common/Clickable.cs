@@ -7,5 +7,6 @@ public record Clickable(By by, string name) : Locatable(by, name)
     {
         var altObject = WaitFor();
         altObject.Click();
+        Thread.Sleep(200);
     }
 }

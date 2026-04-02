@@ -1,6 +1,6 @@
 namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
-public class BackpackSection() : BaseSection(new(By.ID, "1666be29-f174-43c8-98d0-c9b02bc0d011"))
+public class ExplorePanelBackpackView() : BaseSection(new(By.ID, "1666be29-f174-43c8-98d0-c9b02bc0d011"))
 {
     public readonly Clickable WearablesTabButton = new(By.PATH, "//TabSelector/Avatar");
     public readonly Clickable EmotesTabButton    = new(By.PATH, "//TabSelector/Emotes");

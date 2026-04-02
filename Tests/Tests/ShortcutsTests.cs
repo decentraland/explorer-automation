@@ -21,10 +21,8 @@ public class ShortcutsTests : BaseTest
     public void TestOpenPlacesWithShortcut()
     {
         PressKey(AltKeyCode.Z);
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Places.IsPresent(), Is.True, "Places section should be visible after pressing Z");
-        Reporter.Log("Places section opened via shortcut");
+        Views.ExplorePanel.Places.WaitFor();
 
         PressEscape();
         Views.ExplorePanel.WaitForGone();
@@ -34,10 +32,8 @@ public class ShortcutsTests : BaseTest
     public void TestOpenCommunitiesWithShortcut()
     {
         PressKey(AltKeyCode.O);
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Communities.IsPresent(), Is.True, "Communities section should be visible after pressing O");
-        Reporter.Log("Communities section opened via shortcut");
+        Views.ExplorePanel.Communities.WaitFor();
 
         PressEscape();
         Views.ExplorePanel.WaitForGone();
@@ -47,10 +43,8 @@ public class ShortcutsTests : BaseTest
     public void TestOpenMapWithShortcut()
     {
         PressKey(AltKeyCode.M);
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Navmap.IsPresent(), Is.True, "Navmap section should be visible after pressing M");
-        Reporter.Log("Map section opened via shortcut");
+        Views.ExplorePanel.Navmap.WaitFor();
 
         PressEscape();
         Views.ExplorePanel.WaitForGone();
@@ -60,10 +54,8 @@ public class ShortcutsTests : BaseTest
     public void TestOpenBackpackWithShortcut()
     {
         PressKey(AltKeyCode.I);
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True, "Backpack section should be visible after pressing I");
-        Reporter.Log("Backpack section opened via shortcut");
+        Views.ExplorePanel.Backpack.WaitFor();
 
         PressEscape();
         Views.ExplorePanel.WaitForGone();
@@ -73,10 +65,8 @@ public class ShortcutsTests : BaseTest
     public void TestOpenGalleryWithShortcut()
     {
         PressKey(AltKeyCode.K);
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Gallery.IsPresent(), Is.True, "Gallery section should be visible after pressing K");
-        Reporter.Log("Gallery section opened via shortcut");
+        Views.ExplorePanel.Gallery.WaitFor();
 
         PressEscape();
         Views.ExplorePanel.WaitForGone();
@@ -86,10 +76,8 @@ public class ShortcutsTests : BaseTest
     public void TestOpenSettingsWithShortcut()
     {
         PressKey(AltKeyCode.P);
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Settings.IsPresent(), Is.True, "Settings section should be visible after pressing P");
-        Reporter.Log("Settings section opened via shortcut");
+        Views.ExplorePanel.Settings.WaitFor();
 
         PressEscape();
         Views.ExplorePanel.WaitForGone();

@@ -14,11 +14,11 @@ public class ExplorePanelView() : BaseView(new(By.ID, "d5383a2a-d281-4fe8-b53b-f
     public readonly Clickable GalleryTab     = new(By.ID, "80fd3d49-bd26-4700-91ce-c50f97bce0b4");
     public readonly Clickable SettingsTab    = new(By.ID, "0107ddd9-a087-4fa5-885d-b47df8854ff9");
 
-    public EventsSection      Events      { get; } = new();
-    public PlacesSection      Places      { get; } = new();
-    public CommunitiesSection Communities { get; } = new();
-    public NavmapSection      Navmap      { get; } = new();
-    public BackpackSection    Backpack    { get; } = new();
-    public GallerySection     Gallery     { get; } = new();
-    public SettingsSection    Settings    { get; } = new();
+    public ExplorePanelEventsView      Events      { get; } = new();
+    public ExplorePanelPlacesView      Places      { get; } = new();
+    public ExplorePanelCommunitiesView Communities { get; } = new();
+    public ExplorePanelNavmapView      Navmap      { get; } = new();
+    public ExplorePanelBackpackView    Backpack    { get; } = new();
+    public ExplorePanelGalleryView     Gallery     { get; } = new();
+    public ExplorePanelSettingsView    Settings    { get; } = new();
 }

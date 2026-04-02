@@ -8,10 +8,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenEventsFromSidebar()
     {
         Views.MainMenu.EventsButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Events.IsPresent(), Is.True, "Events section should be visible");
-        Reporter.Log("Events section opened successfully");
+        Views.ExplorePanel.Events.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -21,10 +19,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenPlacesFromSidebar()
     {
         Views.MainMenu.PlacesButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Places.IsPresent(), Is.True, "Places section should be visible");
-        Reporter.Log("Places section opened successfully");
+        Views.ExplorePanel.Places.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -34,10 +30,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenCommunitiesFromSidebar()
     {
         Views.MainMenu.CommunitiesButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Communities.IsPresent(), Is.True, "Communities section should be visible");
-        Reporter.Log("Communities section opened successfully");
+        Views.ExplorePanel.Communities.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -47,10 +41,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenMapFromSidebar()
     {
         Views.MainMenu.MapButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Navmap.IsPresent(), Is.True, "Navmap section should be visible");
-        Reporter.Log("Map section opened successfully");
+        Views.ExplorePanel.Navmap.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -60,10 +52,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenBackpackFromSidebar()
     {
         Views.MainMenu.BackpackButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True, "Backpack section should be visible");
-        Reporter.Log("Backpack section opened successfully");
+        Views.ExplorePanel.Backpack.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -73,10 +63,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenGalleryFromSidebar()
     {
         Views.MainMenu.GalleryButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Gallery.IsPresent(), Is.True, "Gallery section should be visible");
-        Reporter.Log("Gallery section opened successfully");
+        Views.ExplorePanel.Gallery.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -86,10 +74,8 @@ public class ExplorePanelTests : BaseTest
     public void TestOpenSettingsFromSidebar()
     {
         Views.MainMenu.SettingsButton.Click();
-        Views.ExplorePanel.WaitFor();
 
-        Assert.That(Views.ExplorePanel.Settings.IsPresent(), Is.True, "Settings section should be visible");
-        Reporter.Log("Settings section opened successfully");
+        Views.ExplorePanel.Settings.WaitFor();
 
         Views.ExplorePanel.CloseButton.Click();
         Views.ExplorePanel.WaitForGone();
@@ -104,37 +90,37 @@ public class ExplorePanelTests : BaseTest
 
         // Events tab
         Views.ExplorePanel.EventsTab.Click();
-        Assert.That(Views.ExplorePanel.Events.IsPresent(), Is.True, "Events section should be visible after clicking Events tab");
+        Views.ExplorePanel.Events.WaitFor();
         Reporter.Log("Events tab opened successfully");
 
         // Places tab
         Views.ExplorePanel.PlacesTab.Click();
-        Assert.That(Views.ExplorePanel.Places.IsPresent(), Is.True, "Places section should be visible after clicking Places tab");
+        Views.ExplorePanel.Places.WaitFor();
         Reporter.Log("Places tab opened successfully");
 
         // Communities tab
         Views.ExplorePanel.CommunitiesTab.Click();
-        Assert.That(Views.ExplorePanel.Communities.IsPresent(), Is.True, "Communities section should be visible after clicking Communities tab");
+        Views.ExplorePanel.Communities.WaitFor();
         Reporter.Log("Communities tab opened successfully");
 
         // Map tab
         Views.ExplorePanel.MapTab.Click();
-        Assert.That(Views.ExplorePanel.Navmap.IsPresent(), Is.True, "Navmap section should be visible after clicking Map tab");
+        Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Map tab opened successfully");
 
         // Backpack tab
         Views.ExplorePanel.BackpackTab.Click();
-        Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True, "Backpack section should be visible after clicking Backpack tab");
+        Views.ExplorePanel.Backpack.WaitFor();
         Reporter.Log("Backpack tab opened successfully");
 
         // Gallery tab
         Views.ExplorePanel.GalleryTab.Click();
-        Assert.That(Views.ExplorePanel.Gallery.IsPresent(), Is.True, "Gallery section should be visible after clicking Gallery tab");
+        Views.ExplorePanel.Gallery.WaitFor();
         Reporter.Log("Gallery tab opened successfully");
 
         // Settings tab
         Views.ExplorePanel.SettingsTab.Click();
-        Assert.That(Views.ExplorePanel.Settings.IsPresent(), Is.True, "Settings section should be visible after clicking Settings tab");
+        Views.ExplorePanel.Settings.WaitFor();
         Reporter.Log("Settings tab opened successfully");
 
         Views.ExplorePanel.CloseButton.Click();
