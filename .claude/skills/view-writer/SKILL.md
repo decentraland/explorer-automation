@@ -282,7 +282,7 @@ Add methods in `#region Helper methods` with `[AllureStep("...")]` and `Reporter
 
 Every new view must be registered so tests can access it:
 
-- **Top-level views**: Always add as `{ get; } = new()` property in `ViewContainer.cs`. This is required — without it, tests cannot access the view.
+- **Top-level views**: Add as `{ get; } = new()` property in `ViewContainer.cs` only if the view is globally accessible (can appear from anywhere). If a view is only reachable from a specific parent view (e.g. a detail popup opened from a panel section), add it as a property in that parent's Views region instead — do NOT add to ViewContainer.
 - **Sections**: Add as property in the parent panel view's Views region. Do NOT add to ViewContainer.
 - **Nested views**: Instantiated by their parent, no registration needed.
 
