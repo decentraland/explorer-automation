@@ -306,9 +306,4 @@ Every new view must be registered so tests can access it:
 
 Don't add per-file usings for namespaces already in `GlobalUsings.cs` (NUnit, Allure, AltTester, Common, Views). Only add usings for section namespaces when a panel view references them.
 
-## C# Style
-
-- Use `var` when the type is obvious from context
-- Private fields start with `_`, constants are `ALL_CAPS`
-- Use primary constructors for views wherever possible
 - XML doc comments on every view class describing which UI area it represents
