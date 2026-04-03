@@ -1,6 +1,5 @@
 namespace ExplorerAutomation.Tests.Tests;
 
-[TestFixture]
 [AllureSuite("Explore Panel Tests")]
 public class ExplorePanelTests : BaseTest
 {
@@ -89,37 +88,37 @@ public class ExplorePanelTests : BaseTest
         Views.ExplorePanel.WaitFor();
 
         // Events tab
-        Views.ExplorePanel.EventsTab.Click();
+        Views.ExplorePanel.EventsTabButton.Click();
         Views.ExplorePanel.Events.WaitFor();
         Reporter.Log("Events tab opened successfully");
 
         // Places tab
-        Views.ExplorePanel.PlacesTab.Click();
+        Views.ExplorePanel.PlacesTabButton.Click();
         Views.ExplorePanel.Places.WaitFor();
         Reporter.Log("Places tab opened successfully");
 
         // Communities tab
-        Views.ExplorePanel.CommunitiesTab.Click();
+        Views.ExplorePanel.CommunitiesTabButton.Click();
         Views.ExplorePanel.Communities.WaitFor();
         Reporter.Log("Communities tab opened successfully");
 
         // Map tab
-        Views.ExplorePanel.MapTab.Click();
+        Views.ExplorePanel.MapTabButton.Click();
         Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Map tab opened successfully");
 
         // Backpack tab
-        Views.ExplorePanel.BackpackTab.Click();
+        Views.ExplorePanel.BackpackTabButton.Click();
         Views.ExplorePanel.Backpack.WaitFor();
         Reporter.Log("Backpack tab opened successfully");
 
         // Gallery tab
-        Views.ExplorePanel.GalleryTab.Click();
+        Views.ExplorePanel.GalleryTabButton.Click();
         Views.ExplorePanel.Gallery.WaitFor();
         Reporter.Log("Gallery tab opened successfully");
 
         // Settings tab
-        Views.ExplorePanel.SettingsTab.Click();
+        Views.ExplorePanel.SettingsTabButton.Click();
         Views.ExplorePanel.Settings.WaitFor();
         Reporter.Log("Settings tab opened successfully");
 

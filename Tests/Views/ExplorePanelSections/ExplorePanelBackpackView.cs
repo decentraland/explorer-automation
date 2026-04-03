@@ -1,20 +1,40 @@
 namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
+/// <summary>
+/// Section view for the Backpack tab within the explore panel, where users manage
+/// their equipped wearables and emotes.
+/// </summary>
 public class ExplorePanelBackpackView() : BaseSection(new(By.ID, "1666be29-f174-43c8-98d0-c9b02bc0d011"))
 {
+    #region Elements
+
     public readonly Clickable WearablesTabButton = new(By.PATH, "//TabSelector/Avatar");
     public readonly Clickable EmotesTabButton    = new(By.PATH, "//TabSelector/Emotes");
     public readonly Writable  SearchBar          = new(By.PATH, "//BackpackSection//SearchBar");
 
+    #endregion
+
+    #region Views
+
     public EmotesTab Emotes { get; } = new();
 
+    /// <summary>
+    /// Sub-view for the emotes tab within the backpack, containing emote slots (equipped)
+    /// and a scrollable grid of available emotes.
+    /// </summary>
     public class EmotesTab : BaseView
     {
+        #region Elements
+
         private const int SLOT_COUNT      = 10;
         private const int GRID_ITEM_COUNT = 16;
 
         public EmoteSlot[] Slots { get; }
         public EmoteGridItem[] GridItems { get; }
+
+        #endregion
+
+        #region Setup
 
         public EmotesTab() : base(new(By.ID, "TODO"))
         {
@@ -37,6 +57,41 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.ID, "1666be29-f174-
                     new(By.PATH, $"{basePath}/FullBackpack/HoverBackground/Unequip"));
             }
         }
+
+        #endregion
+
+        #region Views
+
+        /// <summary>
+        /// Clickable view representing a single emote slot in the equipped-emotes bar,
+        /// with an optional unequip button.
+        /// </summary>
+        public class EmoteSlot(Clickable locator, Clickable unequipLocator) : BaseClickableView(locator)
+        {
+            #region Elements
+
+            public Clickable UnequipButton { get; } = unequipLocator;
+
+            #endregion
+        }
+
+        /// <summary>
+        /// Clickable view representing a single emote in the available-emotes grid,
+        /// with equip and unequip buttons shown on hover.
+        /// </summary>
+        public class EmoteGridItem(Clickable root, Clickable equipLocator, Clickable unequipLocator) : BaseClickableView(root)
+        {
+            #region Elements
+
+            public Clickable EquipButton   { get; } = equipLocator;
+            public Clickable UnequipButton { get; } = unequipLocator;
+
+            #endregion
+        }
+
+        #endregion
+
+        #region Helper methods
 
         [AllureStep("Click emote slot")]
         public void ClickSlot(int index)
@@ -128,15 +183,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.ID, "1666be29-f174-
             }
         }
 
-        public class EmoteSlot(Clickable locator, Clickable unequipLocator) : BaseClickableView(locator)
-        {
-            public Clickable UnequipButton { get; } = unequipLocator;
-        }
-
-        public class EmoteGridItem(Clickable root, Clickable equipLocator, Clickable unequipLocator) : BaseClickableView(root)
-        {
-            public Clickable EquipButton   { get; } = equipLocator;
-            public Clickable UnequipButton { get; } = unequipLocator;
-        }
+        #endregion
     }
+
+    #endregion
 }

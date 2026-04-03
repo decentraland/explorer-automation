@@ -1,7 +1,13 @@
 namespace ExplorerAutomation.Tests.Views;
 
+/// <summary>
+/// View for the main menu sidebar that provides navigation buttons for all major sections
+/// of the Explorer (events, places, communities, map, backpack, gallery, settings, etc.).
+/// </summary>
 public class MainMenuView() : BaseView(new(By.ID, "bab6108c-7cce-45a1-9bcd-40412c1f435e"))
 {
+    #region Elements
+
     public readonly Clickable ProfileButton         = new(By.ID, "578d9b4e-0531-4cb3-abd7-aa79506c1b3e");
     public readonly Clickable NotificationsButton   = new(By.ID, "6c66dc7b-5c51-4b1c-bd27-0814d9c837ae");
     public readonly Clickable EventsButton          = new(By.ID, "d5ac3302-135f-4d89-9af3-56df31776664");
@@ -15,4 +21,6 @@ public class MainMenuView() : BaseView(new(By.ID, "bab6108c-7cce-45a1-9bcd-40412
     public readonly Clickable ControlsButton        = new(By.ID, "6f7c9619-29d4-4dfd-8aad-f8b10f56939a");
     public readonly Clickable HelpButton            = new(By.ID, "c02afb7d-0abf-405e-9ecc-48f8cf439f42");
     public readonly Clickable SidebarSettingsButton = new(By.ID, "a7a98fe6-eca1-4f67-996e-2049c9e020bb");
+
+    #endregion
 }

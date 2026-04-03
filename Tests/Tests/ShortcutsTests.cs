@@ -1,6 +1,5 @@
 namespace ExplorerAutomation.Tests.Tests;
 
-[TestFixture]
 [AllureSuite("Shortcuts Tests")]
 public class ShortcutsTests : BaseTest
 {

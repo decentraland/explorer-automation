@@ -1,5 +1,10 @@
 namespace ExplorerAutomation.Tests.Views;
 
+/// <summary>
+/// Singleton container that holds all top-level view instances used by tests.
+/// Initialized once per test run via <see cref="Initialize"/> and accessed through <see cref="Instance"/>.
+/// Tests should reference views through this container rather than creating their own instances.
+/// </summary>
 public class ViewContainer
 {
     public static ViewContainer Instance { get; private set; }

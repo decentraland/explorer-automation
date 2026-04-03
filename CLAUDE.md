@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-UI automation tests for the Decentraland Explorer client using AltTester SDK 2.3.0, NUnit 4, and Allure reporting. Standalone .NET 10.0 (C# 14) test project (not inside the Unity project).
+UI automation tests for the Decentraland Explorer client using AltTester SDK 2.3.0, NUnit 4, and Allure reporting. Standalone .NET 10.0 (C# 14) test project (not inside the Unity project). Also includes a `MetaForge.TestLogger` custom test logger project so that MetaForge can analyze test progress.
 
 ## Build & Test Commands
 
@@ -29,40 +29,22 @@ Tests connect to AltTester Desktop at `127.0.0.1:13000`. The Explorer must be in
 
 ## Architecture
 
-**Page Object Model (POM)** pattern with NUnit test fixtures.
+**Page Object Model (POM)** pattern with NUnit test fixtures. Two main areas:
 
-### View hierarchy
+- **Views** (`Tests/Views/`) — Page objects wrapping AltTester locators (`Locatable`, `Clickable`, `Writable` in `Tests/Common/`). See the `view-writer` skill for detailed view conventions.
+- **Tests** (`Tests/Tests/`) — NUnit test fixtures inheriting `BaseTest`, accessing views via `Views` property (`ViewContainer.Instance`).
 
-- `BaseView` (abstract) — reusable interaction methods with built-in timeout handling and Allure step tracking:
-  - `ClickObject(locator, timeout)` — Wait for object then click
-  - `TapObject(locator, count, timeout)` — Multi-tap support
-  - `WaitForObject(locator, timeout)` — Wait for object to appear
-  - `WaitForObjectWhichContains(locator)` — Partial name match
-  - `WaitForObjectNotBePresent(locator, timeout)` — Wait for disappearance
-  - `IsObjectPresent(locator)` — Check presence without throwing
-  - `FindObject(locator)` — Direct find (throws if not found)
-  - `SetText(locator, text, timeout)` — Set input field text
-  - `GetText(locator, timeout)` — Read text content
-  - `AuthenticationMainScreenView`, `SplashScreenView`, `LoadingScreenView`, `MainMenuView`
-  - `ExplorePanelView` — contains section instances (`.Events`, `.Places`, `.Communities`, `.Navmap`, `.Backpack`, `.Gallery`, `.Settings`)
-- `BaseSection` (extends `BaseView`) — adds section locator + `IsSectionVisible()`/`WaitForSectionVisible()`. Lives in `Tests/Views/ExplorePanelSections/`. Other panels with sections follow the same pattern in their own subfolder (e.g., `Views/ChatPanelSections/`).
+### Test lifecycle
 
-### Test lifecycle (BaseTest)
-
-1. **OneTimeSetUp** — Connects `AltDriver`, creates all view objects via `InitializeViews()`, runs `EnsureInWorld()` (handles splash → auth → loading)
-2. **SetUp** — Presses Escape to clear open panels
-3. **TearDown** — Takes screenshot on failure
-4. **OneTimeTearDown** — Stops driver, attaches Unity logs to Allure
-
-All test classes inherit `BaseTest` and use its pre-initialized view properties directly — never create view instances in tests.
+- `GlobalSetup` — runs once: connects `AltDriver`, initializes `ViewContainer`, sets up Unity log listener.
+- `BaseTest` — `OneTimeSetUp` runs `EnsureInWorld()` (handles splash → auth → loading). `SetUp` presses Escape. `TearDown` screenshots on failure.
 
 ## Coding Conventions
 
-- **Locators**: `private readonly (By, string)` tuples with `_` prefix (e.g., `_closeButtonLocator`). Strategy preference: `By.ID` (UUID, most stable) > `By.NAME` > `By.PATH` > `By.TAG`/`By.LAYER`/`By.COMPONENT`/`By.TEXT`.
-- **C# style**: Use `var` when able. Fields start with `_`, constants are `ALL_CAPS`.
-- **Waits**: Use `BaseView` wait methods. Never use `Thread.Sleep` directly in tests. `Wait(seconds)` only for brief animation pauses (< 1s).
-- **Reporting**: Use `Reporter.Log()` (not `Console.WriteLine`). Use `Reporter.TakeScreenshot()` for manual screenshots at checkpoints. Add `[AllureStep("description")]` to public view methods.
-- **Tests**: Attributes `[TestFixture]`/`[AllureSuite]` on class, `[Test]`/`[AllureTest]` on methods. Use `[TestCase]` for parameterized tests. Tests must be independent.
+- **C# style**: Use `var` when able. Private fields start with `_`, constants are `ALL_CAPS`. Use primary constructors.
+- **Waits**: Use `Locatable`/`BaseView` wait methods. Never use `Thread.Sleep` directly in tests. `Wait(seconds)` in `BaseTest` only for brief animation pauses.
+- **Reporting**: Use `Reporter.Log()` (not `Console.WriteLine`). Use `Reporter.TakeScreenshot()` for manual screenshots. Add `[AllureStep("description")]` to public view/helper methods.
+- **Tests**: `[AllureSuite]` on class, `[Test]` on methods. Use `[TestCase]` for parameterized tests. Tests must be independent.
 - **Global usings** are in `GlobalUsings.cs` — don't add per-file usings for things already there.
 
 ### Naming
@@ -71,19 +53,15 @@ All test classes inherit `BaseTest` and use its pre-initialized view properties 
 |---|---|---|
 | Test class | `{Feature}Tests` | `ExplorePanelTests` |
 | Test method | `Test{Action}{Subject}` | `TestOpenEventsFromSidebar` |
-| View class | `{Screen}View` | `MainMenuView` |
-| Section class | `{Name}Section` | `EventsSection` |
-| Locator field | `_{element}Locator` | `_closeButtonLocator` |
-| Public view method | `{Action}{Subject}` | `WaitForPanelOpen` |
 
 ### Namespaces
 
-- `ExplorerAutomation.Tests.Tests`
-- `ExplorerAutomation.Tests.Views`
-- `ExplorerAutomation.Tests.Views.ExplorePanelSections` (and similar subfolders for other panels)
+- `ExplorerAutomation.Tests` — `GlobalSetup`, `CommonStuff`
+- `ExplorerAutomation.Tests.Common` — `Reporter`, `Locatable`, `Clickable`, `Writable`
+- `ExplorerAutomation.Tests.Tests` — `BaseTest` and all test fixtures
+- `ExplorerAutomation.Tests.Views` — `BaseView`, `BaseClickableView`, `ViewContainer`, all top-level views
+- `ExplorerAutomation.Tests.Views.<Panel>Sections` — `BaseSection` and panel tab views
 
-## Adding New Views/Tests
+## Skills
 
-**New view**: Create in `Tests/Views/` (or `Tests/Views/<Panel>Sections/` for sections), inherit `BaseView`/`BaseSection`, add as property in `BaseTest`, initialize in `InitializeViews()`.
-
-**New test**: Create in `Tests/Tests/`, inherit `BaseTest`, use pre-initialized view properties.
+- **`view-writer`** — Always invoke this skill when creating new view classes, modifying existing views, adding elements/sections/sub-views, or registering views in `ViewContainer`. It contains the full POM conventions, region layout rules, and the workflow for discovering element locators via the `alttester-explorer` agent.
