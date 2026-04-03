@@ -57,11 +57,11 @@ public class ExplorePanelPlacesView : BaseSection
     {
         #region Elements
 
-        public readonly Locatable PlaceName;
-        public readonly Locatable Creator;
-        public readonly Locatable LikeRateText;
-        public readonly Locatable CoordsText;
-        public readonly Locatable LivePlayerCount;
+        public readonly Readable  PlaceName;
+        public readonly Readable  Creator;
+        public readonly Readable  LikeRateText;
+        public readonly Readable  CoordsText;
+        public readonly Readable  LivePlayerCount;
         public readonly Locatable FeaturedTag;
         public readonly Clickable LikeButton;
         public readonly Clickable DislikeButton;

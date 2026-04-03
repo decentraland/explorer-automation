@@ -13,8 +13,9 @@ Views wrap AltTester element locators into a typed hierarchy:
 
 **Interaction primitives** (`Tests/Common/`):
 - `Locatable(By, string)` — find, wait, check presence
+- `Readable` extends `Locatable` — adds `GetText()` for reading displayed text
 - `Clickable` extends `Locatable` — adds click
-- `Writable` extends `Clickable` — adds text input/output
+- `Writable` extends `Clickable` — adds text input and output
 
 **View base classes** (`Tests/Views/`):
 - `BaseView(Locatable root)` — abstract base; delegates `WaitFor()`, `WaitForGone()`, `IsPresent()` to root
@@ -96,9 +97,10 @@ public class AuthenticationMainScreenView() :
 ```
 
 Fields are `public readonly` with the correct primitive type:
-- `Locatable` — element you only need to wait for or check existence
-- `Clickable` — element you need to click
-- `Writable` — element you need to type into or read text from
+- `Locatable` — element you only need to wait for or check existence (non-interactive, no text to read)
+- `Readable` — element whose displayed text you need to read (labels, counters, titles, dynamic text)
+- `Clickable` — element you need to click (buttons, toggles, tabs)
+- `Writable` — element you need to type into or read text from (input fields, search bars)
 
 ### Panel view with section sub-views
 

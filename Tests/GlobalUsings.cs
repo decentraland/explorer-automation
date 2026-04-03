@@ -8,6 +8,7 @@ global using Allure.NUnit;
 global using Allure.NUnit.Attributes;
 global using AltTester.AltTesterSDK.Driver;
 global using ExplorerAutomation.Tests.Common;
+global using ExplorerAutomation.Tests.Views.Elements;
 global using ExplorerAutomation.Tests.Views;
 global using AltTester.AltTesterSDK.Driver.Notifications;
 global using By = AltTester.AltTesterSDK.Driver.By;

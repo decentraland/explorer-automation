@@ -9,11 +9,11 @@ public class PlaceDetailView() : BaseView(new(By.NAME, "PlaceDetailPanel(Clone)"
 
     public readonly Clickable CloseButton           = new(By.PATH, "//PlaceDetailPanel(Clone)//Button_Close");
     public readonly Locatable PlaceImage            = new(By.PATH, "//PlaceDetailPanel(Clone)//ImageWithSkeletonAnimation/LoadedState/Thumbnail");
-    public readonly Locatable PlaceTitle            = new(By.PATH, "//PlaceDetailPanel(Clone)//PlaceTitleText");
-    public readonly Locatable CreatorName           = new(By.PATH, "//PlaceDetailPanel(Clone)//CreatorNameText");
-    public readonly Locatable UserVisitsText        = new(By.PATH, "//PlaceDetailPanel(Clone)//UserVisitsText");
-    public readonly Locatable LikeRateText          = new(By.PATH, "//PlaceDetailPanel(Clone)//LikeRateText");
-    public readonly Locatable LivePlayerCount       = new(By.PATH, "//PlaceDetailPanel(Clone)//OnlineCounter/LiveText");
+    public readonly Readable  PlaceTitle            = new(By.PATH, "//PlaceDetailPanel(Clone)//PlaceTitleText");
+    public readonly Readable  CreatorName           = new(By.PATH, "//PlaceDetailPanel(Clone)//CreatorNameText");
+    public readonly Readable  UserVisitsText        = new(By.PATH, "//PlaceDetailPanel(Clone)//UserVisitsText");
+    public readonly Readable  LikeRateText          = new(By.PATH, "//PlaceDetailPanel(Clone)//LikeRateText");
+    public readonly Readable  LivePlayerCount       = new(By.PATH, "//PlaceDetailPanel(Clone)//OnlineCounter/LiveText");
     public readonly Clickable LikeButton            = new(By.PATH, "//PlaceDetailPanel(Clone)//Interactions/Like");
     public readonly Clickable DislikeButton         = new(By.PATH, "//PlaceDetailPanel(Clone)//Interactions/Dislike");
     public readonly Clickable HeartButton           = new(By.PATH, "//PlaceDetailPanel(Clone)//Interactions/Heart");
@@ -22,12 +22,12 @@ public class PlaceDetailView() : BaseView(new(By.NAME, "PlaceDetailPanel(Clone)"
     public readonly Clickable StartNavigationButton = new(By.PATH, "//PlaceDetailPanel(Clone)//StartNavigationButton");
     public readonly Clickable ExitNavigationButton  = new(By.PATH, "//PlaceDetailPanel(Clone)//ExitNavigationButton");
     public readonly Clickable JumpInButton          = new(By.PATH, "//PlaceDetailPanel(Clone)//JumpInButton");
-    public readonly Locatable DescriptionText       = new(By.PATH, "//PlaceDetailPanel(Clone)//DescriptionContainer/Value");
+    public readonly Readable  DescriptionText       = new(By.PATH, "//PlaceDetailPanel(Clone)//DescriptionContainer/Value");
     public readonly Locatable CategoriesContainer   = new(By.PATH, "//PlaceDetailPanel(Clone)//CategoriesContainer/Value");
-    public readonly Locatable CoordsText            = new(By.PATH, "//PlaceDetailPanel(Clone)//CoordsContainer/Value/Text");
-    public readonly Locatable ParcelsText           = new(By.PATH, "//PlaceDetailPanel(Clone)//ParcelsContainer/Value/Text");
-    public readonly Locatable FavoritesText         = new(By.PATH, "//PlaceDetailPanel(Clone)//FavoritesContainer/Text");
-    public readonly Locatable UpdatedText           = new(By.PATH, "//PlaceDetailPanel(Clone)//TotalVisitsContainer/Text");
+    public readonly Readable  CoordsText            = new(By.PATH, "//PlaceDetailPanel(Clone)//CoordsContainer/Value/Text");
+    public readonly Readable  ParcelsText           = new(By.PATH, "//PlaceDetailPanel(Clone)//ParcelsContainer/Value/Text");
+    public readonly Readable  FavoritesText         = new(By.PATH, "//PlaceDetailPanel(Clone)//FavoritesContainer/Text");
+    public readonly Readable  UpdatedText           = new(By.PATH, "//PlaceDetailPanel(Clone)//TotalVisitsContainer/Text");
 
     #endregion
 }

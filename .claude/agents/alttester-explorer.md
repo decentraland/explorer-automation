@@ -70,14 +70,15 @@ Elements found:
   - Name: [name]
   - Path: [path]
   - Recommended: By.[STRATEGY], "[value]"
-  - Suggested field: public readonly [Clickable|Writable|Locatable] [FieldName] = new(By.[STRATEGY], "[value]");
+  - Suggested field: public readonly [Clickable|Writable|Readable|Locatable] [FieldName] = new(By.[STRATEGY], "[value]");
 ```
 
 ## Interaction Type Mapping
 
 - **Buttons, toggles, checkboxes, clickable items** → `Clickable`
 - **Input fields, search bars, text entry** → `Writable`
-- **Labels, containers, panels, non-interactive elements** → `Locatable`
+- **Dynamic text labels, counters, titles, percentages, coordinates, dates** — any element whose displayed text a test might read → `Readable`
+- **Containers, panels, images, non-interactive elements with no useful text** → `Locatable`
 
 ## Important Notes
 

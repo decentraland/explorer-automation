@@ -1,5 +1,9 @@
-namespace ExplorerAutomation.Tests.Common;
+namespace ExplorerAutomation.Tests.Views.Elements;
 
+/// <summary>
+/// Base element primitive that can be found, waited for, and checked for presence in the scene.
+/// Use for non-interactive elements where you only need to verify existence or wait for appearance/disappearance.
+/// </summary>
 public record Locatable(By by, string name)
 {
     [AllureStep("Wait for object to appear")]
