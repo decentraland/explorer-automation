@@ -68,7 +68,7 @@ public class DiagnosticTests
                 {
                     anchor = Driver.FindObject(By.NAME, candidate);
                     anchorName = candidate;
-                    Console.WriteLine($"Found by name '{candidate}': id={anchor.id} path={anchor.transformPath}");
+                    Console.WriteLine($"Found by name '{candidate}': id={anchor.id} path={anchor.transformId}");
                     break;
                 }
                 catch { }
@@ -77,18 +77,18 @@ public class DiagnosticTests
 
         if (anchor != null)
         {
-            Console.WriteLine($"Anchor: {anchorName} id={anchor.id} path={anchor.transformPath}");
+            Console.WriteLine($"Anchor: {anchorName} id={anchor.id} path={anchor.transformId}");
             Console.WriteLine($"  parent id={anchor.transformParentId}");
 
             // Walk up two levels to find the container
             try
             {
                 var parent = Driver.FindObject(By.ID, anchor.transformParentId.ToString());
-                Console.WriteLine($"Parent:  name={parent.name} id={parent.id} path={parent.transformPath}");
+                Console.WriteLine($"Parent:  name={parent.name} id={parent.id} path={parent.transformId}");
                 Console.WriteLine($"  parent id={parent.transformParentId}");
 
                 var grandparent = Driver.FindObject(By.ID, parent.transformParentId.ToString());
-                Console.WriteLine($"Grandparent: name={grandparent.name} id={grandparent.id} path={grandparent.transformPath}");
+                Console.WriteLine($"Grandparent: name={grandparent.name} id={grandparent.id} path={grandparent.transformId}");
             }
             catch (Exception ex)
             {
@@ -107,7 +107,7 @@ public class DiagnosticTests
                 if (n.Contains("sidebar") || n.Contains("mainmenu") || n.Contains("sidemenu")
                     || n.Contains("navigation") || n.Contains("hudmenu"))
                 {
-                    Console.WriteLine($"  name={el.name} id={el.id} path={el.transformPath}");
+                    Console.WriteLine($"  name={el.name} id={el.id} path={el.transformId}");
                 }
             }
         }
