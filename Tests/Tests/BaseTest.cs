@@ -63,7 +63,7 @@ public class BaseTest
             Reporter.Log("Already in-world — skipping authentication");
         }
 
-        Views.MainMenu.WaitFor();
+        Views.MainMenu.WaitFor(120);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 

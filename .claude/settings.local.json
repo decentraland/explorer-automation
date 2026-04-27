@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/c/Users/anial/.alttester/ai-extension/AltTesterMcp.exe\" --help)",
+      "Bash(mkdir -p /tmp/navmap_query)",
+      "Read(//tmp/**)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet add:*)",
+      "mcp__alttester__driver",
+      "mcp__alttester__get_screenshot",
+      "mcp__alttester__find_object",
+      "Bash(dotnet build:*)",
+      "Bash(\"/c/Users/anial/.alttester/ai-extension/AltTesterMcp.exe\" --version)",
+      "Bash(echo \"exit: $?\")",
+      "Read(//c/Users/anial/AppData/Roaming/Claude/**)",
+      "PowerShell(Get-Content \"$env:APPDATA\\\\Claude\\\\claude_desktop_config.json\" -ErrorAction SilentlyContinue; if \\(-not $?\\) { \"File not found\" })",
+      "PowerShell(Get-ChildItem \"$env:APPDATA\\\\Claude\" -ErrorAction SilentlyContinue; if \\(-not $?\\) { \"Dir not found\" })",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.claude\\\\\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell($claudeDir = \"$env:USERPROFILE\\\\.claude\"; if \\(Test-Path $claudeDir\\) { Get-ChildItem $claudeDir -Recurse | Select-Object FullName } else { \"Not found: $claudeDir\" })",
+      "PowerShell(Test-Path \"$env:USERPROFILE\\\\.claude\"; $env:USERPROFILE)",
+      "PowerShell($items = Get-ChildItem \"C:\\\\Users\\\\anial\\\\.claude\" -Force -ErrorAction SilentlyContinue; \"Count: $\\($items.Count\\)\"; $items | ForEach-Object { $_.FullName })",
+      "Bash(dotnet run *)",
+      "Bash(\"C:\\\\\\\\Users\\\\\\\\anial\\\\\\\\.alttester\\\\\\\\ai-extension\\\\\\\\AltTesterMcp.exe\" --help)",
+      "Bash(ls \"C:\\\\\\\\Users\\\\\\\\anial\\\\\\\\.alttester\\\\\\\\ai-extension\\\\\\\\\")"
+    ]
+  }
+}
