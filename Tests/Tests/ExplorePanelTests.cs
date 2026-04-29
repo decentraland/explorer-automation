@@ -1,6 +1,8 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Explore Panel Tests")]
+[Category("InWorld")]
+[Order(11)]
 public class ExplorePanelTests : BaseTest
 {
     [Test]
@@ -10,8 +12,7 @@ public class ExplorePanelTests : BaseTest
 
         Views.ExplorePanel.Events.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
@@ -21,8 +22,7 @@ public class ExplorePanelTests : BaseTest
 
         Views.ExplorePanel.Places.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
@@ -32,8 +32,7 @@ public class ExplorePanelTests : BaseTest
 
         Views.ExplorePanel.Communities.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
@@ -43,8 +42,7 @@ public class ExplorePanelTests : BaseTest
 
         Views.ExplorePanel.Navmap.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
@@ -54,19 +52,24 @@ public class ExplorePanelTests : BaseTest
 
         Views.ExplorePanel.Backpack.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
+    // Opening the Gallery section makes the Explorer touch ~/Downloads (Camera Reel storage,
+    // see unity-explorer ReelCommonActions.cs), which on macOS triggers the system
+    // "wants to access your Downloads folder" TCC dialog. The dialog steals focus and
+    // breaks AltTester input. We use Assert.Ignore so the test shows up as "skipped" with
+    // a visible reason in the Allure report.
     [Test]
     public void TestOpenGalleryFromSidebar()
     {
+        Assert.Ignore("can't access user device");
+
         Views.MainMenu.GalleryButton.Click();
 
         Views.ExplorePanel.Gallery.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
@@ -76,8 +79,7 @@ public class ExplorePanelTests : BaseTest
 
         Views.ExplorePanel.Settings.WaitFor();
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
@@ -122,7 +124,6 @@ public class ExplorePanelTests : BaseTest
         Views.ExplorePanel.Settings.WaitFor();
         Reporter.Log("Settings tab opened successfully");
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 }

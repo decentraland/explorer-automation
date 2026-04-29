@@ -6,6 +6,7 @@ public class GlobalSetup
     [OneTimeSetUp]
     public void RunBeforeAllTests()
     {
+        DotNetEnv.Env.TraversePath().Load();
         StartDriver();
         ViewContainer.Initialize();
         Reporter.SetupUnityLogListener();

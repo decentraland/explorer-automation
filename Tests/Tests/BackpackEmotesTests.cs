@@ -1,12 +1,17 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Backpack Emotes Tests")]
+[Category("InWorld")]
+[Order(10)]
 public class BackpackEmotesTests : BaseTest
 {
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
     {
-        Views.MainMenu.BackpackButton.Click();
+        // Open backpack via the keyboard shortcut: more reliable than the sidebar click
+        // for the very first interaction post-warmup. The dedicated TestOpenBackpackFromSidebar
+        // exercises the click path.
+        PressKey(AltKeyCode.I);
         Views.ExplorePanel.WaitFor();
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
 
@@ -21,14 +26,16 @@ public class BackpackEmotesTests : BaseTest
 
         Reporter.Log("All emote slots equipped sequentially");
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 
     [Test]
     public void TestSearchAndEquipFistPump()
     {
-        Views.MainMenu.BackpackButton.Click();
+        // Open backpack via the keyboard shortcut: more reliable than the sidebar click
+        // for the very first interaction post-warmup. The dedicated TestOpenBackpackFromSidebar
+        // exercises the click path.
+        PressKey(AltKeyCode.I);
         Views.ExplorePanel.WaitFor();
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
 
@@ -44,7 +51,6 @@ public class BackpackEmotesTests : BaseTest
 
         Reporter.Log("Bezier Dance equipped to slot 0");
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 }

@@ -7,18 +7,38 @@ namespace ExplorerAutomation.Tests.Views;
 /// Contains tab buttons to switch between sections and sub-views for each section
 /// (events, places, communities, map, backpack, gallery, settings).
 /// </summary>
-public class ExplorePanelView() : BaseView(new(By.ID, "d5383a2a-d281-4fe8-b53b-fee873f32654"))
+public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)"))
 {
+    /// <summary>
+    /// The MVC ViewBase disables the panel's GraphicRaycaster while the show animation is
+    /// playing. Without this guard, clicks on inner controls (CloseButton, tabs) right after
+    /// the panel becomes findable get eaten because the raycaster ignores them. Override
+    /// WaitFor to also wait for the raycaster to be re-enabled.
+    /// </summary>
+    public override AltObject WaitFor(double timeout = 20D)
+    {
+        var altObj = base.WaitFor(timeout);
+        altObj.WaitForComponentProperty(
+            "UnityEngine.UI.GraphicRaycaster",
+            "enabled",
+            true,
+            "UnityEngine.UI",
+            timeout: 10);
+        return altObj;
+    }
+
     #region Elements
 
-    public readonly Clickable CloseButton          = new(By.ID, "f507113e-bb78-4ddb-9d3e-4338e1f75dfe");
-    public readonly Clickable EventsTabButton      = new(By.ID, "8b6ee3fb-097b-46b5-9d6a-e6ca21f737f0");
-    public readonly Clickable PlacesTabButton      = new(By.ID, "261fa576-8df6-496e-82f0-dd11c2592086");
-    public readonly Clickable CommunitiesTabButton = new(By.ID, "d696490d-ba13-4701-ad08-e617c2dbdd74");
-    public readonly Clickable MapTabButton         = new(By.ID, "48d169c6-427d-4bb3-8bde-a2f06851b387");
-    public readonly Clickable BackpackTabButton    = new(By.ID, "a5f6205e-84a2-4a68-9638-e1d27baf37e0");
-    public readonly Clickable GalleryTabButton     = new(By.ID, "80fd3d49-bd26-4700-91ce-c50f97bce0b4");
-    public readonly Clickable SettingsTabButton    = new(By.ID, "0107ddd9-a087-4fa5-885d-b47df8854ff9");
+    public readonly Clickable CloseButton          = new(By.PATH, "//ExplorePanelUI(Clone)//CloseButton");
+    // Tab buttons live inside //ExplorePanelUI(Clone)//TabSelector and are renamed by the
+    // panel prefab to <Name>Tab via m_Name overrides on each prefab instance.
+    public readonly Clickable EventsTabButton      = new(By.PATH, "//TabSelector/EventsTab");
+    public readonly Clickable PlacesTabButton      = new(By.PATH, "//TabSelector/PlacesTab");
+    public readonly Clickable CommunitiesTabButton = new(By.PATH, "//TabSelector/CommunitiesTab");
+    public readonly Clickable MapTabButton         = new(By.PATH, "//TabSelector/MapTab");
+    public readonly Clickable BackpackTabButton    = new(By.PATH, "//TabSelector/BackpackTab");
+    public readonly Clickable GalleryTabButton     = new(By.PATH, "//TabSelector/GalleryTab");
+    public readonly Clickable SettingsTabButton    = new(By.PATH, "//TabSelector/SettingsTab");
 
     #endregion
 
@@ -31,6 +51,40 @@ public class ExplorePanelView() : BaseView(new(By.ID, "d5383a2a-d281-4fe8-b53b-f
     public ExplorePanelBackpackView    Backpack    { get; } = new();
     public ExplorePanelGalleryView     Gallery     { get; } = new();
     public ExplorePanelSettingsView    Settings    { get; } = new();
+
+    #endregion
+
+    #region Helper methods
+
+    /// <summary>
+    /// Closes the panel. Tries the X button first; if that doesn't dismiss the panel within
+    /// 5s, falls back to pressing Escape (which Unity's IClosable input handler also catches).
+    /// Some sections (Map, Gallery) consume input themselves and absorb the X button click,
+    /// so the keyboard fallback is the reliable path.
+    /// </summary>
+    [AllureStep("Close the explore panel")]
+    public void Close()
+    {
+        CloseButton.Click();
+        if (TryWaitForGone(5))
+            return;
+
+        Reporter.Log("CloseButton click did not dismiss the panel — falling back to Escape");
+        CommonStuff.AltDriver.PressKey(AltKeyCode.Escape);
+        WaitForGone(15);
+    }
+
+    /// <summary>
+    /// Best-effort WaitForGone. Returns true if the panel disappeared, false on timeout.
+    /// We catch Exception (not just AssertionException) because AspectInjector / Allure
+    /// wraps thrown exceptions in TargetInvocationException, which doesn't match a more
+    /// specific catch.
+    /// </summary>
+    private bool TryWaitForGone(double timeoutSec)
+    {
+        try { WaitForGone(timeoutSec); return true; }
+        catch { return false; }
+    }
 
     #endregion
 }

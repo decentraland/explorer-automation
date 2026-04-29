@@ -4,22 +4,23 @@ namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 /// Section view for the Map tab within the explore panel, displaying the Decentraland world navigation map.
 /// Contains category filters, navigation controls, search functionality, and a place info panel.
 /// </summary>
-public class ExplorePanelNavmapView() : BaseSection(new(By.ID, "106af455-ca73-4241-9474-b82d160d816e"))
+public class ExplorePanelNavmapView() : BaseSection(new(By.NAME, "Navmap"))
 {
     #region Elements
 
-    // Category filter toggles
-    public readonly Clickable AllCategoryButton       = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/All");
-    public readonly Clickable FavoritesCategoryButton = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Favorites");
-    public readonly Clickable SocialCategoryButton    = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Social");
-    public readonly Clickable MusicCategoryButton     = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Music");
-    public readonly Clickable ArtCategoryButton       = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Art");
-    public readonly Clickable GameCategoryButton      = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Game");
-    public readonly Clickable FashionCategoryButton   = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Fashion");
-    public readonly Clickable EducationCategoryButton = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Education");
-    public readonly Clickable ShopCategoryButton      = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Shop");
-    public readonly Clickable SportCategoryButton     = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Sport");
-    public readonly Clickable BusinessCategoryButton  = new(By.PATH, "//NavmapSection/Navmap/CategoriesFilter/Business");
+    // Category filter toggles (path scoped to runtime "Navmap" — the prefab parent renames
+    // NavmapSection → Navmap via m_Name override).
+    public readonly Clickable AllCategoryButton       = new(By.PATH, "//Navmap/CategoriesFilter/All");
+    public readonly Clickable FavoritesCategoryButton = new(By.PATH, "//Navmap/CategoriesFilter/Favorites");
+    public readonly Clickable SocialCategoryButton    = new(By.PATH, "//Navmap/CategoriesFilter/Social");
+    public readonly Clickable MusicCategoryButton     = new(By.PATH, "//Navmap/CategoriesFilter/Music");
+    public readonly Clickable ArtCategoryButton       = new(By.PATH, "//Navmap/CategoriesFilter/Art");
+    public readonly Clickable GameCategoryButton      = new(By.PATH, "//Navmap/CategoriesFilter/Game");
+    public readonly Clickable FashionCategoryButton   = new(By.PATH, "//Navmap/CategoriesFilter/Fashion");
+    public readonly Clickable EducationCategoryButton = new(By.PATH, "//Navmap/CategoriesFilter/Education");
+    public readonly Clickable ShopCategoryButton      = new(By.PATH, "//Navmap/CategoriesFilter/Shop");
+    public readonly Clickable SportCategoryButton     = new(By.PATH, "//Navmap/CategoriesFilter/Sport");
+    public readonly Clickable BusinessCategoryButton  = new(By.PATH, "//Navmap/CategoriesFilter/Business");
 
     // Navigation controls
     public readonly Clickable ZoomInButton          = new(By.PATH, "//NavigationPanel//Zoom/Plus");

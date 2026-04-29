@@ -28,7 +28,7 @@ public class ExplorePanelPlacesView : BaseSection
 
     #region Setup
 
-    public ExplorePanelPlacesView() : base(new(By.ID, "c8ab66c3-bc0e-4b95-bca8-63984be025a5"))
+    public ExplorePanelPlacesView() : base(new(By.NAME, "PlacesSection"))
     {
         CategoryButtons = new Clickable[CATEGORY_COUNT];
         for (var i = 0; i < CATEGORY_COUNT; i++)

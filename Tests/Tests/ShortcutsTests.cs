@@ -1,6 +1,8 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Shortcuts Tests")]
+[Category("InWorld")]
+[Order(12)]
 public class ShortcutsTests : BaseTest
 {
     [Test]
@@ -60,9 +62,15 @@ public class ShortcutsTests : BaseTest
         Views.ExplorePanel.WaitForGone();
     }
 
+    // Same reason as TestOpenGalleryFromSidebar: opening Gallery touches ~/Downloads (Camera
+    // Reel storage in unity-explorer ReelCommonActions.cs) and triggers macOS's TCC dialog,
+    // which steals focus from the Explorer window. Use Assert.Ignore so the test shows up as
+    // "skipped" with a visible reason in the Allure report.
     [Test]
     public void TestOpenGalleryWithShortcut()
     {
+        Assert.Ignore("can't access user device");
+
         PressKey(AltKeyCode.K);
 
         Views.ExplorePanel.Gallery.WaitFor();

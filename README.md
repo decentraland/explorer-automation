@@ -7,35 +7,83 @@ UI automation tests for the Decentraland Explorer client using [AltTester SDK 2.
 - [.NET 10.0 SDK](https://dotnet.microsoft.com/download)
 - [AltTester Desktop](https://alttester.com/alttester/) (Pro license required)
 - An instrumented Explorer build or the Unity Editor
+- [MetaForge CLI](https://github.com/decentraland/metaforge) on your PATH
+- A `.env` at the repo root populated from [.env.example](.env.example) — required only for the **Auth** suite (IMAP credentials to fetch OTP codes); the **InWorld** suite does not read it.
+
+## Test categories
+
+Fixtures are tagged with NUnit `[Category]` so you can run them in isolation:
+
+| Category | Fixtures | Starts from | Consumes Thirdweb OTP? |
+|---|---|---|---|
+| `Auth` | `EmailOtpLoginTests`, `EmailOtpLoginWithNewsletterTests`, `EmailOtpRecurrentLoginTests` | logged-out (cache cleared) | yes — IMAP fetches the code |
+| `InWorld` | `BackpackEmotesTests`, `ExplorePanelTests`, `ShortcutsTests` | in-world via a pre-cached identity | no |
+
+Within each category, fixtures execute in their declared `[Order]`.
 
 ## Running Tests
 
-### Automated (recommended)
+### Run everything in one shot
 
-Use [MetaForge](https://github.com/decentraland/metaforge) to handle the full workflow:
+Auth tests run first (Order 1–3) and leave a Thirdweb-cached identity in-world; InWorld tests pick up from there.
 
 ```bash
-metaforge explorer test <PR-number-or-branch>
+metaforge explorer run --clear -- --alttester     # logged-out launch
+metaforge explorer test                            # all fixtures, ordered
 ```
 
-See the [Automation Testing docs](https://github.com/decentraland/unity-explorer/blob/dev/docs/automation-testing.md) in the Explorer repo for MetaForge setup and options.
+Use this for the full smoke run when you don't mind burning OTP attempts.
 
-### Manual
+### Auth suite only (consumes OTP)
 
-1. **Start Explorer** with AltTester instrumentation:
-   - **Build:** Launch an instrumented build with `--alttester`.
-   - **Editor:** Open `AltTester > AltTester Editor`, select **Editor**, click **Play in Editor**.
-2. **Start AltTester Desktop** and wait for Explorer to connect.
-3. **Run the tests:**
+Tests the email + OTP login flow end-to-end. Requires a clean cache so the client boots into the LoginSelection screen.
+
+```bash
+metaforge explorer run --clear -- --alttester
+metaforge explorer test --filter "Category=Auth"
+```
+
+### InWorld suite only (no OTP, fast iteration)
+
+Uses a metaforge-managed test identity so the Explorer skips the login screen entirely. **Run [`scripts/setup-test-identity.sh`](scripts/setup-test-identity.sh) once first** — it creates a BIP39 wallet, registers the identity with the Decentraland auth API, and writes the auth token bridge so the launcher auto-logs in.
+
+```bash
+# One-time (or whenever the token bridge is missing)
+scripts/setup-test-identity.sh
+
+# Every run from then on
+metaforge explorer run -- --alttester              # NOTE: no --clear
+metaforge explorer test --filter "Category=InWorld"
+```
+
+The script is idempotent: if the account already exists it just re-issues the token bridge.
+
+### Targeted filters
+
+NUnit's `--filter` syntax works with `Category=…`, `FullyQualifiedName~…`, `Name=…`, and boolean OR with `|`:
+
+```bash
+# Just the recurrent-user login
+metaforge explorer test --filter "FullyQualifiedName~EmailOtpRecurrent"
+
+# All emote tests + the recurrent login (e.g. for debugging the chain)
+metaforge explorer test --filter "FullyQualifiedName~EmailOtpRecurrent|FullyQualifiedName~BackpackEmotes"
+
+# A single test method
+metaforge explorer test --filter "Name=TestUnequipAndEquipAllEmoteSlots"
+```
+
+### Manual (without metaforge)
+
+If you're driving the Explorer + AltTester yourself:
+
+1. Launch an instrumented Explorer with `--alttester` (build) or click **Play in Editor** under `AltTester > AltTester Editor` (editor).
+2. Start AltTester Desktop and wait for the connection.
+3. Run the tests:
    ```bash
-   dotnet test --logger "console;verbosity=detailed"
+   dotnet test Tests/ --logger "console;verbosity=detailed"
+   dotnet test Tests/ --filter "Category=InWorld"
    ```
-
-Filter to a specific test class or test:
-```bash
-dotnet test --filter "ExplorePanelTests"
-dotnet test --filter "TestOpenEventsFromSidebar"
-```
 
 ## Project Structure
 
