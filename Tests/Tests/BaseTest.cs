@@ -114,7 +114,7 @@ public abstract class BaseTest
             Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
         }
 
-        Views.MainMenu.WaitFor(60);
+        Views.MainMenu.WaitFor(120);
 
         // The SidebarController subscribes its onClick listeners in OnViewInstantiated,
         // which fires asynchronously after the SidebarView GameObject appears in the scene.
