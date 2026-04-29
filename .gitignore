@@ -21,3 +21,10 @@ Thumbs.db
 
 !*.csproj
 !*.sln
+
+tmp
+.env
+!.env.example
+
+# Personal helper scripts (not part of the test suite — kept untracked)
+local-scripts/

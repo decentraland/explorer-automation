@@ -4,7 +4,7 @@ namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 /// Section view for the Backpack tab within the explore panel, where users manage
 /// their equipped wearables and emotes.
 /// </summary>
-public class ExplorePanelBackpackView() : BaseSection(new(By.ID, "1666be29-f174-43c8-98d0-c9b02bc0d011"))
+public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSection"))
 {
     #region Elements
 
@@ -114,16 +114,29 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.ID, "1666be29-f174-
             Reporter.Log($"Clicked grid item {index}");
         }
 
-        [AllureStep("Click equip on grid item")]
+        [AllureStep("Equip grid item via double-click")]
         public void ClickGridItemEquip(int index)
         {
-            GridItems[index].EquipButton.Click();
-            Reporter.Log($"Clicked equip on grid item {index}");
+            // BackpackItemView.OnPointerClick treats clickCount==2 as Equip (and 1 as Select).
+            // The Equip button itself lives inside HoverBackground which only animates in on
+            // a real mouse hover; AltTester's PointerEnter doesn't reliably trigger that
+            // overlay. Double-clicking the grid item bypasses the hover overlay entirely
+            // and routes directly to OnEquip via the IPointerClickHandler logic.
+            var altObj = GridItems[index].WaitFor();
+            altObj.Click();
+            Thread.Sleep(80);
+            altObj.Click();
+            Reporter.Log($"Double-clicked grid item {index} to equip");
         }
 
         [AllureStep("Click unequip on grid item")]
         public void ClickGridItemUnequip(int index)
         {
+            // No equivalent double-click shortcut for unequip — has to come through the
+            // HoverBackground/Unequip button. PointerEnter to reveal it, then click.
+            var altObj = GridItems[index].WaitFor();
+            altObj.PointerEnter();
+            Thread.Sleep(300);
             GridItems[index].UnequipButton.Click();
             Reporter.Log($"Clicked unequip on grid item {index}");
         }

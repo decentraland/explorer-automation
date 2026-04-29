@@ -2,7 +2,7 @@ namespace ExplorerAutomation.Tests.Tests;
 
 [TestFixture]
 [AllureNUnit]
-public class BaseTest
+public abstract class BaseTest
 {
     protected Exception ExceptionFromOneTimeSetUp;
 
@@ -15,17 +15,39 @@ public class BaseTest
     [AllureBefore("Ensure the player is in world")]
     public void OneTimeSetUp()
     {
-        EnsureInWorld();
+        try
+        {
+            EnsureInWorld();
+        }
+        catch (Exception ex)
+        {
+            // Capture and rethrow per-test in [SetUp]. NUnit reports OneTimeSetUp failures
+            // at the fixture level, which Allure doesn't render as test entries — so all
+            // tests in this fixture would be invisible in the report. By re-failing inside
+            // [SetUp], each test gets its own entry marked as failed.
+            ExceptionFromOneTimeSetUp = ex;
+            throw;
+        }
     }
 
     [SetUp]
     [AllureBefore("Set up before each test")]
     public void SetUp()
     {
+        if (ExceptionFromOneTimeSetUp != null)
+        {
+            Reporter.Log($"Fixture OneTimeSetUp failed earlier: {ExceptionFromOneTimeSetUp.Message}");
+            throw new AssertionException(
+                $"Fixture OneTimeSetUp failed: {ExceptionFromOneTimeSetUp.Message}",
+                ExceptionFromOneTimeSetUp);
+        }
+
         Reporter.Log($"Starting test: {TestContext.CurrentContext.Test.Name}");
 
-        // In case a popup is opened, this will close it
-        PressEscape();
+        // In case a popup is opened, this will close it.
+        // Skip when sitting on the auth screen — Escape there can exit/transition.
+        if (!Views.AuthenticationMainScreen.IsPresent())
+            PressEscape();
     }
 
     [TearDown]
@@ -47,23 +69,61 @@ public class BaseTest
     #region In-World Setup
 
     [AllureStep("Ensure player is in-world")]
-    private void EnsureInWorld()
+    protected virtual void EnsureInWorld()
     {
-        if (Views.SplashScreen.IsPresent() || Views.AuthenticationMainScreen.IsPresent())
+        // Wait for any splash to clear first — both the cached-account flow and the
+        // auto-login (token-bridge) flow start with the splash, but they diverge after.
+        if (Views.SplashScreen.IsPresent())
         {
-            Reporter.Log("Authentication / splash screen detected — entering world");
-            Views.SplashScreen.WaitForGone();
-            Views.AuthenticationMainScreen.WaitFor();
+            Reporter.Log("Splash screen detected — waiting for it to clear");
+            Views.SplashScreen.WaitForGone(60);
+        }
+
+        // After splash, three legitimate states are possible:
+        //   a) Cached-account auth screen (Jump Into Decentraland button).
+        //      Happens when the Explorer has a Thirdweb cache but no token bridge.
+        //   b) No auth screen at all (auto-login via auth-token-bridge.txt or already
+        //      in-world). Happens for the metaforge `account login --auto-login` flow,
+        //      and for tests that follow another fixture that ended in-world.
+        //   c) Loading screen still up (post-JumpIn or post-auto-login transition).
+        if (Views.AuthenticationMainScreen.IsPresent())
+        {
+            Reporter.Log("Cached-account auth screen detected — clicking Jump Into Decentraland");
             Views.AuthenticationMainScreen.JumpIntoWorldButton.Click();
-            Views.LoadingScreen.WaitFor(30);
-            Views.LoadingScreen.WaitForGone(120);
         }
         else
         {
-            Reporter.Log("Already in-world — skipping authentication");
+            Reporter.Log("No auth screen — auto-login via token bridge or already in-world");
         }
 
-        Views.MainMenu.WaitFor();
+        // CRITICAL: wait for the SceneLoadingScreen (the 0→100% progress bar) to appear AND
+        // then disappear. Until it disappears, the world is still streaming and sidebar
+        // shortcuts get silently dropped. We can't use IsPresent() here — Unity instantiates
+        // the loading screen asynchronously after JumpIntoWorld, so a 0ms check returns false
+        // before it shows up. Instead, give it ~15s to appear; if it doesn't, assume world
+        // was already loaded; if it does, wait up to 5 min for it to finish.
+        try
+        {
+            Views.LoadingScreen.WaitFor(15);
+            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
+            Views.LoadingScreen.WaitForGone(300);
+            Reporter.Log("Scene loading complete — HUD should now be interactable");
+        }
+        catch (Exception)
+        {
+            Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
+        }
+
+        Views.MainMenu.WaitFor(60);
+
+        // The SidebarController subscribes its onClick listeners in OnViewInstantiated,
+        // which fires asynchronously after the SidebarView GameObject appears in the scene.
+        // The first sidebar click / shortcut after EnsureInWorld returns can land in that
+        // gap and get silently dropped. There's no public signal for when subscriptions
+        // are wired, so we settle for a fixed wait. Empirically ~20s is enough for the
+        // first test method of the first in-world fixture; subsequent fixtures don't need
+        // it (the system is already warm) but the cost is small.
+        Thread.Sleep(20_000);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
