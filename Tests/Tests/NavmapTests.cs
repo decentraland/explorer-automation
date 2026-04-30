@@ -42,7 +42,6 @@ public class NavmapTests : BaseTest
         Views.ExplorePanel.Navmap.BusinessCategoryButton.Click();
         Reporter.Log("Clicked Business category filter");
 
-        Views.ExplorePanel.CloseButton.Click();
-        Views.ExplorePanel.WaitForGone();
+        Views.ExplorePanel.Close();
     }
 }
