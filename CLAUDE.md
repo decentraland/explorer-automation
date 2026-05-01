@@ -1,51 +1,24 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working anywhere in this repository.
 
-## Project Overview
+## Repository Layout
 
-UI automation tests for the Decentraland Explorer client using AltTester SDK 2.3.0, NUnit 4, and Allure reporting. Standalone .NET 10.0 (C# 14) test project (not inside the Unity project). Also includes a `MetaForge.TestLogger` custom test logger project so that MetaForge can analyze test progress.
+This repo hosts **two independent test stacks** that share a single test identity and credentials:
 
-## Build & Test Commands
+- **`explorer/`** — C# / .NET 10 / NUnit / AltTester suite for the Decentraland Explorer **desktop client** (Unity). See [explorer/CLAUDE.md](explorer/CLAUDE.md) for build commands, architecture, and conventions.
+- **`web/`** — TypeScript / Playwright suite for the Decentraland **web dapp** (`https://decentraland.org` + `/auth`) and the cross-platform handoff into the desktop client. See [web/CLAUDE.md](web/CLAUDE.md).
 
-```bash
-# Build
-dotnet build
+### Shared at the root
 
-# Run all tests (requires AltTester Desktop running + instrumented Explorer connected)
-dotnet test Tests/ --logger "console;verbosity=detailed"
+- **`.env`** — IMAP credentials for OTP retrieval; loaded by both stacks. Template in `.env.example`.
+- **`scripts/setup-test-identity.sh`** — provisions the BIP39 wallet identity used by all in-world tests (both `@cross` Playwright tests and the C# `InWorld` category).
+- **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`.
 
-# Run a specific test class
-dotnet test Tests/ --filter "ExplorePanelTests"
+## When to Read Which CLAUDE.md
 
-# Run a single test
-dotnet test Tests/ --filter "TestOpenEventsFromSidebar"
+- Working on a `.cs` file, a Unity-side flow, or anything under `explorer/` → read [explorer/CLAUDE.md](explorer/CLAUDE.md).
+- Working on a `.ts`/`.spec.ts` file, a browser flow, or anything under `web/` → read [web/CLAUDE.md](web/CLAUDE.md).
+- Touching shared files (`.env`, `scripts/`, root `README.md`, this file) → no extra context needed beyond this file.
 
-# Automated workflow via MetaForge
-metaforge explorer test <PR-number-or-branch>
-```
-
-Tests connect to AltTester Desktop at `127.0.0.1:13000`. The Explorer must be instrumented and connected before running.
-
-## Architecture
-
-**Page Object Model (POM)** pattern with NUnit test fixtures. Two main areas:
-
-- **Views** (`Tests/Views/`) — Page objects wrapping AltTester locators (`Locatable`, `Clickable`, `Writable` in `Tests/Common/`). See the `view-writer` skill for detailed view conventions.
-- **Tests** (`Tests/Tests/`) — NUnit test fixtures inheriting `BaseTest`, accessing views via `Views` property (`ViewContainer.Instance`).
-
-### Test lifecycle
-
-- `GlobalSetup` — runs once: connects `AltDriver`, initializes `ViewContainer`, sets up Unity log listener.
-- `BaseTest` — `OneTimeSetUp` runs `EnsureInWorld()` (handles splash → auth → loading). `SetUp` presses Escape. `TearDown` screenshots on failure.
-
-## Coding Conventions
-
-- **C# style**: Use `var` when able. Private fields start with `_`, constants are `ALL_CAPS`. Use primary constructors.
-- **Global usings** are in `GlobalUsings.cs` — don't add per-file usings for things already there.
-- **Reporting**: Use `Reporter.Log()` (not `Console.WriteLine`). Use `Reporter.TakeScreenshot()` for manual screenshots.
-
-## Skills
-
-- **`view-writer`** — Always invoke this skill when creating new view classes, modifying existing views, adding elements/sections/sub-views, or registering views in `ViewContainer`. It contains the full POM conventions, region layout rules, and the workflow for discovering element locators via the `alttester-explorer` agent.
-- **`test-writer`** — Always invoke this skill when creating new test classes, adding test methods, or modifying test logic. It contains the full test conventions, BaseTest lifecycle, interaction patterns, and rules for when to invoke `view-writer`.
+The two stacks integrate via the **`auth-token-bridge.txt`** file written by the dapp and consumed by the desktop client. The cross-platform Playwright tests verify the in-world handoff by shelling out to `dotnet test` against a fixture in `explorer/Tests/`.
