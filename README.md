@@ -1,13 +1,13 @@
-# Decentraland Explorer Automation
+# Decentraland Automation
 
-End-to-end UI automation for the Decentraland product surface. The repo hosts **two independent test stacks** that share a single test identity and credentials:
+End-to-end UI automation across the Decentraland product surface — both the **desktop Explorer** (Unity client) and the **web dapp** (`decentraland.org`). The repo hosts two independent test stacks under one roof so they can share a single test identity, credentials, and tooling:
 
 | Stack | Tech | Targets | README |
 |---|---|---|---|
-| [`explorer/`](explorer/) | C# / .NET 10 / NUnit / [AltTester SDK 2.3.0](https://alttester.com/docs/sdk/latest/) | Decentraland Explorer **desktop client** (Unity) | [explorer/README.md](explorer/README.md) |
-| [`web/`](web/) | TypeScript / [Playwright](https://playwright.dev/) | Decentraland **web dapp** (`https://decentraland.org`, `/auth`) + the cross-platform handoff into the desktop client | [web/README.md](web/README.md) |
+| [`explorer/`](explorer/) | C# / .NET 10 / NUnit / [AltTester SDK 2.3.0](https://alttester.com/docs/sdk/latest/) | Decentraland Explorer **desktop client** (Unity) — login, in-world flows, panels, shortcuts | [explorer/README.md](explorer/README.md) |
+| [`web/`](web/) | TypeScript / [Playwright](https://playwright.dev/) | Decentraland **web dapp** (`decentraland.org`, `/auth`, `/auth/quick-setup`), launcher download, and the cross-platform handoff into the desktop client | [web/README.md](web/README.md) |
 
-The two stacks are wired together through the `auth-token-bridge.txt` file: the dapp writes it after a successful web login, the desktop client reads + deletes it on launch to skip the login screen. The `@cross` Playwright tests verify the full chain (web login → bridge file → desktop launch → in-world).
+The two stacks are wired together through the `auth-token-bridge.txt` file: the dapp writes it after a successful web login, the desktop client reads + deletes it on launch to skip the login screen. The `@cross` Playwright tests are designed to verify the full chain (web login → bridge file → desktop launch → in-world).
 
 ## Shared at the root
 
