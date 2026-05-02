@@ -1,0 +1,14 @@
+{
+  "name": "@dcl-vrt/_host",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual-regression host scene. Test scenes' compiled bundles are copied over this package's bin/ to drive hot-reload swaps.",
+  "scripts": {
+    "build": "sdk-commands build",
+    "start": "sdk-commands start"
+  },
+  "devDependencies": {
+    "@dcl/sdk": "*",
+    "@dcl/js-runtime": "7.22.5"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@dcl-vrt/example-cube",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual-regression scene: example-cube",
+  "scripts": {
+    "build": "sdk-commands build",
+    "start": "sdk-commands start"
+  },
+  "devDependencies": {
+    "@dcl/sdk": "*",
+    "@dcl/js-runtime": "7.22.5"
+  }
+}

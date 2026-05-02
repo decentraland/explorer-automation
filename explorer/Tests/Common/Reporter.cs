@@ -26,7 +26,6 @@ public static class Reporter
             var projectDirectory = Directory.GetCurrentDirectory();
             var screenshotDirectory = Path.Combine(projectDirectory, "screenshots");
 
-            // Create directory if it doesn't exist
             if (!Directory.Exists(screenshotDirectory))
             {
                 Directory.CreateDirectory(screenshotDirectory);
@@ -36,14 +35,22 @@ public static class Reporter
             var fileName = customName ?? $"screenshot_{timestamp}";
             var screenshotPath = Path.Combine(screenshotDirectory, $"{fileName}.png");
 
-            CommonStuff.AltDriver.GetPNGScreenshot(screenshotPath);
-            AllureApi.Step($"Screenshot taken: {fileName}",
-                () => { AllureApi.AddAttachment(name: fileName, content: File.ReadAllBytes(screenshotPath), type: "image/png"); });
+            // Avoid AltDriver.GetPNGScreenshot — known StackOverflow on the .NET driver in 2.3.x.
+            using var bmp = ScreenshotCapture.CaptureBitmap(quality: 100);
+            var pngBytes = ScreenshotCapture.EncodePng(bmp);
+            File.WriteAllBytes(screenshotPath, pngBytes);
+
+            AllureApi.Step($"Screenshot taken: {fileName}", () => AttachPng(fileName, pngBytes));
         }
         catch (Exception ex)
         {
             Log($"Failed to take screenshot: {ex.Message}");
         }
+    }
+
+    public static void AttachPng(string name, byte[] pngBytes)
+    {
+        AllureApi.AddAttachment(name: name, type: "image/png", content: pngBytes);
     }
 
     public static void AttachFileToAllure(string filePath, string customName = null)
