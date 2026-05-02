@@ -139,3 +139,32 @@ Use the project skills:
 - **`test-writer`** — for any new test class or test method.
 
 Both skills live at `../.claude/skills/` and codify the full conventions (region layout, naming, lifecycle, locator discovery via the `alttester-explorer` agent).
+
+## Visual Regression Testing
+
+Pixel-diff tests run against custom SDK7 scenes hosted out of [`scenes/`](scenes). The host server stays up across many test invocations; each fixture's scene gets hot-reloaded into it on demand.
+
+Two-command workflow:
+
+```bash
+metaforge explorer server start                                  # spawn the host (detaches)
+metaforge explorer test dev --filter "Category=Visual"           # build scenes, launch Explorer, run
+```
+
+Adding a new visual test:
+
+```bash
+cd scenes
+npm run new-scene -- my-feature             # scaffolds packages/my-feature + Tests/Tests/Visual/MyFeatureFixture.cs
+# edit packages/my-feature/src/index.ts to render what you want to snapshot
+# edit Tests/Tests/Visual/MyFeatureFixture.cs to add Frame.WaitForStable + Snapshot.AssertMatchesBaseline
+```
+
+Recording a baseline (manual; CI never auto-records):
+
+```bash
+metaforge explorer test dev --filter "Category=Visual&FullyQualifiedName~MyFeatureFixture" --record-baselines
+git add Tests/Baselines/MyFeatureFixture/
+```
+
+See [SNAPSHOTS.md](SNAPSHOTS.md) for the full reference: snapshot API, modes, tolerance tuning, Allure attachments, baseline storage, known caveats.

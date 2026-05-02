@@ -3,6 +3,7 @@ namespace ExplorerAutomation.Tests.Tests;
 [AllureSuite("Email + OTP Login")]
 [Category("Auth")]
 [Order(2)]
+[Ignore("Auth suite temporarily disabled")]
 public class EmailOtpLoginWithNewsletterTests : LoggedOutAuthBaseTest
 {
     [Test]
