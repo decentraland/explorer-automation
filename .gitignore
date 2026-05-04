@@ -29,6 +29,9 @@ tmp
 # Personal helper scripts (not part of the test suite — kept untracked)
 local-scripts/
 
+# Workspace dir used by the alttester-explorer agent for transient .png captures.
+screenshots/
+
 .claude/settings.local.json
 
 # Web (TypeScript / Playwright) stack
