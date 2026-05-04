@@ -20,6 +20,17 @@ export class AuthPage {
     await this.page.getByTestId('email-submit-button').click();
   }
 
+  /**
+   * Clicks the MetaMask wallet-connect button. The auth screen exposes
+   * `data-testid="metamask-button"` on a button whose label varies; matching
+   * via `*=` keeps the locator resilient to label changes.
+   */
+  async clickMetaMaskButton(): Promise<void> {
+    const btn = this.page.locator('[data-testid*="metamask-button"]');
+    await btn.waitFor({ state: 'visible', timeout: 30_000 });
+    await btn.click();
+  }
+
   async waitForOtpScreen(timeoutMs = 30_000): Promise<void> {
     await this.page.getByTestId('otp-input-0').waitFor({ state: 'visible', timeout: timeoutMs });
   }
