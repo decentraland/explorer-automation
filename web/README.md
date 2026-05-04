@@ -71,7 +71,7 @@ Only the recurrent-user OTP test consumes a Thirdweb code (~3/min limit per reci
 For OTP-flavored debugging or `playwright codegen` recording, [`scripts/watch-otp.mjs`](scripts/watch-otp.mjs) tails the inbox and prints new OTPs in real time so you don't have to context-switch to Gmail:
 
 ```bash
-ALIAS="decentralande2e+rec$(openssl rand -hex 3)@gmail.com"
+ALIAS="your-account+rec$(openssl rand -hex 3)@example.com"   # use the address from .env
 echo "use: $ALIAS"
 node scripts/watch-otp.mjs "$ALIAS"
 ```
