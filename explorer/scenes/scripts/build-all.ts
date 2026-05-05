@@ -21,18 +21,45 @@ function listScenes(): string[] {
     .filter((name) => statSync(join(PACKAGES, name)).isDirectory())
 }
 
-function run(cmd: string, args: string[], cwd: string): Promise<void> {
+function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    if (signal.aborted) {
+      reject(new Error(`${cmd} ${args.join(' ')} aborted before start`))
+      return
+    }
+    // detached: true puts the child in its own process group, so on abort we can
+    // SIGTERM the whole group (-pid) and take down npm + its descendants together.
+    // Without this, killing npm leaves orphan tsc/esbuild processes running.
+    const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     let buffer = ''
     child.stdout.on('data', (d) => (buffer += d))
     child.stderr.on('data', (d) => (buffer += d))
-    child.on('error', reject)
-    child.on('close', (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`${cmd} ${args.join(' ')} exited ${code}\n${buffer.slice(-2000)}`))
-    )
+
+    const onAbort = () => {
+      try {
+        process.kill(-child.pid!, 'SIGTERM')
+      } catch {
+        try { child.kill('SIGTERM') } catch { /* already gone */ }
+      }
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+
+    child.on('error', (err) => {
+      signal.removeEventListener('abort', onAbort)
+      reject(err)
+    })
+    child.on('close', (code, killSignal) => {
+      signal.removeEventListener('abort', onAbort)
+      if (signal.aborted) {
+        reject(new Error(`${cmd} ${args.join(' ')} aborted (signal=${killSignal ?? 'none'})`))
+        return
+      }
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`${cmd} ${args.join(' ')} exited ${code}\n${buffer.slice(-4000)}`))
+      }
+    })
   })
 }
 
@@ -44,31 +71,37 @@ if (scenes.length === 0) {
 
 process.stderr.write(`Building ${scenes.length} scenes (concurrency=${concurrency}, fail-fast=${failFast}).\n\n`)
 
-const results = (await runPool(
-  scenes.map((name) => ({
-    label: name,
-    fn: () => run('npm', ['run', 'build'], join(PACKAGES, name))
-  })),
-  {
-    concurrency,
-    failFast,
-    onStart: (label) => process.stderr.write(`  build ${label}…\n`),
-    onFinish: (r) => {
-      const tag = r.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'
-      process.stderr.write(`  ${tag} ${r.label}  (${r.ms}ms)\n`)
-      if (!r.ok && r.error) process.stderr.write(`    ${r.error.message.split('\n').slice(0, 1).join('\n')}\n`)
+let results: JobResult<void>[]
+try {
+  results = await runPool(
+    scenes.map((name) => ({
+      label: name,
+      fn: (signal: AbortSignal) => run('npm', ['run', 'build'], join(PACKAGES, name), signal)
+    })),
+    {
+      concurrency,
+      failFast,
+      onStart: (label) => process.stderr.write(`  build ${label}…\n`),
+      onFinish: (r) => {
+        const tag = r.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'
+        process.stderr.write(`  ${tag} ${r.label}  (${r.ms}ms)\n`)
+      }
     }
-  }
-).catch((err: Error) => {
-  process.stderr.write(`\n\x1b[31mBuild aborted: ${err.message}\x1b[0m\n`)
+  )
+} catch (err) {
+  // fail-fast threw. We still printed per-job ✓/✗ marks above; now dump the
+  // full error from the job that triggered the abort so the user can see
+  // why the build stopped.
+  const message = err instanceof Error ? err.message : String(err)
+  process.stderr.write(`\n\x1b[31mBuild aborted:\x1b[0m\n${message}\n`)
   process.exit(1)
-})) as JobResult<void>[]
+}
 
 const failed = results.filter((r) => !r.ok)
 process.stderr.write(`\nDone. ${results.length - failed.length} ok, ${failed.length} failed.\n`)
 if (failed.length > 0) {
   for (const f of failed) {
-    process.stderr.write(`\n--- ${f.label} ---\n${f.error?.message}\n`)
+    process.stderr.write(`\n--- ${f.label} ---\n${f.error?.message ?? '(no error)'}\n`)
   }
   process.exit(1)
 }

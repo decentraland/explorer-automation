@@ -30,18 +30,31 @@ npm run syncpack:fix
 
 ```
 scenes/
-├── package.json          # workspace root
+├── package.json
 ├── tsconfig.base.json
 ├── .syncpackrc.json
 ├── scripts/
-│   ├── pool.ts           # generic concurrency-limited runner with fail-fast
-│   ├── build-all.ts      # builds every scene via the pool
-│   └── new-scene.ts      # scaffolds a scene package + C# fixture
+│   ├── pool.ts
+│   ├── build-all.ts
+│   └── new-scene.ts
 ├── templates/
-│   └── scene/            # source-of-truth scene template
+│   └── scene/
 └── packages/
+    ├── _host/
     └── <scene-id>/
 ```
+
+### `scripts/`
+TypeScript helpers run via `tsx` from the npm scripts in `package.json`. `pool.ts` is a generic concurrency-limited runner with fail-fast semantics, used by `build-all.ts` to build every scene in parallel. `new-scene.ts` scaffolds a new scene package from `templates/scene/` and writes a matching C# fixture stub under `../Tests/Tests/Visual/`.
+
+### `templates/scene/`
+Source-of-truth template that `new-scene.ts` copies on each scaffold. Edits here propagate to every newly-created scene; existing scenes keep their forked copy and don't auto-update.
+
+### `packages/_host/`
+The "host" scene that the visual-host server actually serves. Its `bin/index.js` is overwritten on every fixture's `[OneTimeSetUp]` with the test scene's compiled bundle, triggering a hot reload. Its `scene.json` controls realm-wide config (skybox `fixedTime`, base parcel, spawn point) for ALL visual tests — change it here to affect every scene in one PR.
+
+### `packages/<scene-id>/`
+Each is a standalone SDK7 scene authored to exercise a specific rendering path. Build artifacts (`bin/`, `main.crdt`, `assets/` mirrored from test scenes) are gitignored. The matching C# fixture lives at `../Tests/Tests/Visual/<Pascal>Fixture.cs`.
 
 ## Conventions
 

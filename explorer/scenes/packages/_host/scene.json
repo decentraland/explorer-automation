@@ -14,7 +14,7 @@
     "base": "0,0"
   },
   "skyboxConfig": {
-    "fixedTime": 43200
+    "fixedTime": 32400
   },
   "spawnPoints": [
     {
