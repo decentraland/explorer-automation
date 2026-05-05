@@ -49,18 +49,16 @@ metaforge explorer test --filter "Category=Auth"
 
 ### InWorld suite only (no OTP, fast iteration)
 
-Uses a metaforge-managed test identity so the Explorer skips the login screen entirely. **Run [`../scripts/setup-test-identity.sh`](../scripts/setup-test-identity.sh) once first** — it creates a BIP39 wallet, registers the identity with the Decentraland auth API, and writes the auth token bridge so the launcher auto-logs in. The same identity is reused by the `@cross` Playwright tests in [`../web/`](../web).
+Uses a metaforge-managed test identity so the Explorer skips the login screen entirely. **Provision the identity once first** with `metaforge account create <name>` — it creates a BIP39 wallet, registers the identity with the Decentraland auth API, and writes the auth token bridge so the launcher auto-logs in. The same identity is reused by the `@cross` Playwright tests in [`../web/`](../web).
 
 ```bash
-# One-time (or whenever the token bridge is missing)
-scripts/setup-test-identity.sh
+# One-time
+metaforge account create dcl-e2e-inworld
 
 # Every run from then on
 metaforge explorer run -- --alttester              # NOTE: no --clear
 metaforge explorer test --filter "Category=InWorld"
 ```
-
-The script is idempotent: if the account already exists it just re-issues the token bridge.
 
 ### Targeted filters
 
