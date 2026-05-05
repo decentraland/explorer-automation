@@ -1,0 +1,14 @@
+{
+  "name": "@dcl-vrt/gltf",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual-regression scene: gltf",
+  "scripts": {
+    "build": "sdk-commands build --skip-install",
+    "start": "sdk-commands start"
+  },
+  "devDependencies": {
+    "@dcl/sdk": "latest",
+    "@dcl/js-runtime": "latest"
+  }
+}

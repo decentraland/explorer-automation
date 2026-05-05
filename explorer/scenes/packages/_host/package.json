@@ -4,11 +4,11 @@
   "private": true,
   "description": "Visual-regression host scene. Test scenes' compiled bundles are copied over this package's bin/ to drive hot-reload swaps.",
   "scripts": {
-    "build": "sdk-commands build",
+    "build": "sdk-commands build --skip-install",
     "start": "sdk-commands start"
   },
   "devDependencies": {
-    "@dcl/sdk": "*",
-    "@dcl/js-runtime": "7.22.5"
+    "@dcl/sdk": "https://sdk-team-cdn.decentraland.org/@dcl/js-sdk-toolchain/branch/fix/no-client/dcl-sdk-7.23.1-25383558577.commit-5a2d156.tgz",
+    "@dcl/js-runtime": "latest"
   }
 }

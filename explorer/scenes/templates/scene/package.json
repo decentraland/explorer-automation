@@ -4,10 +4,11 @@
   "private": true,
   "description": "Visual-regression scene: __SCENE_ID__",
   "scripts": {
-    "build": "sdk-commands build",
+    "build": "sdk-commands build --skip-install",
     "start": "sdk-commands start"
   },
   "devDependencies": {
-    "@dcl/sdk": "*"
+    "@dcl/sdk": "latest",
+    "@dcl/js-runtime": "latest"
   }
 }

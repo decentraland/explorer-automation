@@ -17,7 +17,7 @@ public static class Frame
     private const int CAPTURE_QUALITY = 100;
 
     public static void WaitForStable(
-        int samples = 4,
+        int samples = 8,
         int intervalMs = 200,
         int perChannelTolerance = 4,
         int maxWaitMs = 6000)
