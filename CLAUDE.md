@@ -12,13 +12,15 @@ This repo hosts **two independent test stacks** that share a single test identit
 ### Shared at the root
 
 - **`.env`** — IMAP credentials for OTP retrieval; loaded by both stacks. Template in `.env.example`.
-- **`scripts/setup-test-identity.sh`** — provisions the BIP39 wallet identity used by all in-world tests (both `@cross` Playwright tests and the C# `InWorld` category).
+- **`Makefile`** — repo-wide entry points (install, build, test wrappers). `make help` lists them.
 - **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`.
+
+To provision the BIP39 wallet identity used by all in-world tests, use `metaforge account create <name>` directly. See each stack's README for details.
 
 ## When to Read Which CLAUDE.md
 
 - Working on a `.cs` file, a Unity-side flow, or anything under `explorer/` → read [explorer/CLAUDE.md](explorer/CLAUDE.md).
 - Working on a `.ts`/`.spec.ts` file, a browser flow, or anything under `web/` → read [web/CLAUDE.md](web/CLAUDE.md).
-- Touching shared files (`.env`, `scripts/`, root `README.md`, this file) → no extra context needed beyond this file.
+- Touching shared files (`.env`, `Makefile`, root `README.md`, this file) → no extra context needed beyond this file.
 
 The two stacks integrate via the **`auth-token-bridge.txt`** file written by the dapp and consumed by the desktop client. The cross-platform Playwright tests verify the in-world handoff by shelling out to `dotnet test` against a fixture in `explorer/Tests/`.

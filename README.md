@@ -12,8 +12,9 @@ The two stacks are wired together through the `auth-token-bridge.txt` file: the 
 ## Shared at the root
 
 - **`.env`** — IMAP credentials for OTP retrieval, loaded by both stacks. Copy from [`.env.example`](.env.example) and fill in real values. **Never commit this file.**
-- **[`scripts/setup-test-identity.sh`](scripts/setup-test-identity.sh)** — provisions the BIP39 wallet identity used by all in-world tests (the `Category=InWorld` C# suite and the `@cross` Playwright suite). Idempotent.
 - **`.claude/`** — shared agents and skills.
+
+To provision the BIP39 wallet identity used by all in-world tests (the `Category=InWorld` C# suite and the `@cross` Playwright suite), use `metaforge account create <name>` directly — see each stack's README for details.
 
 ## Quick start
 
@@ -36,9 +37,9 @@ See each stack's README for the full prerequisite list, run modes, and troublesh
 
 ```
 explorer-automation/
-├── explorer/                       # C# / NUnit / AltTester (desktop client)
-├── web/                            # TS / Playwright (web dapp + cross handoff)
-├── scripts/setup-test-identity.sh  # shared identity provisioning
-├── .env.example                    # shared credential template
-└── .claude/                        # shared agents and skills
+├── explorer/         # C# / NUnit / AltTester (desktop client)
+├── web/              # TS / Playwright (web dapp + cross handoff)
+├── Makefile          # repo-wide entry points (run `make help`)
+├── .env.example      # shared credential template
+└── .claude/          # shared agents and skills
 ```

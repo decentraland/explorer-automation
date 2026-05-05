@@ -22,7 +22,7 @@ For `@cross` tests you additionally need:
 - [AltTester Desktop](https://alttester.com/alttester/) running and licensed
 - The .NET 10 SDK (the spec shells out to `dotnet test` for the in-world check)
 - [MetaForge CLI](https://github.com/decentraland/metaforge) on `PATH`
-- A test identity provisioned: `../scripts/setup-test-identity.sh`
+- A test identity provisioned via `metaforge account create <name>`
 
 ## Install
 
