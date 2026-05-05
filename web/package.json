@@ -8,6 +8,8 @@
     "test": "playwright test --grep @web",
     "test:headed": "playwright test --grep @web --headed",
     "test:ui": "playwright test --ui",
+    "test:webgpu": "playwright test --project webgpu",
+    "test:all": "playwright test",
     "typecheck": "tsc --noEmit",
     "report": "playwright show-report"
   },

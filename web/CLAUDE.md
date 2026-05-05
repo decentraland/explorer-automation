@@ -6,8 +6,9 @@ Guidance for Claude Code working in the **TypeScript / Playwright** stack under 
 
 This stack covers two test classes:
 
-- **`@web` tests** — pure browser flows against `https://decentraland.org`, `/auth`, `/auth/quick-setup`. Covers new-user signup (web3-mocked, three variants), recurrent-user login (both web3 and OTP), and the launcher download CTA. No desktop client involvement.
+- **`@web` tests** — pure browser flows against `https://decentraland.org`, `/auth`, `/auth/quick-setup`, `/auth/requests/<id>`, and the dapp sub-routes (`/marketplace`, `/builder`, `/account`). Covers new-user signup (web3-mocked + OTP), recurrent login (both methods), avatar customization, cross-route session, the RequestPage signature broker (`dcl_personal_sign` + `eth_sendTransaction`), method switching, and launcher download. No desktop client involvement.
 - **`@cross` tests** — end-to-end web → desktop. Web login, click "Jump Into Decentraland", wait for `auth-token-bridge.txt`, launch the instrumented Explorer, verify it reaches in-world via the C# fixture in `../explorer/Tests/`. Currently `test.describe.skip`.
+- **`@webgpu` tests** — Unity-rendered avatar editor at `/avatar-setup`. Run via `npm run test:webgpu` in a dedicated Playwright project with WebGPU/Vulkan/SwiftShader Chrome flags and a fixed 1200×997 viewport. Excluded from `npm test` because they're slow and need GPU emulation set up. Driven by relative-coordinate clicks on the WearablePreview iframe; coordinates are calibrated for that exact viewport.
 
 ## Layout
 
@@ -19,7 +20,9 @@ web/
 ├── helpers/
 │   ├── env.ts             # loads ../.env, requireEnv()/optionalEnv()
 │   ├── otp-mailbox.ts     # IMAP poller — mirrors explorer/Tests/Common/OtpMailbox.cs
-│   ├── wallet.ts          # setupMockedWallet — mocked window.ethereum + viem signing
+│   ├── wallet.ts          # setupMockedWallet + applyPersonalSignOverride + rebindWalletMock + mockNoProfileOnCatalysts
+│   ├── auth-server.ts     # auth-api client (createRequest + pollOutcome) for RequestPage
+│   ├── identity.ts        # ephemeral message + auth chain for RequestPage
 │   ├── token-bridge.ts    # auth-token-bridge.txt path, wait/read/remove
 │   └── explorer-runner.ts # spawn metaforge + verifyExplorerInWorld via dotnet test
 ├── fixtures/
@@ -28,11 +31,18 @@ web/
 │   ├── LandingPage.ts
 │   ├── AuthPage.ts
 │   ├── QuickSetupPage.ts
+│   ├── AvatarSetupPage.ts
 │   └── HomePage.ts
 └── tests/
-    ├── auth-new-user.spec.ts           # @web — 3 web3 tests
-    ├── auth-recurrent-user.spec.ts     # @web — web3 + OTP
-    ├── download.spec.ts                # @web
+    ├── auth-new-user.spec.ts           # @web — 3 web3 tests (no newsletter / newsletter / avatar)
+    ├── auth-otp-new-user.spec.ts       # @web — OTP new-user signup
+    ├── auth-recurrent-user.spec.ts     # @web — recurrent web3 + recurrent OTP
+    ├── auth-cross-sites.spec.ts        # @web — session across marketplace/builder/account
+    ├── auth-web3-redirect.spec.ts      # @web — redirectTo=/marketplace lands on /marketplace
+    ├── auth-request-page.spec.ts       # @web — RequestPage dcl_personal_sign + eth_sendTransaction
+    ├── auth-switch-method.spec.ts      # @web — OTP signup, then web3 signup in same context
+    ├── auth-web3-avatar-setup.spec.ts  # @webgpu — Unity 3D avatar editor (full / skip)
+    ├── download.spec.ts                # @web — launcher download
     └── web-to-inworld-handoff.spec.ts  # @cross (skipped)
 ```
 
@@ -56,6 +66,13 @@ Wallet specs import `walletTest` from `fixtures/wallet-fixture.js`; OTP / non-wa
 The mock is set up via `setupMockedWallet(page, ethereumWalletMock, { privateKey, redirectTo })` in `helpers/wallet.ts`. It must be called BEFORE clicking the MetaMask button. The helper is idempotent on the same page — calling twice (e.g. register-then-recurrent flow) re-navigates and re-binds the mock state, but only installs the one-time plumbing once.
 
 For new-user tests pair `setupMockedWallet` with `mockNoProfileOnCatalysts(page)` and an explicit `redirectTo` — both are required to defeat the dapp's `useEnsureProfile` (catalyst-based existence check) and `useSkipSetup` (feature-flag-based shortcut) so the user actually reaches `/auth/quick-setup`. The recurrent web3 test self-bootstraps: registers a fresh wallet via the new-user flow, drops the catalyst mock, re-logs in with the same key.
+
+### Re-binding the mock after navigation
+
+`page.goto` wipes JS state, so any test that navigates after sign-in must re-establish the wallet mock on the new page. Two options:
+
+- **`rebindWalletMock(page, mock, privateKey)`** — heavier: re-runs synpress' `connectToDapp` + `importWalletFromPrivateKey` on the current page, then reapplies the personal_sign override. Use for cross-route nav (`/marketplace`, `/builder`, `/account`).
+- **`installAutoWalletMockInitScript(page, address)` + `applyPersonalSignOverride(page)`** — lighter: an init script auto-mocks Web3Mock with the right address as soon as it appears on the new page; `applyPersonalSignOverride` patches `personal_sign` post-load. Use for routes that probe wallet state mid-load (e.g. `/auth/requests/<id>`) — the heavier rebind re-introduces the mock's default address mid-handshake there and crashes signing flows.
 
 ## Cross-platform handoff contract
 
