@@ -7,12 +7,29 @@ For the web/dapp test stack see [../web/README.md](../web/README.md). For repo-w
 ## Prerequisites
 
 - [.NET 10.0 SDK](https://dotnet.microsoft.com/download)
-- [AltTester Desktop](https://alttester.com/alttester/) (Pro license required)
+- [AltTester Desktop](https://alttester.com/alttester/) — get a free trial license at https://alttester.com/tools
 - An instrumented Explorer build or the Unity Editor
-- [MetaForge CLI](https://github.com/decentraland/metaforge) on your PATH
-- A `.env` at the **repo root** populated from [../.env.example](../.env.example) — required only for the **Auth** suite (IMAP credentials to fetch OTP codes); the **InWorld** suite does not read it.
+- [MetaForge CLI](https://github.com/decentraland/metaforge) on your PATH (visual mode requires **v2.1.2+**)
+- A `.env` at the **repo root** populated from [../.env.example](../.env.example) — required only for the **Auth** suite (IMAP credentials to fetch OTP codes); the **InWorld** and **Visual** suites do not read it.
 
 All commands below assume you run them from the repo root.
+
+## First-time setup
+
+```bash
+# Install metaforge (or update an existing install with `mf update`)
+# macOS
+/bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
+# Windows (PowerShell)
+iex (irm https://explorer-artifacts.decentraland.zone/tools/install.ps1)
+
+# Store your AltTester Desktop license key (one-time)
+mf explorer test --set-license YOUR_KEY
+
+# Create + log in with a test wallet (one-time; reused by InWorld + Visual suites)
+mf account create dev
+mf account login dev
+```
 
 ## Test categories
 
@@ -22,6 +39,7 @@ Fixtures are tagged with NUnit `[Category]` so you can run them in isolation:
 |---|---|---|---|
 | `Auth` | `EmailOtpLoginTests`, `EmailOtpLoginWithNewsletterTests`, `EmailOtpRecurrentLoginTests` | logged-out (cache cleared) | yes — IMAP fetches the code |
 | `InWorld` | `BackpackEmotesTests`, `ExplorePanelTests`, `ShortcutsTests` | in-world via a pre-cached identity | no |
+| `Visual` | per-scene fixtures under `Tests/Tests/Visual/` (`CoreFixture`, `MaterialsFixture`, `GltfFixture`, `UiFixture`, …) | host server + hot-reloaded test scenes | no |
 
 Within each category, fixtures execute in their declared `[Order]`.
 
@@ -149,12 +167,11 @@ metaforge explorer server start                                  # spawn the hos
 metaforge explorer test dev --filter "Category=Visual"           # build scenes, launch Explorer, run
 ```
 
-Adding a new visual test:
+Adding a new visual test (run from the repo root):
 
 ```bash
-cd scenes
-npm run new-scene -- my-feature             # scaffolds packages/my-feature + Tests/Tests/Visual/MyFeatureFixture.cs
-# edit packages/my-feature/src/index.ts to render what you want to snapshot
+make scenes-new-scene NAME=my-feature        # scaffolds scenes/packages/my-feature + Tests/Tests/Visual/MyFeatureFixture.cs
+# edit scenes/packages/my-feature/src/index.ts to render what you want to snapshot
 # edit Tests/Tests/Visual/MyFeatureFixture.cs to add Frame.WaitForStable + Snapshot.AssertMatchesBaseline
 ```
 
