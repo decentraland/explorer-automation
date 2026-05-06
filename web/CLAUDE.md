@@ -39,7 +39,7 @@ web/
 ## Conventions
 
 - **POM only** — tests must not contain raw selectors. New UI surface needs a page object first.
-- **`@web` vs `@cross`** — every `test.describe` (or top-level test name) carries the appropriate tag. Playwright's `projects` config uses `grep` to route tests; mistagging means the test won't run.
+- **`@web` vs `@cross`** — every `test.describe` (or top-level test name) carries the appropriate tag. Playwright's `projects` config uses `grep` to route tests; mistagging means the test won't run. Auth specs additionally carry `@auth` and the download spec carries `@download`; these finer-grained tags drive the suite selector in `.github/workflows/web-e2e.yml`.
 - **Strict TS** — `tsconfig.json` has `strict`, `noImplicitAny`, `noUncheckedIndexedAccess`. Don't use `any`. Don't suppress with `// @ts-ignore`. Module augmentations live in `types/` (e.g. `ethereum-wallet-mock.d.ts` re-exports the synpress fixtures' types because the package's own barrel re-exports break under NodeNext resolution).
 - **`await` everything** — every Playwright API and helper returns a Promise. Unawaited Promises silently corrupt test ordering.
 - **No new helpers outside `helpers/`** — cross-cutting utilities live there. Tests only import from `helpers/`, `pages/`, `fixtures/`, and `@playwright/test`.

@@ -25,7 +25,7 @@ const { expect } = test;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 const REDIRECT_TO = 'https://decentraland.org/';
 
-test.describe('@web new user signup (web3)', () => {
+test.describe('@web @auth new user signup (web3)', () => {
   test('new user can sign up without subscribing to newsletter', async ({ page, ethereumWalletMock }) => {
     await mockNoProfileOnCatalysts(page);
     await setupMockedWallet(page, ethereumWalletMock, {

@@ -32,6 +32,21 @@ npm test
 
 See each stack's README for the full prerequisite list, run modes, and troubleshooting.
 
+## Continuous integration
+
+The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (manual) → Run workflow**. The `suite` input picks which bucket to run:
+
+| Suite | Runs | Notes |
+|---|---|---|
+| `all` | every `@web` test | default |
+| `auth` | new-user signup + recurrent-user login (web3 + OTP) | OTP test requires IMAP secrets |
+| `download` | launcher download CTA | no secrets needed |
+| `cross` | web → desktop handoff | currently `.skip`'d |
+
+**Required GitHub Action secrets** (one-time, in repo Settings → Secrets and variables → Actions): `EXPLORER_IMAP_HOST`, `EXPLORER_IMAP_PORT`, `EXPLORER_IMAP_USER`, `EXPLORER_IMAP_PASSWORD`, `EXPLORER_IMAP_FROM_USER`, and optionally `EXPLORER_ALTERNATE_EMAILS`. Without these only `download` and the wallet-mocked auth tests will pass.
+
+The desktop (C#) suite is not yet wired into CI — it needs a self-hosted Windows GPU runner with the instrumented Explorer client + AltTester Desktop on port 13000.
+
 ## Layout
 
 ```

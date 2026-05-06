@@ -7,7 +7,7 @@ import { HomePage } from '../pages/HomePage.js';
  * no authentication required. Success = the browser fires a `download` event
  * with a non-empty filename, which means the launcher .dmg started downloading.
  */
-test.describe('@web launcher download', () => {
+test.describe('@web @download launcher download', () => {
   test('clicking "DOWNLOAD FOR macOS" starts a download', async ({ page }) => {
     const landing = new LandingPage(page);
     const home = new HomePage(page);

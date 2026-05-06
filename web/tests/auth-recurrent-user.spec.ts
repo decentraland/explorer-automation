@@ -25,7 +25,7 @@ import { getBaseEmail, waitForOtp } from '../helpers/otp-mailbox.js';
 const REDIRECT_TO = 'https://decentraland.org/';
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
-walletTest('@web recurrent user can log in with web3 wallet', async ({ page, ethereumWalletMock }) => {
+walletTest('@web @auth recurrent user can log in with web3 wallet', async ({ page, ethereumWalletMock }) => {
   const privateKey = generatePrivateKey();
 
   // Phase 1 — register the wallet via the new-user flow. Forces 404 on the
@@ -56,7 +56,7 @@ walletTest('@web recurrent user can log in with web3 wallet', async ({ page, eth
   walletTest.expect(page.url()).not.toMatch(/\/auth\/login/);
 });
 
-test('@web recurrent user can log in with email + OTP', async ({ page }) => {
+test('@web @auth recurrent user can log in with email + OTP', async ({ page }) => {
   const email = getBaseEmail();
   const landing = new LandingPage(page);
   const auth = new AuthPage(page);
