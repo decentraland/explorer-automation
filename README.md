@@ -46,7 +46,7 @@ The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (ma
 | `download` | launcher download CTA | no secrets needed |
 | `cross` | web → desktop handoff | currently `.skip`'d |
 
-**Required GitHub Action secrets** (one-time, in repo Settings → Secrets and variables → Actions): `EXPLORER_IMAP_HOST`, `EXPLORER_IMAP_PORT`, `EXPLORER_IMAP_USER`, `EXPLORER_IMAP_PASSWORD`, `EXPLORER_IMAP_FROM_USER`, and optionally `EXPLORER_ALTERNATE_EMAILS`. Without these only `download` and the wallet-mocked auth tests will pass.
+**Required GitHub Action secrets** (one-time, in repo Settings → Secrets and variables → Actions): `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER`, and optionally `ALTERNATE_EMAILS`. Without these only `download` and the wallet-mocked auth tests will pass.
 
 The desktop (C#) suite is not yet wired into CI — it needs a self-hosted Windows GPU runner with the instrumented Explorer client + AltTester Desktop on port 13000.
 

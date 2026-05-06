@@ -7,11 +7,11 @@ const SIX_DIGIT_CODE = /\d{6}/;
 
 /**
  * Generate a fresh plus-alias email of the form `local+hash@domain`.
- * `baseAddress` defaults to `EXPLORER_IMAP_USER`. The address must NOT already
+ * `baseAddress` defaults to `IMAP_USER`. The address must NOT already
  * contain a '+' alias — the hash is inserted before the '@'.
  */
 export function generatePlusAliasEmail(baseAddress?: string): string {
-  const base = baseAddress && baseAddress.length > 0 ? baseAddress : requireEnv('EXPLORER_IMAP_USER');
+  const base = baseAddress && baseAddress.length > 0 ? baseAddress : requireEnv('IMAP_USER');
   const atIdx = base.indexOf('@');
   if (atIdx <= 0) {
     throw new Error(`'${base}' is not a valid email address`);
@@ -21,17 +21,17 @@ export function generatePlusAliasEmail(baseAddress?: string): string {
 }
 
 export function getBaseEmail(): string {
-  return requireEnv('EXPLORER_IMAP_USER');
+  return requireEnv('IMAP_USER');
 }
 
 /**
  * Alternate signup base addresses for fallback when the primary hits Thirdweb's
  * per-address rate limit. All listed addresses MUST route to the inbox at
- * EXPLORER_IMAP_USER (Gmail plus-aliases or domain aliases that forward to it),
+ * IMAP_USER (Gmail plus-aliases or domain aliases that forward to it),
  * since the OTP is read back via a single IMAP connection.
  */
 export function getAlternateEmails(): string[] {
-  const raw = optionalEnv('EXPLORER_ALTERNATE_EMAILS');
+  const raw = optionalEnv('ALTERNATE_EMAILS');
   if (!raw) return [];
   return raw
     .split(',')
@@ -59,11 +59,11 @@ export async function waitForOtp(
   const timeoutMs = options.timeoutMs ?? 90_000;
   const pollIntervalMs = options.pollIntervalMs ?? 3_000;
 
-  const host = requireEnv('EXPLORER_IMAP_HOST');
-  const port = Number.parseInt(requireEnv('EXPLORER_IMAP_PORT'), 10);
-  const user = requireEnv('EXPLORER_IMAP_USER');
-  const password = requireEnv('EXPLORER_IMAP_PASSWORD');
-  const fromAddress = requireEnv('EXPLORER_IMAP_FROM_USER');
+  const host = requireEnv('IMAP_HOST');
+  const port = Number.parseInt(requireEnv('IMAP_PORT'), 10);
+  const user = requireEnv('IMAP_USER');
+  const password = requireEnv('IMAP_PASSWORD');
+  const fromAddress = requireEnv('IMAP_FROM_USER');
 
   // eslint-disable-next-line no-console
   console.log(

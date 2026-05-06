@@ -81,7 +81,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
 
     /// <summary>
     /// Submits an email and waits for the OTP screen. Builds a pool with the primary plus
-    /// the addresses configured in <c>EXPLORER_ALTERNATE_EMAILS</c> (each freshened with a
+    /// the addresses configured in <c>ALTERNATE_EMAILS</c> (each freshened with a
     /// new <c>+hash</c>). When <paramref name="shufflePool"/> is true the pool is randomized
     /// to spread load across Thirdweb's per-address rate-limit buckets — recommended for
     /// new-user signup tests. Recurrent tests should pass <c>false</c> (and a primary that
@@ -141,7 +141,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
 
         throw new AssertionException(
             $"All {candidates.Count} email candidates failed to bring up the OTP screen. " +
-            "Set EXPLORER_ALTERNATE_EMAILS to a comma-separated list of fallback addresses, " +
+            "Set ALTERNATE_EMAILS to a comma-separated list of fallback addresses, " +
             "or wait for the Thirdweb rate-limit window to clear.");
     }
 }

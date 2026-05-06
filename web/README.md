@@ -29,8 +29,8 @@ For new-user tests the helper is paired with `mockNoProfileOnCatalysts(page)` an
 
 - **Node.js 20+**
 - **Chromium** for Playwright: `npx playwright install chromium`
-- A `.env` at the **repo root** populated from [../.env.example](../.env.example) — IMAP credentials for the OTP recurrent test (`EXPLORER_IMAP_*`). Web3 tests need no extra env vars; the recurrent web3 test self-bootstraps a fresh wallet.
-- For the OTP recurrent test, `EXPLORER_IMAP_USER` (no `+alias`) must already be a registered Decentraland account.
+- A `.env` at the **repo root** populated from [../.env.example](../.env.example) — IMAP credentials for the OTP recurrent test (`IMAP_*`). Web3 tests need no extra env vars; the recurrent web3 test self-bootstraps a fresh wallet.
+- For the OTP recurrent test, `IMAP_USER` (no `+alias`) must already be a registered Decentraland account.
 
 For `@cross` tests you additionally need:
 
@@ -72,7 +72,7 @@ npx playwright test tests/download.spec.ts
 
 ### OTP rate limits
 
-Only the recurrent-user OTP test consumes a Thirdweb code (~3/min limit per recipient). All new-user variants are web3-mocked and have no rate limit. For CI / heavy loops, populate `EXPLORER_ALTERNATE_EMAILS` in `.env` with addresses that route to the same inbox if you need a fallback for the OTP test.
+Only the recurrent-user OTP test consumes a Thirdweb code (~3/min limit per recipient). All new-user variants are web3-mocked and have no rate limit. For CI / heavy loops, populate `ALTERNATE_EMAILS` in `.env` with addresses that route to the same inbox if you need a fallback for the OTP test.
 
 ### Watching OTPs during local debugging
 

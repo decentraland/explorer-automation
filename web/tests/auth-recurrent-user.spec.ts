@@ -19,7 +19,7 @@ import { getBaseEmail, waitForOtp } from '../helpers/otp-mailbox.js';
  *     new-user flow once (which registers the wallet on prod's catalyst),
  *     then re-logs in with the same key and asserts no quick-setup. No env
  *     var needed.
- *   - email + OTP — uses `EXPLORER_IMAP_USER` (must already be a registered
+ *   - email + OTP — uses `IMAP_USER` (must already be a registered
  *     Decentraland account). Only test in the suite that consumes a code.
  */
 

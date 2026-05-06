@@ -14,13 +14,13 @@ public static class OtpMailbox
     /// Generates a fresh plus-alias email of the form <c>local+hash@domain</c>.
     /// </summary>
     /// <param name="baseAddress">
-    /// Optional base address. Defaults to <c>EXPLORER_IMAP_USER</c>. The address must NOT
+    /// Optional base address. Defaults to <c>IMAP_USER</c>. The address must NOT
     /// already contain a '+' alias (the hash is inserted before the '@').
     /// </param>
     public static string GeneratePlusAliasEmail(string baseAddress = "")
     {
         if (string.IsNullOrEmpty(baseAddress))
-            baseAddress = RequireEnv("EXPLORER_IMAP_USER");
+            baseAddress = RequireEnv("IMAP_USER");
         var atIdx = baseAddress.IndexOf('@');
         if (atIdx <= 0)
             throw new InvalidOperationException($"'{baseAddress}' is not a valid email address");
@@ -29,18 +29,18 @@ public static class OtpMailbox
         return baseAddress.Insert(atIdx, "+" + suffix);
     }
 
-    public static string GetBaseEmail() => RequireEnv("EXPLORER_IMAP_USER");
+    public static string GetBaseEmail() => RequireEnv("IMAP_USER");
 
     /// <summary>
-    /// Returns alternate signup addresses configured via the EXPLORER_ALTERNATE_EMAILS env var
-    /// (comma-separated). These must all route to the inbox at EXPLORER_IMAP_USER (e.g.
+    /// Returns alternate signup addresses configured via the ALTERNATE_EMAILS env var
+    /// (comma-separated). These must all route to the inbox at IMAP_USER (e.g.
     /// Gmail plus-aliases or domain aliases that forward to the same mailbox), since the OTP
     /// is read back via a single IMAP connection. Used as a fallback when the primary email
     /// hits Thirdweb's per-address rate limit (429).
     /// </summary>
     public static List<string> GetAlternateEmails()
     {
-        var raw = Environment.GetEnvironmentVariable("EXPLORER_ALTERNATE_EMAILS");
+        var raw = Environment.GetEnvironmentVariable("ALTERNATE_EMAILS");
         if (string.IsNullOrWhiteSpace(raw))
             return [];
         return raw.Split(',')
@@ -54,11 +54,11 @@ public static class OtpMailbox
         var actualTimeout = timeout ?? TimeSpan.FromSeconds(90);
         var actualInterval = pollInterval ?? TimeSpan.FromSeconds(3);
 
-        var host = RequireEnv("EXPLORER_IMAP_HOST");
-        var port = int.Parse(RequireEnv("EXPLORER_IMAP_PORT"));
-        var user = RequireEnv("EXPLORER_IMAP_USER");
-        var password = RequireEnv("EXPLORER_IMAP_PASSWORD");
-        var fromAddress = RequireEnv("EXPLORER_IMAP_FROM_USER");
+        var host = RequireEnv("IMAP_HOST");
+        var port = int.Parse(RequireEnv("IMAP_PORT"));
+        var user = RequireEnv("IMAP_USER");
+        var password = RequireEnv("IMAP_PASSWORD");
+        var fromAddress = RequireEnv("IMAP_FROM_USER");
 
         Reporter.Log($"Waiting for OTP email to {toAddress} from {fromAddress} (timeout {actualTimeout.TotalSeconds}s)");
 

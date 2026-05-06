@@ -5,7 +5,7 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(3)]
 public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
 {
-    // Precondition: the account at EXPLORER_IMAP_USER (no plus-alias) must already exist —
+    // Precondition: the account at IMAP_USER (no plus-alias) must already exist —
     // i.e. it has previously completed the new-user setup screen at least once. If the
     // account is fresh, this test will fail because the WelcomeNewAccountScreen will appear
     // instead of going straight in-world.
