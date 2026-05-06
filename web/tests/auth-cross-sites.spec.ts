@@ -6,6 +6,7 @@ import {
   rebindWalletMock,
   mockNoProfileOnCatalysts,
 } from '../helpers/wallet.js';
+import { getBaseUrl } from '../helpers/env.js';
 import { AuthPage } from '../pages/AuthPage.js';
 import { QuickSetupPage } from '../pages/QuickSetupPage.js';
 import { HomePage } from '../pages/HomePage.js';
@@ -22,12 +23,12 @@ import { HomePage } from '../pages/HomePage.js';
  * indicator is exposed via stable selectors yet).
  */
 
-const REDIRECT_TO = 'https://decentraland.org/';
+const REDIRECT_TO = `${getBaseUrl()}/`;
 const SITES = ['marketplace', 'builder', 'account'] as const;
 
 const { expect } = test;
 
-test('@web web3 session persists across marketplace, builder, and account', async ({
+test('@web @auth web3 session persists across marketplace, builder, and account', async ({
   page,
   ethereumWalletMock,
 }) => {
@@ -52,7 +53,7 @@ test('@web web3 session persists across marketplace, builder, and account', asyn
   await unmockProfile();
 
   for (const site of SITES) {
-    await page.goto(`https://decentraland.org/${site}`, { waitUntil: 'load' });
+    await page.goto(`/${site}`, { waitUntil: 'load' });
     // Re-bind Web3Mock on the new page state so any wallet-touching code on
     // the subdomain gets our address back, not the mock's default.
     await rebindWalletMock(page, ethereumWalletMock, privateKey);

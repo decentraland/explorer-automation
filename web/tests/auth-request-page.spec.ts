@@ -12,6 +12,7 @@ import { QuickSetupPage } from '../pages/QuickSetupPage.js';
 import { HomePage } from '../pages/HomePage.js';
 import { createAuthRequest, pollAuthOutcome } from '../helpers/auth-server.js';
 import { buildAuthChain, getEphemeralMessage } from '../helpers/identity.js';
+import { getBaseUrl } from '../helpers/env.js';
 
 /**
  * The "RequestPage" flow — Decentraland's mechanism for letting a desktop
@@ -32,12 +33,12 @@ import { buildAuthChain, getEphemeralMessage } from '../helpers/identity.js';
  * signup) before driving the RequestPage.
  */
 
-const REDIRECT_TO = 'https://decentraland.org/';
+const REDIRECT_TO = `${getBaseUrl()}/`;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
 const { expect } = test;
 
-test('@web RequestPage login (dcl_personal_sign)', async ({ page, ethereumWalletMock }) => {
+test('@web @auth RequestPage login (dcl_personal_sign)', async ({ page, ethereumWalletMock }) => {
   const privateKey = generatePrivateKey();
   const account = privateKeyToAccount(privateKey);
 
@@ -75,7 +76,7 @@ test('@web RequestPage login (dcl_personal_sign)', async ({ page, ethereumWallet
   // prod's RequestPage, which crashes the signing flow with an "unknown RPC
   // error". A simple personal_sign re-override is enough.
   await installAutoWalletMockInitScript(page, account.address);
-  await page.goto(`https://decentraland.org/auth/requests/${requestId}`, { waitUntil: 'load' });
+  await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' });
   await applyPersonalSignOverride(page);
   const approveBtn = page.locator('[data-testid="verify-sign-in-approve-button"]');
   await approveBtn.waitFor({ state: 'visible', timeout: 30_000 });
@@ -88,7 +89,7 @@ test('@web RequestPage login (dcl_personal_sign)', async ({ page, ethereumWallet
   expect(outcome.result).toMatch(/^0x[0-9a-f]{130}$/i);
 });
 
-test('@web RequestPage wallet interaction (eth_sendTransaction)', async ({
+test('@web @auth RequestPage wallet interaction (eth_sendTransaction)', async ({
   page,
   ethereumWalletMock,
 }) => {
@@ -133,7 +134,7 @@ test('@web RequestPage wallet interaction (eth_sendTransaction)', async ({
   // prod's RequestPage, which crashes the signing flow with an "unknown RPC
   // error". A simple personal_sign re-override is enough.
   await installAutoWalletMockInitScript(page, account.address);
-  await page.goto(`https://decentraland.org/auth/requests/${requestId}`, { waitUntil: 'load' });
+  await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' });
   await applyPersonalSignOverride(page);
   await page.evaluate((mockTxHash) => {
     type Eth = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };

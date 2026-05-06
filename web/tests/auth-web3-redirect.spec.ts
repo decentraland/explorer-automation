@@ -2,6 +2,7 @@ import { generatePrivateKey } from 'viem/accounts';
 import { randomBytes } from 'node:crypto';
 import { walletTest as test } from '../fixtures/wallet-fixture.js';
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js';
+import { getBaseUrl } from '../helpers/env.js';
 import { AuthPage } from '../pages/AuthPage.js';
 import { QuickSetupPage } from '../pages/QuickSetupPage.js';
 import { HomePage } from '../pages/HomePage.js';
@@ -20,12 +21,12 @@ import { HomePage } from '../pages/HomePage.js';
  * for a pretty narrow assertion (URL routing of an existing account).
  */
 
-const REDIRECT_TARGET = 'https://decentraland.org/marketplace';
+const REDIRECT_TARGET = `${getBaseUrl()}/marketplace`;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
 const { expect } = test;
 
-test('@web web3 login respects redirectTo (lands on /marketplace)', async ({
+test('@web @auth web3 login respects redirectTo (lands on /marketplace)', async ({
   page,
   ethereumWalletMock,
 }) => {
@@ -35,7 +36,7 @@ test('@web web3 login respects redirectTo (lands on /marketplace)', async ({
   const unmockProfile = await mockNoProfileOnCatalysts(page);
   await setupMockedWallet(page, ethereumWalletMock, {
     privateKey,
-    redirectTo: 'https://decentraland.org/',
+    redirectTo: `${getBaseUrl()}/`,
   });
   await new AuthPage(page).clickMetaMaskButton();
 

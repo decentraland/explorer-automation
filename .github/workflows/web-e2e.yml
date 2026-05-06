@@ -3,6 +3,14 @@ name: Web E2E (manual)
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Target Decentraland environment"
+        required: true
+        type: choice
+        default: org
+        options:
+          - org
+          - zone
       suite:
         description: "Which web suite to run"
         required: true
@@ -67,13 +75,17 @@ jobs:
           esac >> "$GITHUB_OUTPUT"
 
       - name: Run Playwright
-        run: npx playwright test ${{ steps.args.outputs.pw }}
+        env:
+          WEB_BASE_URL: https://decentraland.${{ inputs.environment }}
+        run: |
+          echo "Running suite=${{ inputs.suite }} against $WEB_BASE_URL"
+          npx playwright test ${{ steps.args.outputs.pw }}
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ inputs.suite }}
+          name: playwright-report-${{ inputs.suite }}-${{ inputs.environment }}
           path: |
             web/playwright-report/**
             web/test-results/**

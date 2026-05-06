@@ -19,7 +19,7 @@ import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js';
 
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
-test('@web new user can sign up via email + OTP', async ({ page }) => {
+test('@web @auth new user can sign up via email + OTP', async ({ page }) => {
   const email = generatePlusAliasEmail();
   const landing = new LandingPage(page);
   const auth = new AuthPage(page);

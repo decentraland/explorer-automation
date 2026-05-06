@@ -2,6 +2,7 @@ import { generatePrivateKey } from 'viem/accounts';
 import { randomBytes } from 'node:crypto';
 import { walletTest as test } from '../fixtures/wallet-fixture.js';
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js';
+import { getBaseUrl } from '../helpers/env.js';
 import { AuthPage } from '../pages/AuthPage.js';
 import { QuickSetupPage } from '../pages/QuickSetupPage.js';
 import { HomePage } from '../pages/HomePage.js';
@@ -23,7 +24,7 @@ import { HomePage } from '../pages/HomePage.js';
 
 const { expect } = test;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
-const REDIRECT_TO = 'https://decentraland.org/';
+const REDIRECT_TO = `${getBaseUrl()}/`;
 
 test.describe('@web @auth new user signup (web3)', () => {
   test('new user can sign up without subscribing to newsletter', async ({ page, ethereumWalletMock }) => {

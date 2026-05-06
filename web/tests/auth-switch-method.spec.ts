@@ -2,6 +2,7 @@ import { generatePrivateKey } from 'viem/accounts';
 import { randomBytes } from 'node:crypto';
 import { walletTest as test } from '../fixtures/wallet-fixture.js';
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js';
+import { getBaseUrl } from '../helpers/env.js';
 import { LandingPage } from '../pages/LandingPage.js';
 import { AuthPage } from '../pages/AuthPage.js';
 import { QuickSetupPage } from '../pages/QuickSetupPage.js';
@@ -18,12 +19,12 @@ import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js';
  * non-WebGL variant). Consumes one OTP per run.
  */
 
-const REDIRECT_TO = 'https://decentraland.org/';
+const REDIRECT_TO = `${getBaseUrl()}/`;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
 const { expect } = test;
 
-test('@web user can switch from OTP to web3 wallet sign-up', async ({
+test('@web @auth user can switch from OTP to web3 wallet sign-up', async ({
   page,
   context,
   ethereumWalletMock,

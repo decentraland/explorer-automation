@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { getBaseUrl } from './helpers/env.js';
 
 /**
  * Chrome launch args that enable WebGPU on the host's real GPU. Used by the
@@ -41,7 +42,7 @@ export default defineConfig({
     ['allure-playwright', { outputFolder: 'allure-results' }],
   ],
   use: {
-    baseURL: 'https://decentraland.org',
+    baseURL: getBaseUrl(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',

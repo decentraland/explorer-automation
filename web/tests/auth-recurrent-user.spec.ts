@@ -3,6 +3,7 @@ import { generatePrivateKey } from 'viem/accounts';
 import { randomBytes } from 'node:crypto';
 import { walletTest } from '../fixtures/wallet-fixture.js';
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js';
+import { getBaseUrl } from '../helpers/env.js';
 import { LandingPage } from '../pages/LandingPage.js';
 import { AuthPage } from '../pages/AuthPage.js';
 import { QuickSetupPage } from '../pages/QuickSetupPage.js';
@@ -22,7 +23,7 @@ import { getBaseEmail, waitForOtp } from '../helpers/otp-mailbox.js';
  *     Decentraland account). Only test in the suite that consumes a code.
  */
 
-const REDIRECT_TO = 'https://decentraland.org/';
+const REDIRECT_TO = `${getBaseUrl()}/`;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
 walletTest('@web @auth recurrent user can log in with web3 wallet', async ({ page, ethereumWalletMock }) => {

@@ -8,6 +8,7 @@ import {
   installAutoWalletMockInitScript,
   applyPersonalSignOverride,
 } from '../helpers/wallet.js';
+import { getBaseUrl } from '../helpers/env.js';
 import { AuthPage } from '../pages/AuthPage.js';
 import { AvatarSetupPage } from '../pages/AvatarSetupPage.js';
 
@@ -37,8 +38,8 @@ import { AvatarSetupPage } from '../pages/AvatarSetupPage.js';
  * auto-routing assumption no longer holds against current prod.
  */
 
-const REDIRECT_TO = 'https://decentraland.org/';
-const AVATAR_SETUP_URL = 'https://decentraland.org/auth/avatar-setup';
+const REDIRECT_TO = `${getBaseUrl()}/`;
+const AVATAR_SETUP_URL = `${getBaseUrl()}/auth/avatar-setup`;
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`;
 
 const { expect } = test;

@@ -34,7 +34,10 @@ See each stack's README for the full prerequisite list, run modes, and troublesh
 
 ## Continuous integration
 
-The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (manual) → Run workflow**. The `suite` input picks which bucket to run:
+The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (manual) → Run workflow**. Two inputs:
+
+- **`environment`** — `org` (production, default) or `zone` (development). Sets `WEB_BASE_URL=https://decentraland.<environment>`, which `web/helpers/env.ts::getBaseUrl()` propagates to the Playwright `baseURL`, every spec's `REDIRECT_TO`, and the wallet helper's auth-page URL.
+- **`suite`** — which bucket to run:
 
 | Suite | Runs | Notes |
 |---|---|---|

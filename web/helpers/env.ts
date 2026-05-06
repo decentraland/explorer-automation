@@ -21,3 +21,13 @@ export function optionalEnv(name: string): string | undefined {
   const value = process.env[name];
   return value && value.trim() !== '' ? value : undefined;
 }
+
+/**
+ * Base URL of the Decentraland dapp under test (no trailing slash). Defaults
+ * to production. Override with `WEB_BASE_URL` to target a different
+ * environment (e.g. `https://decentraland.zone` for development).
+ */
+export function getBaseUrl(): string {
+  const raw = optionalEnv('WEB_BASE_URL') ?? 'https://decentraland.org';
+  return raw.replace(/\/+$/, '');
+}
