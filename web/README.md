@@ -6,9 +6,15 @@
 
 | Tag | Spec | Tests | Auth method | Notes |
 |---|---|---|---|---|
-| `@web` | [tests/auth-new-user.spec.ts](tests/auth-new-user.spec.ts) | new user (no newsletter) / new user (with newsletter) / new user with avatar customization | **mocked web3 wallet** (`generatePrivateKey()` per test) | no OTP cost, runs unlimited |
-| `@web` | [tests/auth-recurrent-user.spec.ts](tests/auth-recurrent-user.spec.ts) | recurrent via web3 / recurrent via email + OTP | both | the OTP test is the only one in the suite that consumes a Thirdweb code |
+| `@web` | [tests/auth-new-user.spec.ts](tests/auth-new-user.spec.ts) | new user (no newsletter) / with newsletter / with avatar customization | mocked web3 wallet | no OTP cost, runs unlimited |
+| `@web` | [tests/auth-otp-new-user.spec.ts](tests/auth-otp-new-user.spec.ts) | new user via email + OTP | OTP | consumes 1 OTP/run |
+| `@web` | [tests/auth-recurrent-user.spec.ts](tests/auth-recurrent-user.spec.ts) | recurrent via web3 (self-bootstrap) / recurrent via email + OTP | both | the OTP test consumes 1 Thirdweb code |
+| `@web` | [tests/auth-cross-sites.spec.ts](tests/auth-cross-sites.spec.ts) | session persists across `/marketplace`, `/builder`, `/account` after web3 signup | mocked web3 wallet | regression guard for cross-route session |
+| `@web` | [tests/auth-web3-redirect.spec.ts](tests/auth-web3-redirect.spec.ts) | recurrent web3 login with `redirectTo=/marketplace` lands on `/marketplace` | mocked web3 wallet | verifies dapp respects the `redirectTo` query param (used by launcher + sister dapps) |
+| `@web` | [tests/auth-request-page.spec.ts](tests/auth-request-page.spec.ts) | `dcl_personal_sign` + `eth_sendTransaction` via the **RequestPage** flow (`/auth/requests/<id>`) | mocked web3 wallet | exercises the desktop-handoff signature broker via `auth-api.decentraland.org` |
+| `@web` | [tests/auth-switch-method.spec.ts](tests/auth-switch-method.spec.ts) | sign up via OTP, then via web3 wallet on a fresh page in the same context | both | catches cross-method state pollution; 1 OTP/run |
 | `@web` | [tests/download.spec.ts](tests/download.spec.ts) | clicking "DOWNLOAD FOR <platform>" hero CTA fires a `download` event | none | no auth needed |
+| `@webgpu` | [tests/auth-web3-avatar-setup.spec.ts](tests/auth-web3-avatar-setup.spec.ts) | new user web3 + Unity-rendered avatar editor (full customization / skip), ends on `/download` | mocked web3 wallet | requires the `webgpu` Playwright project (1200x997 + SwiftShader); excluded from `npm test` |
 | `@cross` | [tests/web-to-inworld-handoff.spec.ts](tests/web-to-inworld-handoff.spec.ts) | web login → bridge file → desktop client lands in-world | OTP | **currently `test.describe.skip`** until the dapp's "Jump Into Decentraland" CTA is captured via codegen |
 
 ### Web3 wallet tests — how they work
@@ -46,9 +52,11 @@ npx playwright install chromium
 
 ```bash
 # from web/
-npm test               # all @web tests (3 new-user web3 + 2 recurrent + download)
+npm test               # all @web tests (no GPU); the per-PR / CI suite
 npm run test:headed    # same, with a visible browser
 npm run test:ui        # Playwright UI mode (interactive debug + time-travel)
+npm run test:webgpu    # the @webgpu avatar-editor specs (headed Chrome + GPU)
+npm run test:all       # everything: @web + @webgpu (+ @cross, currently skipped)
 
 npm run typecheck      # tsc --noEmit
 npm run report         # open the last HTML report
@@ -111,6 +119,8 @@ web/
 │   ├── env.ts             # loads ../.env, requireEnv()/optionalEnv()
 │   ├── otp-mailbox.ts     # IMAP poll for the OTP code (mailparser-based body extraction)
 │   ├── wallet.ts          # mocked-wallet setup (viem signing + ethereum-wallet-mock)
+│   ├── auth-server.ts     # auth-api.decentraland.org client (createRequest + pollOutcome)
+│   ├── identity.ts        # ephemeral message + auth chain (RequestPage flow)
 │   ├── token-bridge.ts    # platform-aware path + wait/read/remove
 │   └── explorer-runner.ts # spawn Explorer, shell out to dotnet test
 ├── fixtures/
@@ -119,12 +129,19 @@ web/
 │   ├── LandingPage.ts     # https://decentraland.org → Sign In
 │   ├── AuthPage.ts        # /auth → email submit + OTP entry + clickMetaMaskButton
 │   ├── QuickSetupPage.ts  # /auth/quick-setup → username / newsletter / ToS / avatar / LET'S GO
+│   ├── AvatarSetupPage.ts # /avatar-setup → Unity 3D avatar editor (relative-coord clicks)
 │   └── HomePage.ts        # post-login homepage + DOWNLOAD CTA
 ├── scripts/
 │   └── watch-otp.mjs      # tail the inbox during codegen / debugging
 └── tests/
     ├── auth-new-user.spec.ts           # @web — 3 web3 tests (no newsletter / newsletter / avatar)
+    ├── auth-otp-new-user.spec.ts       # @web — OTP new-user signup
     ├── auth-recurrent-user.spec.ts     # @web — recurrent via web3 + recurrent via OTP
+    ├── auth-cross-sites.spec.ts        # @web — session across marketplace/builder/account
+    ├── auth-web3-redirect.spec.ts      # @web — redirectTo=/marketplace lands on /marketplace
+    ├── auth-request-page.spec.ts       # @web — RequestPage dcl_personal_sign + eth_sendTransaction
+    ├── auth-switch-method.spec.ts      # @web — OTP signup, then web3 signup in same context
+    ├── auth-web3-avatar-setup.spec.ts  # @webgpu — Unity 3D avatar editor (full / skip)
     ├── download.spec.ts                # @web — launcher download
     └── web-to-inworld-handoff.spec.ts  # @cross — skipped
 ```

@@ -93,11 +93,75 @@ export async function setupMockedWallet(
 
   await ethereumWalletMock.connectToDapp();
   await ethereumWalletMock.importWalletFromPrivateKey(privateKey);
+  await applyPersonalSignOverride(page);
+}
 
-  // Route `personal_sign` through our viem signer. The mock's default request
-  // handler returns a stub signature; the dapp validates it cryptographically
-  // against the account's address, so we have to produce a real signature from
-  // the same private key.
+/**
+ * Stubs `navigator.gpu` so the dapp's `/auth/avatar-setup` page passes its
+ * internal WebGPU guard (`'gpu' in navigator && !!await navigator.gpu.requestAdapter()`)
+ * without depending on the host's actual GPU. Headed Chrome on macOS often
+ * returns a null adapter from `requestAdapter()` even with real hardware,
+ * which would bounce the page to `/setup`. The stub returns a non-null
+ * placeholder so the guard's truthiness check is satisfied.
+ *
+ * Use BEFORE navigating to `/auth/avatar-setup`. Has no effect on other
+ * dapp routes — the stub is harmless if Web3Mock or other features ignore it.
+ */
+export async function stubNavigatorGpu(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { navigator: Navigator };
+    if (!('gpu' in w.navigator)) {
+      Object.defineProperty(w.navigator, 'gpu', {
+        configurable: true,
+        // The dapp only checks `!!adapter`, not its API surface, so an empty
+        // object is enough.
+        value: { requestAdapter: async () => ({}) },
+      });
+    }
+  });
+}
+
+/**
+ * Adds a context-level init script that auto-mocks Web3Mock with the given
+ * address as soon as it appears on any subsequent navigation. Use this BEFORE
+ * navigating to dapp routes that probe `window.ethereum` immediately on page
+ * load (e.g. `/auth/requests/<id>`) — without it, the dapp may decide the
+ * user isn't logged in before `rebindWalletMock` has a chance to fire.
+ *
+ * Assumes `setupMockedWallet` has already run on the page (the polyfill init
+ * script + __signMessage exposeFunction are still active across navigations).
+ */
+export async function installAutoWalletMockInitScript(
+  page: Page,
+  address: string,
+): Promise<void> {
+  await page.context().addInitScript((addr) => {
+    const interval = setInterval(() => {
+      const w = window as unknown as {
+        Web3Mock?: { mock: (cfg: unknown) => unknown };
+      };
+      if (w.Web3Mock) {
+        w.Web3Mock.mock({
+          blockchain: 'ethereum',
+          wallet: 'metamask',
+          accounts: { return: [addr] },
+        });
+        clearInterval(interval);
+      }
+    }, 10);
+  }, address);
+}
+
+/**
+ * Patches `window.ethereum.request` so `personal_sign` requests are routed
+ * to our Node-side viem signer (`__signMessage`) instead of the mock's stub.
+ * Other RPC methods pass through to the original handler.
+ *
+ * Use after any `page.goto` (which wipes JS state) when the new page needs
+ * to sign with a real address-matching signature. Assumes `setupMockedWallet`
+ * has run at least once on this page (so `__signMessage` is exposed).
+ */
+export async function applyPersonalSignOverride(page: Page): Promise<void> {
   await page.evaluate(() => {
     type Eth = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
     const w = window as unknown as {
@@ -116,4 +180,23 @@ export async function setupMockedWallet(
       return original(args);
     };
   });
+}
+
+/**
+ * Heavier rebind: re-runs the synpress `connectToDapp` + `importWalletFromPrivateKey`
+ * sequence on the current page in addition to applying the personal_sign
+ * override. Use this when you need the wallet mock fully re-bootstrapped after
+ * navigation (e.g. cross-site nav). Avoid for routes that probe wallet state
+ * mid-load (e.g. `/auth/requests/<id>`) — the synpress calls re-introduce the
+ * default address mid-handshake and can crash signing flows; use
+ * `installAutoWalletMockInitScript` + `applyPersonalSignOverride` instead.
+ */
+export async function rebindWalletMock(
+  page: Page,
+  ethereumWalletMock: EthereumWalletMock,
+  privateKey: `0x${string}`,
+): Promise<void> {
+  await ethereumWalletMock.connectToDapp();
+  await ethereumWalletMock.importWalletFromPrivateKey(privateKey);
+  await applyPersonalSignOverride(page);
 }
