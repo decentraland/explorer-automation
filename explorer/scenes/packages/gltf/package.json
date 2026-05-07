@@ -9,6 +9,6 @@
   },
   "devDependencies": {
     "@dcl/sdk": "latest",
-    "@dcl/js-runtime": "latest"
+    "@dcl/js-runtime": "7.23.1-25383558577.commit-5a2d156"
   }
 }
