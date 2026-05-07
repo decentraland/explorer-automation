@@ -10,7 +10,7 @@
   "main": "bin/index.js",
   "tags": [],
   "scene": {
-    "parcels": ["0,0"],
+    "parcels": ["0,0", "1,0"],
     "base": "0,0"
   },
   "skyboxConfig": {
@@ -20,8 +20,8 @@
     {
       "name": "default",
       "default": true,
-      "position": { "x": [8], "y": [0], "z": [8] },
-      "cameraTarget": { "x": 8, "y": 1, "z": 8 }
+      "position": { "x": [16], "y": [0], "z": [14] },
+      "cameraTarget": { "x": 16, "y": 1, "z": 4 }
     }
   ]
 }
