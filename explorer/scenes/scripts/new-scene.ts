@@ -11,9 +11,10 @@
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
-const REPO_ROOT = new URL('../..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const PACKAGES = join(ROOT, 'packages')
 const TEMPLATE = join(ROOT, 'templates', 'scene')
 const FIXTURES_DIR = join(REPO_ROOT, 'Tests', 'Tests', 'Visual')
