@@ -1,4 +1,4 @@
-import { AvatarModifierArea, AvatarModifierType, engine, MainCamera, Transform, VirtualCamera } from '@dcl/sdk/ecs'
+import { AvatarModifierArea, AvatarModifierType, engine, MainCamera, SkyboxTime, Transform, VirtualCamera } from '@dcl/sdk/ecs'
 import { Vector3 } from '@dcl/sdk/math'
 
 // Placeholder bundle. The C# VisualHost overwrites bin/index.js with the
@@ -15,6 +15,11 @@ export function main() {
         modifiers: [AvatarModifierType.AMT_HIDE_AVATARS, AvatarModifierType.AMT_DISABLE_PASSPORTS],
         excludeIds: []
     })
+
+    SkyboxTime.createOrReplace(engine.RootEntity, {
+        fixedTime: 43200
+    }
+    )
 
     const snapshotCamera = engine.addEntity()
     VirtualCamera.create(snapshotCamera
