@@ -47,3 +47,4 @@ web/.agents/skills/playwright-best-practices/
 
 /.agents
 /.claude
+skills-lock.json
