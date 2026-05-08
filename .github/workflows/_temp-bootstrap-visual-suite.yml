@@ -1,0 +1,83 @@
+name: TEMP — Bootstrap visual suite
+
+# ════════════════════════════════════════════════════════════════════════
+# DELETE THIS FILE once `generate-baselines.yml`, `visual-regression.yml`,
+# and `run-visual-suite.yml` have been merged to the default branches of
+# explorer-automation and unity-explorer respectively, AND we've confirmed
+# the slash-command triggers fire end-to-end.
+#
+# Purpose:
+#   GitHub's `issue_comment` trigger only fires for workflow files that
+#   exist on the *default branch* of the repo. Until our workflows land
+#   on main, /generate-baselines and /visual-tests do nothing — leaving
+#   the whole pipeline un-smoke-tested. This temporary workflow runs the
+#   full record-then-validate sequence on every push to the bootstrap
+#   branch, against a pinned unity-explorer PR build, so we can prove the
+#   plumbing works end-to-end before merging.
+#
+# What it does on every push to feat/snapshots-comparison:
+#   1. Calls run-visual-suite.yml with mode=record. This renders new
+#      baselines against the pinned unity-explorer build, auto-commits
+#      the PNGs back to feat/snapshots-comparison via github-actions[bot].
+#   2. After (1) lands, calls run-visual-suite.yml with mode=test. This
+#      pulls the just-committed baselines and validates against them
+#      using the same unity-explorer build, exercising the whole diff
+#      codepath. The result is guaranteed-pass by construction (record
+#      and validate use the same render), but that's the point: we're
+#      validating the *system*, not visual drift, on the bootstrap run.
+# ════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: [feat/snapshots-comparison]
+    paths:
+      # Re-trigger when the bootstrap workflow itself changes, when the
+      # scenes/baselines code changes, or when the reusable workflow
+      # changes. Skip docs-only / unrelated commits to save runner minutes.
+      - '.github/workflows/_temp-bootstrap-visual-suite.yml'
+      - '.github/workflows/run-visual-suite.yml'
+      - 'explorer/scenes/**'
+      - 'explorer/Tests/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  # One bootstrap run at a time. Cancel earlier in-flight runs so a quick
+  # follow-up push doesn't queue behind a stale render.
+  group: temp-bootstrap-visual-suite
+  cancel-in-progress: true
+
+env:
+  # Pinned unity-explorer PR build under test. Both record and validate
+  # phases use this same artifact — that's how the bootstrap proves
+  # end-to-end plumbing without needing pre-existing baselines.
+  PINNED_BUILD_URL: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+  # PR #2 in this repo — used by run-visual-suite.yml for the result
+  # comment + S3 path namespacing.
+  BOOTSTRAP_PR: '2'
+
+jobs:
+  record:
+    name: 1. Record baselines
+    uses: ./.github/workflows/run-visual-suite.yml
+    with:
+      mode: record
+      pr_number: '2'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+      tests_ref: feat/snapshots-comparison
+      # commit_sha + branch_label are cosmetic; let the reusable fall back
+      # to its run-id default for the bootstrap run.
+    secrets: inherit
+
+  validate:
+    name: 2. Validate against just-recorded baselines
+    needs: record
+    uses: ./.github/workflows/run-visual-suite.yml
+    with:
+      mode: test
+      pr_number: '2'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+      tests_ref: feat/snapshots-comparison
+    secrets: inherit
