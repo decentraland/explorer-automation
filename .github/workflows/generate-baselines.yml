@@ -136,8 +136,7 @@ jobs:
               RUN_NUMBER=$(echo "$RUN_JSON" | jq -r '.run_number')
               ORIGINAL_EVENT=$(echo "$RUN_JSON" | jq -r '.event')
               if [ "$ORIGINAL_EVENT" = "pull_request" ]; then
-                SAFE_BRANCH="${PAIRED_HEAD_REF//\//-}"
-                ARTIFACT_PATH="@dcl/unity-explorer/branch/${SAFE_BRANCH}/pr-${RUN_NUMBER}-${SHORT_SHA}"
+                ARTIFACT_PATH="@dcl/unity-explorer/branch/${PAIRED_HEAD_REF}/pr-${RUN_NUMBER}-${SHORT_SHA}"
                 BUILD_URL="${PUBLIC_URL_PREFIX}/${ARTIFACT_PATH}/Decentraland_macos.zip"
                 echo "::notice::Recording against paired unity-explorer PR #${PAIRED_PR_NUMBER} (${SHORT_SHA})."
                 echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
