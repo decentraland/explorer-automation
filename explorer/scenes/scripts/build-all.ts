@@ -65,19 +65,15 @@ function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Pro
       reject(new Error(`${cmd} ${args.join(' ')} aborted before start`))
       return
     }
-    // detached: true puts the child in its own process group, so on abort we can
-    // SIGTERM the whole group (-pid) and take down npm + its descendants together.
-    // Without this, killing npm leaves orphan tsc/esbuild processes running.
-    //
-    // shell: true on Windows is required for .cmd / .bat targets — Node's
-    // CreateProcess can't execute batch files directly. POSIX doesn't need a
-    // shell and we want to avoid one (better signal forwarding to the child).
+
     const isWin = process.platform === 'win32'
     const child = spawn(cmd, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: !isWin,
-      shell: isWin,
+      shell: false,
+      // windowsHide keeps no console flashes on Windows; harmless on POSIX.
+      windowsHide: true,
     })
     let buffer = ''
     child.stdout.on('data', (d) => (buffer += d))
