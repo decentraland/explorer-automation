@@ -8,7 +8,7 @@
     "start": "sdk-commands start"
   },
   "devDependencies": {
-    "@dcl/sdk": "https://sdk-team-cdn.decentraland.org/@dcl/js-sdk-toolchain/branch/fix/no-client/dcl-sdk-7.23.1-25383558577.commit-5a2d156.tgz",
+    "@dcl/sdk": "latest",
     "@dcl/js-runtime": "latest"
   }
 }

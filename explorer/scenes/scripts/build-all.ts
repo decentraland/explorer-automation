@@ -4,8 +4,9 @@
  *   npm run build                       # default concurrency, fail-fast
  *   BUILD_CONCURRENCY=8 npm run build   # override pool size
  *   BUILD_FAIL_FAST=0 npm run build     # report every failure instead of aborting
+ *   BUILD_TIMEOUT_MS=600000 npm run build  # hard kill any single scene build that exceeds this
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +16,18 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const PACKAGES = join(ROOT, 'packages')
 const concurrency = Number(process.env.BUILD_CONCURRENCY ?? 5)
 const failFast = process.env.BUILD_FAIL_FAST !== '0'
+const timeoutMs = Number(process.env.BUILD_TIMEOUT_MS ?? 10 * 60 * 1000)
+
+function resolveNpm(): string {
+  const which = process.platform === 'win32' ? 'where' : 'which'
+  const r = spawnSync(which, ['npm'], { encoding: 'utf8' })
+  if (r.status === 0) {
+    const first = r.stdout.split(/\r?\n/).find((l) => l.trim().length > 0)
+    if (first) return first.trim()
+  }
+  return 'npm'
+}
+const NPM = resolveNpm()
 
 function listScenes(): string[] {
   return readdirSync(PACKAGES)
@@ -36,21 +49,37 @@ function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Pro
     child.stdout.on('data', (d) => (buffer += d))
     child.stderr.on('data', (d) => (buffer += d))
 
-    const onAbort = () => {
+    let timedOut = false
+    const killTree = (signalName: NodeJS.Signals) => {
       try {
-        process.kill(-child.pid!, 'SIGTERM')
+        process.kill(-child.pid!, signalName)
       } catch {
-        try { child.kill('SIGTERM') } catch { /* already gone */ }
+        try { child.kill(signalName) } catch { /* already gone */ }
       }
     }
+
+    const onAbort = () => killTree('SIGTERM')
     signal.addEventListener('abort', onAbort, { once: true })
 
+    const timeout = setTimeout(() => {
+      timedOut = true
+      killTree('SIGTERM')
+      // 5s grace for graceful shutdown, then SIGKILL the group.
+      setTimeout(() => killTree('SIGKILL'), 5_000).unref()
+    }, timeoutMs)
+
     child.on('error', (err) => {
+      clearTimeout(timeout)
       signal.removeEventListener('abort', onAbort)
       reject(err)
     })
     child.on('close', (code, killSignal) => {
+      clearTimeout(timeout)
       signal.removeEventListener('abort', onAbort)
+      if (timedOut) {
+        reject(new Error(`${cmd} ${args.join(' ')} timed out after ${timeoutMs}ms\n${buffer.slice(-4000)}`))
+        return
+      }
       if (signal.aborted) {
         reject(new Error(`${cmd} ${args.join(' ')} aborted (signal=${killSignal ?? 'none'})`))
         return
@@ -77,7 +106,7 @@ try {
   results = await runPool(
     scenes.map((name) => ({
       label: name,
-      fn: (signal: AbortSignal) => run('npm', ['run', 'build'], join(PACKAGES, name), signal)
+      fn: (signal: AbortSignal) => run(NPM, ['run', 'build'], join(PACKAGES, name), signal)
     })),
     {
       concurrency,
