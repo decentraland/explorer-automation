@@ -33,22 +33,17 @@ function resolveNpm(): string {
   if (r.status === 0) {
     const lines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     if (isWin) {
-      // Prefer .cmd (executes via cmd.exe), then .exe, then .bat — never .ps1
-      // (PowerShell, requires shell:true) and never the bare extensionless file.
       const preferredExts = ['.cmd', '.exe', '.bat']
       for (const ext of preferredExts) {
         const match = lines.find((l) => l.toLowerCase().endsWith(ext))
         if (match) return match
       }
-      // Fallback if none of the preferred extensions matched (unusual setup):
-      // append .cmd to the first hit and hope for the best. Better than the
-      // extensionless path which definitely can't be spawned directly.
       if (lines[0]) return lines[0] + '.cmd'
     } else {
       if (lines[0]) return lines[0]
     }
   }
-  // Last resort: bare name. spawn() will fall back to PATH lookup.
+
   return isWin ? 'npm.cmd' : 'npm'
 }
 const NPM = resolveNpm()
@@ -106,7 +101,7 @@ function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Pro
     const timeout = setTimeout(() => {
       timedOut = true
       killTree('SIGTERM')
-      // 5s grace for graceful shutdown, then SIGKILL the group.
+      // 5s grace for graceful shutdown, then SIGKILL the group
       setTimeout(() => killTree('SIGKILL'), 5_000).unref()
     }, timeoutMs)
 
@@ -161,9 +156,6 @@ try {
     }
   )
 } catch (err) {
-  // fail-fast threw. We still printed per-job ✓/✗ marks above; now dump the
-  // full error from the job that triggered the abort so the user can see
-  // why the build stopped.
   const message = err instanceof Error ? err.message : String(err)
   process.stderr.write(`\n\x1b[31mBuild aborted:\x1b[0m\n${message}\n`)
   process.exit(1)
