@@ -24,10 +24,24 @@ import { requireEnv } from '../../../shared/helpers/env.js'
  * Flipping `initialChainId` to Amoy makes the dapp's authorization saga pick
  * the direct-broadcast path, which fails for lack of POL gas.
  */
+export interface SetupTestWalletOptions {
+  initialChainId?: number
+  /**
+   * Optional contract allowlists forwarded to `setupBroadcastWallet`. Tests
+   * that broadcast on-chain (currently only the @on-chain buy-and-sell spec)
+   * should pass `marketplaceAllowedContracts()` from `./contracts.js`. Tests
+   * that don't broadcast (account, connect-wallet) can omit.
+   */
+  allowedContracts?: {
+    targets?: ReadonlyArray<`0x${string}`>
+    typedData?: ReadonlyArray<`0x${string}`>
+  }
+}
+
 export async function setupTestWallet(
   page: Page,
   privateKey: `0x${string}`,
-  options: { initialChainId?: number } = {}
+  options: SetupTestWalletOptions = {}
 ): Promise<{ address: string }> {
   const address = privateKeyToAddress(privateKey)
   await injectAuthIdentity(page, privateKey)
@@ -39,7 +53,9 @@ export async function setupTestWallet(
       [polygonAmoy.id]: requireEnv('POLYGON_AMOY_RPC_URL'),
       [sepolia.id]: requireEnv('SEPOLIA_RPC_URL')
     },
-    initialChainId: options.initialChainId ?? sepolia.id
+    initialChainId: options.initialChainId ?? sepolia.id,
+    allowedTargets: options.allowedContracts?.targets,
+    allowedTypedDataContracts: options.allowedContracts?.typedData
   })
   return { address }
 }

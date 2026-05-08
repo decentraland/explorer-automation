@@ -17,6 +17,19 @@ export interface BroadcastWalletOptions {
   rpcUrls: Record<number, string>
   /** Initial chain id. The dapp may switch after auth. */
   initialChainId: number
+  /**
+   * Optional allowlist of `to` addresses (lowercase) for `eth_sendTransaction`.
+   * When set, broadcasts whose `to` is not in the list are rejected server-side
+   * (inside the Node `page.exposeFunction` handler), so even an XSS that gains
+   * `window.__sendTransaction` cannot escape the policy.
+   * Omit (the default) for off-chain specs that don't broadcast.
+   */
+  allowedTargets?: ReadonlyArray<`0x${string}`>
+  /**
+   * Optional allowlist of EIP-712 `domain.verifyingContract` addresses (lowercase)
+   * for `eth_signTypedData_v4`. Same enforcement model as `allowedTargets`.
+   */
+  allowedTypedDataContracts?: ReadonlyArray<`0x${string}`>
 }
 
 const SUPPORTED_CHAINS: Record<number, Chain> = {
@@ -36,7 +49,7 @@ const SUPPORTED_CHAINS: Record<number, Chain> = {
  * on every page load.
  */
 export async function setupBroadcastWallet(page: Page, options: BroadcastWalletOptions): Promise<void> {
-  const { privateKey, rpcUrls, initialChainId } = options
+  const { privateKey, rpcUrls, initialChainId, allowedTargets, allowedTypedDataContracts } = options
 
   const account = privateKeyToAccount(privateKey)
 
@@ -54,7 +67,20 @@ export async function setupBroadcastWallet(page: Page, options: BroadcastWalletO
   let activeChainId = initialChainId
   let { wallet, pub } = buildClients(activeChainId)
 
+  // Pre-lowercase allowlists once; comparisons inside the hot path stay cheap.
+  // `undefined` = no enforcement; `[]` = deny-all (every call rejected).
+  const allowedTargetsSet = allowedTargets ? new Set(allowedTargets.map(a => a.toLowerCase())) : undefined
+  const allowedTypedDataSet = allowedTypedDataContracts
+    ? new Set(allowedTypedDataContracts.map(a => a.toLowerCase()))
+    : undefined
+
   await page.exposeFunction('__sendTransaction', async (tx: Record<string, unknown>): Promise<Hex> => {
+    if (allowedTargetsSet) {
+      const to = typeof tx.to === 'string' ? tx.to.toLowerCase() : undefined
+      if (!to || !allowedTargetsSet.has(to)) {
+        throw new Error(`Broadcast wallet: tx.to '${String(tx.to)}' not in allowlist`)
+      }
+    }
     const hash = await wallet.sendTransaction(tx as Parameters<typeof wallet.sendTransaction>[0])
     await pub.waitForTransactionReceipt({ hash })
     return hash
@@ -62,7 +88,20 @@ export async function setupBroadcastWallet(page: Page, options: BroadcastWalletO
 
   await page.exposeFunction(
     '__signTypedData',
-    async (params: { domain: unknown; types: unknown; primaryType: string; message: unknown }): Promise<Hex> => {
+    async (params: {
+      domain: { verifyingContract?: string }
+      types: unknown
+      primaryType: string
+      message: unknown
+    }): Promise<Hex> => {
+      if (allowedTypedDataSet) {
+        const verifying = params.domain?.verifyingContract?.toLowerCase()
+        if (!verifying || !allowedTypedDataSet.has(verifying)) {
+          throw new Error(
+            `Broadcast wallet: typed-data domain.verifyingContract '${String(params.domain?.verifyingContract)}' not in allowlist`
+          )
+        }
+      }
       return account.signTypedData(params as Parameters<typeof account.signTypedData>[0])
     }
   )
@@ -94,8 +133,13 @@ export async function setupBroadcastWallet(page: Page, options: BroadcastWalletO
         __switchChain: (cid: string) => Promise<null>
         __ethRead: (method: string, params: unknown[]) => Promise<unknown>
         __broadcastWalletInstalled?: boolean
+        __injectedWalletMockInstalled?: boolean
       }
       if (!w.ethereum) return
+      // Handshake: don't wrap until installInjectedWalletMock has wrapped.
+      // Without this, broadcast may wrap the raw Synpress handler directly,
+      // and a mid-session wallet_switchEthereumChain leaves eth_chainId stale.
+      if (!w.__injectedWalletMockInstalled) return
       if (w.__broadcastWalletInstalled) {
         clearInterval(interval)
         return

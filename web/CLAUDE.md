@@ -30,7 +30,7 @@ web/
 │   │   ├── identity.ts             # auth-chain primitives (RequestPage)
 │   │   ├── auth-identity.ts        # injectAuthIdentity (SSO + decentraland-connect localStorage seed) + installInjectedWalletMock (Web3Mock account override + window.ethereum.request patch)
 │   │   ├── broadcast-wallet.ts     # viem-driven tx broadcast (eth_sendTransaction + signTypedData)
-│   │   ├── ethereum.ts             # waitForAmoyReceipt — single entry point for Amoy receipt + status assertion (used by primary-buy + accept-listing helpers)
+│   │   ├── ethereum.ts             # waitForAmoyReceipt — single entry point for Amoy receipt + status assertion (used by buy-and-sell spec + accept-listing helper)
 │   │   ├── profile.ts              # mockExistingProfile (catalyst route intercept)
 │   │   └── url.ts                  # withEnv() — appends ?env=dev for testnet switching
 │   ├── fixtures/
@@ -65,7 +65,9 @@ web/
     └── marketplace/                # marketplace dapp tests
         ├── helpers/
         │   ├── wallet-setup.ts         # setupTestWallet — composes injectAuthIdentity + installInjectedWalletMock + mockExistingProfile + setupBroadcastWallet
-        │   ├── primary-buy.ts          # executePrimaryBuy — backend-capture only: relayer txHash + Amoy receipt + mint Transfer log decode + indexer wait
+        │   ├── transactions-capture.ts # captureTransactionsPosts — observe /v1/transactions POSTs (approval + buy); spec drives auth modal directly
+        │   ├── mint-decoder.ts         # decodeMintFromReceipt — extract tokenId from an ERC-721 Transfer log on a primary-buy receipt
+        │   ├── nft-indexer.ts          # waitForNftIndexed — poll marketplace-api /v1/nfts until the new NFT is searchable
         │   ├── listing.ts              # captureListingResponse — listens for marketplace-api /v1/trades 201 + extracts tradeId
         │   ├── accept-listing.ts       # captureAcceptListingTxHash — listens for /v1/transactions POST + waits for Amoy receipt
         │   └── wallet-pool.ts          # 2-EOA pool, runtime role assignment by MANA balance
@@ -188,7 +190,7 @@ The "BUY WITH MANA" flow on dev/zone is a **sponsored meta-transaction**, not a 
 Implications:
 
 - Don't assume `eth_sendTransaction` will fire on the user's wallet — it won't.
-- Don't verify by looking up the user's wallet on `amoy.polygonscan.com` — `from` is the relayer EOA. Capture `txHash` from the `/v1/transactions` POST and pass it to `waitForAmoyReceipt({ txHash })` from `shared/helpers/ethereum.js` — single entry point that constructs the viem Amoy public client, polls the receipt, and asserts `status === 'success'`. Used by `helpers/primary-buy.ts` and `helpers/accept-listing.ts`; reuse instead of inlining `createPublicClient` per call site.
+- Don't verify by looking up the user's wallet on `amoy.polygonscan.com` — `from` is the relayer EOA. Capture `txHash` from the `/v1/transactions` POST and pass it to `waitForAmoyReceipt({ txHash })` from `shared/helpers/ethereum.js` — single entry point that constructs the viem Amoy public client, polls the receipt, and asserts `status === 'success'`. Used by `tests/marketplace/specs/buy-and-sell.spec.ts` (primary-mint test) and `helpers/accept-listing.ts`; reuse instead of inlining `createPublicClient` per call site.
 - Don't treat `/status` as success — it's the in-flight polling page. Match `/\/success(\?|$|\/)/` exactly.
 
 ### Marketplace listing flow — off-chain only
@@ -267,6 +269,7 @@ Loaded from the repo-root `.env` (see `.env.example` for the full template). The
 - `BASE_URL` (default `https://decentraland.org`).
 - `MARKETPLACE_BASE_URL` — overrides `${BASE_URL}/marketplace/`. Trailing slash required.
 - `MARKETPLACE_ENV` — `dev` to switch the dapp to Polygon Amoy / Sepolia (testnets) on the public `.org` host.
+- `MARKETPLACE_API_BASE_URL` — explicit override for the marketplace-api host (used by helpers that query the indexer directly, e.g. `nft-indexer.ts`). Optional. Defaults: `MARKETPLACE_ENV=dev` → `https://marketplace-api.decentraland.zone`; `MARKETPLACE_ENV=prod` (or any non-`dev` value) → `https://marketplace-api.<BASE_URL host>`. Set this when CI runners can't reach `.zone` (Cloudflare-gated). Note: `MARKETPLACE_ENV=prod` resolves to the production indexer (mainnet NFTs only); on-chain testnet specs targeting `MARKETPLACE_TEST_ITEM_*` will not find their items there. See `shared/helpers/marketplace-api.ts` for the full resolution rule.
 
 ### On-chain marketplace tests (testnet only — never use real-fund wallets)
 
@@ -299,7 +302,7 @@ If those move, update `tests/auth/helpers/token-bridge.ts` or `tests/auth/helper
 - `test.setTimeout(...)` inside a test body does NOT extend back over the fixture phase — fixtures already ran under the project default. For fixture-heavy tests (e.g. `buy-and-sell.spec.ts`), set `test.describe.configure({ timeout: 420_000 })` at the top of the describe block.
 - Reporting Amoy as the wallet's `eth_chainId` when the NFT is on Amoy flips the dapp's authorization saga to the direct-broadcast path (`eth_sendTransaction` → INSUFFICIENT_FUNDS without POL gas). Keep the wallet on Sepolia so the dapp uses the meta-tx path through transactions-server.
 - Hard-coded sleeps — never. Use Playwright's auto-waiting or `waitForURL` / `waitFor` with explicit timeouts.
-- Passing a bound method as a callback (e.g. `authModal.authorizeAndSign` without an arrow) drops `this` and TypeErrors at runtime even though TS accepts it. Always wrap: `intervalMs => authModal.authorizeAndSign(intervalMs)`. See `tests/marketplace/specs/buy-and-sell.spec.ts` primary-buy call site.
+- Passing a bound method as a callback drops `this` and TypeErrors at runtime even though TS accepts it. The primary-mint test in `tests/marketplace/specs/buy-and-sell.spec.ts` now calls `authModal.authorizeAndSign(2_000)` directly inside the spec body — no callback indirection — but if a future helper takes a callback, always wrap: `intervalMs => authModal.authorizeAndSign(intervalMs)`.
 - `chromium.launchPersistentContext` for a real MetaMask extension — not needed; the Synpress mock approach in `tests/auth/helpers/wallet.ts` covers all current cases without that complexity.
 
 ## Don't

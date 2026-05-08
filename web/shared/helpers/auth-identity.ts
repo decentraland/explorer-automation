@@ -192,6 +192,7 @@ export async function installInjectedWalletMock(
             chainId?: string
             networkVersion?: string
           }
+          __injectedWalletMockInstalled?: boolean
         }
         if (!w.ethereum) return
         clearInterval(ethPoll)
@@ -216,6 +217,12 @@ export async function installInjectedWalletMock(
         } catch {
           // Some properties may be non-writable; the request override is enough.
         }
+        // Handshake flag — `setupBroadcastWallet`'s init script waits for this
+        // before wrapping `request`, so the broadcast layer always wraps the
+        // mock layer (not the raw Synpress handler). Set last, after both the
+        // function override and the property best-effort bind, so any other
+        // init script polling on this flag observes a fully-installed mock.
+        w.__injectedWalletMockInstalled = true
       }, 10)
       setTimeout(() => clearInterval(ethPoll), 2_000)
     },

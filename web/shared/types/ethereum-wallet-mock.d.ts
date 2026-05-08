@@ -22,3 +22,17 @@ declare module '@synthetixio/ethereum-wallet-mock/playwright' {
     PlaywrightWorkerArgs & PlaywrightWorkerOptions
   >
 }
+
+declare global {
+  interface Window {
+    /**
+     * Init-script handshake flag set by `installInjectedWalletMock` once it
+     * has wrapped `window.ethereum.request`. `setupBroadcastWallet` waits for
+     * this flag before layering its own wrapper so the broadcast layer always
+     * sits on top of the mock layer, not the raw Synpress handler.
+     */
+    __injectedWalletMockInstalled?: boolean
+  }
+}
+
+export {}

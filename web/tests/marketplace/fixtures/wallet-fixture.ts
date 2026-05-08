@@ -2,6 +2,7 @@ import { test as base, type Fixtures, type PlaywrightTestArgs, type PlaywrightTe
 import { walletTest as baseWalletTest } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupTestWallet } from '../helpers/wallet-setup.js'
 import { setupWalletPool, type WalletPool } from '../helpers/wallet-pool.js'
+import { marketplaceAllowedContracts } from '../helpers/contracts.js'
 import { AccountPage } from '../pages/AccountPage.js'
 import { AssetPage } from '../pages/AssetPage.js'
 import { AuthorizationModal } from '../pages/AuthorizationModal.js'
@@ -100,11 +101,15 @@ export const walletTest = baseWalletTest
   })
   .extend<{ sellerWallet: { address: string }; buyerWallet: { address: string } }>({
     sellerWallet: async ({ page, walletPool }, use) => {
-      const { address } = await setupTestWallet(page, walletPool.seller.privateKey)
+      const { address } = await setupTestWallet(page, walletPool.seller.privateKey, {
+        allowedContracts: marketplaceAllowedContracts()
+      })
       await use({ address })
     },
     buyerWallet: async ({ page, walletPool }, use) => {
-      const { address } = await setupTestWallet(page, walletPool.buyer.privateKey)
+      const { address } = await setupTestWallet(page, walletPool.buyer.privateKey, {
+        allowedContracts: marketplaceAllowedContracts()
+      })
       await use({ address })
     }
   })

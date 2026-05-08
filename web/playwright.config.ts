@@ -106,15 +106,22 @@ export default defineConfig({
       }
     },
     {
-      // On-chain specs share a 2-wallet pool. Cross-file serial is enforced
-      // by `--workers=1` in the npm script (test:marketplace:onchain);
-      // `fullyParallel: false` here is belt-and-suspenders for direct invocations.
+      // On-chain specs share a 2-wallet pool. The wallet-pool fixture is
+      // worker-scoped; with >1 worker, both workers initialize identical
+      // pools, both pick the same seller (balance read is identical), and
+      // the second worker's tx reverts on the contract's nonce check.
+      // `workers: 1` here is the primary, invocation-agnostic defense; the
+      // npm-script flag (`test:marketplace:onchain --workers=1`) is belt-
+      // and-suspenders. `fullyParallel: false` only prevents intra-file
+      // parallelism, not worker count — keep it for clarity but it's not
+      // load-bearing once `workers: 1` is set.
       // `retries: 0` because retrying a partially-broadcast tx hits
       // max-per-wallet on attempt 2 — fail loudly instead.
       name: 'marketplace-onchain',
       testDir: './tests/marketplace/specs',
       grep: /@on-chain/,
       fullyParallel: false,
+      workers: 1,
       retries: 0,
       use: {
         ...devices['Desktop Chrome'],
