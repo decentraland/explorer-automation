@@ -18,16 +18,26 @@ import { setupVisualTest } from './visual-test-setup'
 /**
  * materials — exhaustive PBR/Basic property + texture matrix.
  *
- * Visual contract: a 4-layer × 4-row × 5-col grid of subjects lit identically,
- * each row varying ONE material axis. Any shader regression — BRDF rewrite,
- * lighting model tweak, alpha pipeline change, transparency-mode reshuffle,
- * sampler/UV pipeline change — shows up as per-cell drift in the diff.
+ * Visual contract: a 4-layer grid (4 rows × 5 cols per layer) of subjects lit
+ * identically, each row varying ONE material axis. Any shader regression —
+ * BRDF rewrite, lighting model tweak, alpha pipeline change, transparency-mode
+ * reshuffle, sampler/UV pipeline change — shows up as per-cell drift in the
+ * diff.
  *
  * Layer Y (camera looks slightly down/forward from −Z, full grid in frame):
  *   y=1.0  Core PBR BRDF       (metallic / roughness / specular axes)
  *   y=3.3  Emissive + lighting (LDR/HDR emissive, color, directIntensity)
  *   y=5.6  Transparency + edge (alpha ramp, all 5 modes, combos, geometry)
  *   y=7.9  Textures            (sprite UV, tiling/wrap/filter, texture roles)
+ *
+ * Layer 1 carries an extra row 4 in *front* of the main grid (z=3.5, ahead of
+ * row 0's z=4.25) for shadow opt-out + Material lifecycle (deleteFrom,
+ * createOrReplace). It sits in front because at the scene's fixed-noon sun,
+ * shadows fall straight down — and any cell stacked under upper-layer entities
+ * shares its ground shadow with three other layers, hiding the absence of a
+ * single sphere's shadow. Putting these tests in front of row 0 means no
+ * other entity is in the same Y-column, so each cell's potential shadow
+ * lands on otherwise-empty ground and stands out unambiguously.
  *
  * Odd rows are X-staggered by half a column so back-row spheres sit in the
  * gaps between front-row spheres rather than directly behind them.
@@ -131,6 +141,85 @@ export function main() {
       specularIntensity: s,
     })
     attachHint(e, `Specular intensity · specularIntensity=${s.toFixed(2)} · dielectric`)
+  }
+
+  // Row 4 (Layer 1 only, FRONT row at z=3.5): shadow opt-out + Material
+  // lifecycle. Lives in front of the main grid (row 0 is at z=4.25) so:
+  //   1. The ground-cast shadow under each subject is in frame — closer to
+  //      the camera, no front-row spheres occluding the line of sight to the
+  //      ground.
+  //   2. No upper-layer entity is in the same Y-column (layers 2-4 only have
+  //      rows at z={4.25, 6.75, 9.25, 11.75}). At the scene's fixed-noon sun,
+  //      shadows fall straight down, so a cell at z=3.5 has clean ground
+  //      below it — its potential shadow has no co-located shadows from
+  //      stacked upper-layer spheres masking it.
+  // Cols 0 & 1 are adjacent shadow control + test for direct visual diff;
+  // col 2 is empty to break the shadow tests apart from the lifecycle tests
+  // in cols 3 & 4.
+  // col 0: castShadows=true control     (vivid orange, shadow visible)
+  // col 1: castShadows=false test       (same vivid orange, NO shadow)
+  // col 3: material added → deleteFrom  (vivid magenta gone, default render)
+  // col 4: material added → replaced    (vivid red replaced w/ emissive cyan)
+  const lifecycleZ = 3.5
+  {
+    const shadowControl = mkSphere(gridX(0, 4), y1, lifecycleZ)
+    Material.setPbrMaterial(shadowControl, {
+      albedoColor: Color4.create(0.95, 0.5, 0.15, 1),
+      metallic: 0,
+      roughness: 0.5,
+    })
+    attachHint(shadowControl, 'castShadows control · castShadows=true (shadow visible)')
+
+    const shadowOff = mkSphere(gridX(1, 4), y1, lifecycleZ)
+    Material.setPbrMaterial(shadowOff, {
+      albedoColor: Color4.create(0.95, 0.5, 0.15, 1),
+      castShadows: false,
+      metallic: 0,
+      roughness: 0.5,
+    })
+    attachHint(shadowOff, 'castShadows opt-out · castShadows=false (no shadow under it)')
+
+    // Apply a vivid magenta material, then delete the Material component.
+    // The entity should fall back to the engine's default appearance (no
+    // Material). If deleteFrom regresses (e.g., is treated as a no-op), the
+    // sphere will still render magenta — easy to spot in the diff.
+    const materialDeleted = mkSphere(gridX(3, 4), y1, lifecycleZ)
+    Material.setPbrMaterial(materialDeleted, {
+      albedoColor: Color4.create(1, 0, 0.8, 1),
+      emissiveColor: Color3.create(1, 0, 0.8),
+      emissiveIntensity: 2,
+      metallic: 0,
+      roughness: 0.4,
+    })
+    Material.deleteFrom(materialDeleted)
+    attachHint(materialDeleted, 'Material lifecycle · added (magenta) then deleteFrom — renders default')
+
+    // Apply a vivid red opaque material, then call createOrReplace with a
+    // distinctly different emissive cyan PBR. The cell should render as the
+    // *second* material; if createOrReplace regresses to a merge or no-op,
+    // the diff will show red instead of cyan.
+    const materialReplaced = mkSphere(gridX(4, 4), y1, lifecycleZ)
+    Material.setPbrMaterial(materialReplaced, {
+      albedoColor: Color4.create(1, 0.05, 0.05, 1),
+      metallic: 0,
+      roughness: 0.5,
+    })
+    Material.createOrReplace(materialReplaced, {
+      material: {
+        $case: 'pbr',
+        pbr: {
+          albedoColor: Color4.create(0.05, 0.05, 0.05, 1),
+          emissiveColor: Color3.create(0, 1, 1),
+          emissiveIntensity: 3,
+          metallic: 0,
+          roughness: 0.4,
+        },
+      },
+    })
+    attachHint(
+      materialReplaced,
+      'Material lifecycle · added (red) then createOrReplace (emissive cyan)',
+    )
   }
 
   // ═══ LAYER 2 — Emissive + Color + Direct Lighting ════════════════════════
