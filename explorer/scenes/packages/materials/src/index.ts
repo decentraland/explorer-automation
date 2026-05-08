@@ -453,6 +453,32 @@ export function main() {
     attachHint(cone, 'Geometry parity · cone (cylinder with top radius=0)')
   }
 
+  // Row 4 (Layer 3 only, FRONT row at z=3.5): fully-transparent corner case.
+  // The alpha ramp in Row 0 excludes alpha=0 as "trivially invisible", but the
+  // alpha=0 boundary has its own failure modes — premultiplied-alpha math,
+  // blend equations that divide by alpha, and renderer early-outs that can
+  // accidentally fire on alpha>0 cells. Visual contract: the sphere must be
+  // invisible against clean ground. A regression that renders alpha=0 (full
+  // opacity, faint tint, edge silhouette) shows a sphere where there was empty
+  // ground. Sits above empty col 2 of Layer 1's lifecycle row so no other
+  // entity is in the same Y-column. castShadows=false because a fully-
+  // transparent surface should not cast — and a phantom shadow would otherwise
+  // muddy the diff.
+  {
+    const fullyTransparent = mkSphere(gridX(2, 4), y3, 3.5)
+    Material.setPbrMaterial(fullyTransparent, {
+      albedoColor: Color4.create(0.2, 0.7, 0.95, 0),
+      transparencyMode: MaterialTransparencyMode.MTM_ALPHA_BLEND,
+      castShadows: false,
+      metallic: 0,
+      roughness: 0.3,
+    })
+    attachHint(
+      fullyTransparent,
+      'Alpha-blend · alpha=0 (fully transparent, should be invisible)',
+    )
+  }
+
   // ═══ LAYER 4 — Textures ══════════════════════════════════════════════════
   // Tests the sampler / UV pipeline: sprite-frame UV cropping, tiling, wrap
   // mode, filter mode, and the different roles a texture can play in a
@@ -503,33 +529,33 @@ export function main() {
     offset?: Vector2
     label: string
   }> = [
-    {
-      tiling: Vector2.create(1, 1),
-      wrap: TextureWrapMode.TWM_CLAMP,
-      label: '1×1 CLAMP (full texture, baseline)',
-    },
-    {
-      tiling: Vector2.create(2, 2),
-      wrap: TextureWrapMode.TWM_REPEAT,
-      label: '2×2 REPEAT (4 tiles)',
-    },
-    {
-      tiling: Vector2.create(4, 4),
-      wrap: TextureWrapMode.TWM_REPEAT,
-      label: '4×4 REPEAT (16 tiles, fine-grain)',
-    },
-    {
-      tiling: Vector2.create(2, 2),
-      wrap: TextureWrapMode.TWM_MIRROR,
-      label: '2×2 MIRROR (mirrored seams)',
-    },
-    {
-      tiling: Vector2.create(2, 2),
-      wrap: TextureWrapMode.TWM_CLAMP,
-      offset: Vector2.create(0.3, 0.3),
-      label: '2×2 CLAMP w/ offset (edges stretch past 1)',
-    },
-  ]
+      {
+        tiling: Vector2.create(1, 1),
+        wrap: TextureWrapMode.TWM_CLAMP,
+        label: '1×1 CLAMP (full texture, baseline)',
+      },
+      {
+        tiling: Vector2.create(2, 2),
+        wrap: TextureWrapMode.TWM_REPEAT,
+        label: '2×2 REPEAT (4 tiles)',
+      },
+      {
+        tiling: Vector2.create(4, 4),
+        wrap: TextureWrapMode.TWM_REPEAT,
+        label: '4×4 REPEAT (16 tiles, fine-grain)',
+      },
+      {
+        tiling: Vector2.create(2, 2),
+        wrap: TextureWrapMode.TWM_MIRROR,
+        label: '2×2 MIRROR (mirrored seams)',
+      },
+      {
+        tiling: Vector2.create(2, 2),
+        wrap: TextureWrapMode.TWM_CLAMP,
+        offset: Vector2.create(0.3, 0.3),
+        label: '2×2 CLAMP w/ offset (edges stretch past 1)',
+      },
+    ]
   for (let col = 0; col < cols; col++) {
     const e = mkSphere(gridX(col, 1), y4, gridZ(1))
     const tc = tilingCases[col]
@@ -726,6 +752,6 @@ function attachHint(entity: Entity, text: string) {
         maxDistance: HINT_MAX_DISTANCE,
       },
     },
-    () => {},
+    () => { },
   )
 }
