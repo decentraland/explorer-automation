@@ -56,14 +56,10 @@ export function main() {
   // Transform.create(sampleScene, { position: Vector3.create(8, 3, 4) })
   // GltfContainer.create(sampleScene, { src: 'assets/sdk7-models/SampleScene.glb' })
 
-  const sampleScene02 = engine.addEntity()
-  Transform.create(sampleScene02, { position: Vector3.create(14, 4.5, 10) })
-  GltfContainer.create(sampleScene02, {
-    src: 'assets/sdk7-models/SampleScene_02.glb',
-  })
+
 
   const sampleScene03 = engine.addEntity()
-  Transform.create(sampleScene03, { position: Vector3.create(10, 9, 2) })
+  Transform.create(sampleScene03, { position: Vector3.create(14, 6, 2) })
   GltfContainer.create(sampleScene03, {
     src: 'assets/sdk7-models/SampleScene_03.glb',
   })
