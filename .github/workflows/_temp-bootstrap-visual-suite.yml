@@ -53,7 +53,7 @@ env:
   # Pinned unity-explorer PR build under test. Both record and validate
   # phases use this same artifact — that's how the bootstrap proves
   # end-to-end plumbing without needing pre-existing baselines.
-  PINNED_BUILD_URL: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+  PINNED_BUILD_URL: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22035-b2bbcc0/Decentraland_macos.zip'
   # PR #2 in this repo — used by run-visual-suite.yml for the result
   # comment + S3 path namespacing.
   BOOTSTRAP_PR: '2'
@@ -65,7 +65,7 @@ jobs:
     with:
       mode: record
       pr_number: '2'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22035-b2bbcc0/Decentraland_macos.zip'
       tests_ref: feat/snapshots-comparison
       # commit_sha + branch_label are cosmetic; let the reusable fall back
       # to its run-id default for the bootstrap run.
@@ -78,6 +78,6 @@ jobs:
     with:
       mode: test
       pr_number: '2'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22035-b2bbcc0/Decentraland_macos.zip'
       tests_ref: feat/snapshots-comparison
     secrets: inherit
