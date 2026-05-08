@@ -16,16 +16,16 @@ name: Visual Suite
 # across platforms.
 #
 # Required secrets (caller passes via `secrets: inherit`):
-#   - ALTTESTER_LICENSE                    AltTester Pro license key
-#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (read-only is sufficient; baseline auto-commits use GITHUB_TOKEN)
-#   - EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
-#   - EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
-#   - EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
-#   - EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+#   - ALTTESTER_LICENSE                        AltTester Pro license key
+#   - REPOS_READ_ONLY_TOKEN                    PAT — read on decentraland/MetaForge + decentraland/unity-explorer (read-only is sufficient; baseline auto-commits use GITHUB_TOKEN)
+#   - DEV_EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
+#   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
+#   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
+#   - DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
 #
 # Required vars on the caller's repo (read via `vars.*` inside this workflow,
 # which resolves against the caller's repo for workflow_call invocations):
-#   - EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
+#   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
 
 on:
   workflow_call:
@@ -87,7 +87,7 @@ jobs:
       COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || format('run-{0}', github.run_id) }}
       BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || 'main') }}
       # vars.* inside a workflow_call run reads the *caller's* repo vars
-      PUBLIC_URL_PREFIX: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
 
     steps:
       - name: Validate mode
@@ -247,6 +247,7 @@ jobs:
           aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
 
       - name: Upload Allure report to S3
+        id: s3
         if: always() && steps.report.outputs.report_path != ''
         env:
           BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
@@ -334,7 +335,7 @@ jobs:
             | Commit | `${{ env.COMMIT_SHA }}` |
             | Branch | `${{ env.BRANCH_LABEL }}` |
             | Tests ref | `${{ env.TESTS_REF || 'main' }}` |
-            | Allure report | ${{ steps.report.outputs.report_path != '' && format('[Open]({0})', steps.ids.outputs.report_url) || '_not generated_' }} |
+            | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
             | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
             <sub>${{ inputs.mode == 'record' && 'Triggered via `/generate-baselines`' || 'Triggered via `/visual-tests`' }} · this comment is updated on every run.</sub>
