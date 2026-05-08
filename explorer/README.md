@@ -175,11 +175,34 @@ make scenes-new-scene NAME=my-feature        # scaffolds scenes/packages/my-feat
 # edit Tests/Tests/Visual/MyFeatureFixture.cs to add Frame.WaitForStable + Snapshot.AssertMatchesBaseline
 ```
 
-Recording a baseline (manual; CI never auto-records):
+Recording a baseline:
+
+**The canonical path is CI.** Comment `/generate-baselines` on your explorer-automation PR. The `Generate Baselines` workflow runs the suite with `--record-baselines` against a deterministic Explorer build, then auto-commits the regenerated PNGs back to your PR branch as `github-actions[bot]`.
+
+Why CI rather than your laptop: GPU model, font subpixel hinting, color profile and OS version all affect rendered pixels. A baseline recorded on a dev machine can diverge from what CI renders, and every downstream unity-explorer PR would then fail visual regression against a baseline only your machine could reproduce. CI runs on a deterministic macOS-14 runner, so its baselines are the only ones the rest of the pipeline can trust.
+
+You can still record locally during iteration to sanity-check the *fixture* (does it set up correctly, does `Frame.WaitForStable` settle?):
 
 ```bash
 metaforge explorer test dev --filter "Category=Visual&FullyQualifiedName~MyFeatureFixture" --record-baselines
-git add Tests/Baselines/MyFeatureFixture/
+# Inspect the rendered PNG visually to confirm the fixture works,
+# then DISCARD the local files — do NOT commit them.
+git checkout -- Tests/Baselines/MyFeatureFixture/
 ```
+
+Direct human commits to `Tests/Baselines/**/*.png` should be flagged at review. Only `github-actions[bot]` commits from `/generate-baselines` should land.
+
+### Merge order with paired unity-explorer PRs
+
+If your baseline change is paired with a unity-explorer PR (i.e. you used the matching branch name in both repos so `/visual-tests` picks up your tests, and `/generate-baselines` records against your Explorer build), **merge the unity-explorer PR first.**
+
+Why: explorer-automation main is the baseline of record for every open unity-explorer PR. The moment a baseline change lands here, every unity-explorer PR re-runs visual tests against the new pixels — which only the paired Explorer build produces. Merging explorer-automation first breaks every other in-flight PR until the paired Explorer change lands.
+
+The safe order is:
+1. Get both PRs reviewed.
+2. Merge the unity-explorer PR.
+3. Once it's on `dev` and a successful Unity Cloud Build exists for that SHA, merge the explorer-automation PR.
+
+If the baseline change is *standalone* (no Explorer change required — e.g. tightening tolerance on an existing test, recording for a brand-new scene that doesn't depend on Explorer changes), this doesn't apply and you can merge in any order.
 
 See [SNAPSHOTS.md](SNAPSHOTS.md) for the full reference: snapshot API, modes, tolerance tuning, Allure attachments, baseline storage, known caveats.
