@@ -67,12 +67,12 @@ function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Pro
     }
 
     const isWin = process.platform === 'win32'
-    const child = spawn(cmd, args, {
+    const cmdToSpawn = isWin && /\s/.test(cmd) ? `"${cmd}"` : cmd
+    const child = spawn(cmdToSpawn, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: !isWin,
-      shell: false,
-      // windowsHide keeps no console flashes on Windows; harmless on POSIX.
+      shell: isWin,
       windowsHide: true,
     })
     let buffer = ''
