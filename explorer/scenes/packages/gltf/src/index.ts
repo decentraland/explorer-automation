@@ -82,7 +82,7 @@ export function main() {
 
   const treehouse = engine.addEntity()
   Transform.create(treehouse, {
-    position: Vector3.create(7, 0, 14),
+    position: Vector3.create(22, 0, 14),
     scale: Vector3.create(0.6, 0.6, 0.6),
   })
   GltfContainer.create(treehouse, { src: 'assets/genesis/treehouse.glb' })
@@ -117,6 +117,16 @@ export function main() {
   GltfContainer.create(robot, { src: 'assets/sdk7-models/external-deps/npc-robot/s0_NPC_Robot_Art_1__01.glb' })
 
   Animator.create(robot)
+
+
+  // no Transform, partially out of bounds
+  const table = engine.addEntity()
+
+  GltfContainer.create(table, { src: 'assets/sdk7-models/WoodRoundTable_01.glb' })
+
+  Animator.create(robot)
+
+
 
   // ── lighting ─────────────────────────────────────────────────────────────
   // Two point lights spread over the wider 32m × 16m scene, one over each
