@@ -1,0 +1,186 @@
+name: Generate Baselines
+
+# Slash-command-driven baseline regenerator. Triggered by `/generate-baselines`
+# on a PR comment in this repo. Dispatches into the reusable run-visual-suite
+# workflow with mode: record, which:
+#   1. Runs the visual suite with --record-baselines (overwrites baseline PNGs).
+#   2. Commits the regenerated PNGs back to the PR branch.
+#   3. Uploads the Allure report to S3 and posts a result comment on the PR.
+#
+# Why server-side recording instead of local? CI runs on a deterministic
+# macOS runner image; local dev machines can produce subtly different pixels
+# due to GPU, font subpixel hinting, color profile, etc. Pinning baselines
+# to runner-rendered images keeps the test suite stable.
+#
+# Trigger:
+#   Comment "/generate-baselines" on a PR. Restricted to OWNER / MEMBER /
+#   COLLABORATOR — anyone else's comment is silently ignored.
+#
+# Build URL resolution:
+#   Baselines are pixel-sensitive to which Explorer build rendered them, so
+#   choosing the right build matters. Resolution order:
+#     1. If the explorer-automation PR's head branch matches an open
+#        unity-explorer PR's head branch, use *that* PR's latest successful
+#        Unity Cloud Build. Pairs explorer + tests under coordinated change.
+#     2. Otherwise, fall back to unity-explorer's latest non-prerelease
+#        GitHub release zip. Stable target for routine baseline updates.
+#
+# Required secrets / vars (configure once on the repo):
+#   - secrets.ALTTESTER_LICENSE                       AltTester Pro license key
+#   - secrets.REPOS_READ_ONLY_TOKEN                   PAT with read on decentraland/MetaForge + decentraland/unity-explorer, write on this repo
+#   - secrets.EXPLORER_TEAM_S3_BUCKET                 S3 bucket for the Allure report
+#   - secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION        AWS region the bucket lives in
+#   - secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID         S3 upload credentials
+#   - secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY     S3 upload credentials
+#   - vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL         Public-facing prefix of the bucket
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: generate-baselines-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Resolve trigger
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/generate-baselines')
+    runs-on: ubuntu-latest
+    outputs:
+      authorized: ${{ steps.gate.outputs.authorized }}
+      pr_number: ${{ steps.pr.outputs.number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      head_short_sha: ${{ steps.pr.outputs.head_short_sha }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      build_url: ${{ steps.build.outputs.build_url }}
+
+    steps:
+      - name: Gate by author association
+        id: gate
+        env:
+          ASSOC: ${{ github.event.comment.author_association }}
+        run: |
+          set -euo pipefail
+          case "$ASSOC" in
+            OWNER|MEMBER|COLLABORATOR)
+              echo "authorized=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::notice::Ignoring /generate-baselines from $ASSOC ${{ github.event.comment.user.login }} — write access required."
+              echo "authorized=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: React to the trigger comment
+        if: steps.gate.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=eyes >/dev/null
+
+      - name: Resolve PR head
+        id: pr
+        if: steps.gate.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          # issue_comment payload has no head info — fetch the PR.
+          PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+          HEAD_SHA=$(echo "$PR_JSON" | jq -r '.head.sha')
+          HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
+          {
+            echo "number=${PR_NUMBER}"
+            echo "head_sha=${HEAD_SHA}"
+            echo "head_short_sha=${HEAD_SHA:0:7}"
+            echo "head_ref=${HEAD_REF}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Explorer build URL
+        id: build
+        if: steps.gate.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          PUBLIC_URL_PREFIX: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+
+          # ── 1. Look for a paired unity-explorer PR ──────────────────────
+          PAIRED_PR_JSON=$(gh api \
+            "repos/decentraland/unity-explorer/pulls?state=open&head=decentraland:${HEAD_REF}&per_page=1" \
+            --jq '.[0]' 2>/dev/null || echo 'null')
+
+          if [ "$PAIRED_PR_JSON" != "null" ] && [ -n "$PAIRED_PR_JSON" ]; then
+            PAIRED_HEAD_SHA=$(echo "$PAIRED_PR_JSON" | jq -r '.head.sha')
+            PAIRED_HEAD_REF=$(echo "$PAIRED_PR_JSON" | jq -r '.head.ref')
+            PAIRED_PR_NUMBER=$(echo "$PAIRED_PR_JSON" | jq -r '.number')
+            SHORT_SHA="${PAIRED_HEAD_SHA:0:7}"
+
+            # Find the latest successful Unity Cloud Build for that SHA
+            RUN_JSON=$(gh api \
+              "repos/decentraland/unity-explorer/actions/runs?head_sha=${PAIRED_HEAD_SHA}&status=success&per_page=20" \
+              --jq '[.workflow_runs[] | select(.name == "Unity Cloud Build")] | .[0]')
+
+            if [ -n "$RUN_JSON" ] && [ "$RUN_JSON" != "null" ]; then
+              RUN_NUMBER=$(echo "$RUN_JSON" | jq -r '.run_number')
+              ORIGINAL_EVENT=$(echo "$RUN_JSON" | jq -r '.event')
+              if [ "$ORIGINAL_EVENT" = "pull_request" ]; then
+                SAFE_BRANCH="${PAIRED_HEAD_REF//\//-}"
+                ARTIFACT_PATH="@dcl/unity-explorer/branch/${SAFE_BRANCH}/pr-${RUN_NUMBER}-${SHORT_SHA}"
+                BUILD_URL="${PUBLIC_URL_PREFIX}/${ARTIFACT_PATH}/Decentraland_macos.zip"
+                echo "::notice::Recording against paired unity-explorer PR #${PAIRED_PR_NUMBER} (${SHORT_SHA})."
+                echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but its latest Unity Cloud Build for ${SHORT_SHA} was triggered by '${ORIGINAL_EVENT}', not pull_request. Falling back to release."
+            else
+              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but no successful Unity Cloud Build yet for ${SHORT_SHA}. Falling back to release."
+            fi
+          fi
+
+          # ── 2. Fallback: latest non-prerelease unity-explorer release ────
+          RELEASE_JSON=$(gh api \
+            "repos/decentraland/unity-explorer/releases?per_page=20" \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
+
+          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+            echo "::error::No paired unity-explorer PR build available, and no published release found. Cannot record baselines."
+            exit 1
+          fi
+
+          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          BUILD_URL=$(echo "$RELEASE_JSON" \
+            | jq -r '.assets[] | select(.name == "Decentraland_macos.zip") | .browser_download_url')
+
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+            echo "::error::Release ${RELEASE_TAG} has no Decentraland_macos.zip asset attached."
+            exit 1
+          fi
+
+          echo "::notice::Recording against unity-explorer release ${RELEASE_TAG}."
+          echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+
+  run-suite:
+    name: Regenerate baselines
+    needs: resolve
+    if: needs.resolve.outputs.authorized == 'true'
+    uses: ./.github/workflows/run-visual-suite.yml
+    with:
+      mode: record
+      pr_number: ${{ needs.resolve.outputs.pr_number }}
+      build_url: ${{ needs.resolve.outputs.build_url }}
+      tests_ref: ${{ needs.resolve.outputs.head_ref }}
+      commit_sha: ${{ needs.resolve.outputs.head_short_sha }}
+      branch_label: ${{ needs.resolve.outputs.head_ref }}
+    secrets: inherit
