@@ -17,7 +17,7 @@ name: Visual Suite
 #
 # Required secrets (caller passes via `secrets: inherit`):
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
-#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer; write on decentraland/explorer-automation (for baseline auto-commits)
+#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (read-only is sufficient; baseline auto-commits use GITHUB_TOKEN)
 #   - EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
 #   - EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
 #   - EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
@@ -280,7 +280,7 @@ jobs:
       - name: Commit regenerated baselines
         if: always() && inputs.mode == 'record' && env.PR_NUMBER != '' && steps.report.outputs.report_path != ''
         env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           REPO_ROOT="$HOME/Library/Application Support/Decentraland/MetaForge/explorer-automation"
