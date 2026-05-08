@@ -1,10 +1,8 @@
 import { walletTest as test } from '../fixtures/wallet-fixture.js'
-import { setupTestWallet } from '../../../shared/helpers/wallet-setup.js'
 import { optionalEnv } from '../../../shared/helpers/env.js'
 import { executePrimaryBuy } from '../helpers/primary-buy.js'
-import { executeListing } from '../helpers/listing.js'
-import { executeAcceptListing } from '../helpers/accept-listing.js'
-import { setupWalletPool, type WalletPool } from '../helpers/wallet-pool.js'
+import { captureListingResponse } from '../helpers/listing.js'
+import { captureAcceptListingTxHash } from '../helpers/accept-listing.js'
 import { type AssetType } from '../pages/AssetPage.js'
 
 const WALLET_A_PRIVATE_KEY = optionalEnv('WALLET_A_PRIVATE_KEY')
@@ -33,10 +31,10 @@ const haveOnChainConfig =
 
 /**
  * End-to-end "buy primary → list → accept secondary" loop using the shared
- * two-wallet pool. Roles are assigned at runtime by `setupWalletPool()` —
- * the wealthier wallet plays seller (it does the primary mint, the largest
- * MANA spend). Over many runs the assignment naturally inverts and balances
- * stay equalized.
+ * two-wallet pool. Roles are assigned at runtime by the `walletPool` fixture
+ * — the wealthier wallet plays seller (it does the primary mint, the
+ * largest MANA spend). Over many runs the assignment naturally inverts and
+ * balances stay equalized.
  *
  * Each run is self-contained: the seller mints a fresh NFT, lists it, and
  * the buyer accepts. No pre-existing on-chain state required, no NFT
@@ -50,13 +48,12 @@ const haveOnChainConfig =
  *   wrapped in `executeMetaTransaction` (selector 0xd8ed1acc), POST
  *   /v1/transactions, Amoy mines.
  *
- * Adding a new on-chain flow (e.g. bidding: WALLET_A buys → WALLET_B bids
- * → WALLET_A accepts the bid): create a new spec file in this directory,
- * tag it `@marketplace @on-chain`, wrap the flow in `describe.serial`, call
- * `setupWalletPool()` in `beforeAll`, and compose helpers from
- * `tests/marketplace/helpers/`. The on-chain project's `--workers=1`
- * invocation guarantees no two on-chain specs share the wallet pool
- * concurrently.
+ * Adding a new on-chain flow (e.g. bidding: seller mints → buyer bids →
+ * seller accepts the bid): create a new spec file in this directory, tag it
+ * `@marketplace @on-chain`, wrap the flow in `describe.serial`, and
+ * destructure `sellerWallet` / `buyerWallet` per test. The on-chain
+ * project's `--workers=1` invocation guarantees no two on-chain specs share
+ * the wallet pool concurrently.
  */
 test.describe.serial('@marketplace @on-chain marketplace buy-and-sell loop', () => {
   // Two Amoy receipts (primary mint + accept) plus the listing signature
@@ -68,43 +65,79 @@ test.describe.serial('@marketplace @on-chain marketplace buy-and-sell loop', () 
     'On-chain spec requires WALLET_A_PRIVATE_KEY, WALLET_B_PRIVATE_KEY (distinct), RPC URLs, and MARKETPLACE_TEST_ITEM_* in .env'
   )
 
-  let pool: WalletPool
-
-  // Carries the listed NFT identity from the seller test to the buyer test.
-  // Each test gets its own page/context, so wallet state doesn't bleed —
-  // these closure variables are the only shared signal.
-  let listedContract: string | undefined
-  let listedTokenId: string | undefined
+  // describe.serial auto-skips downstream tests on upstream failure — that's
+  // the load-bearing contract that makes the non-null assertions on
+  // `mintedContract!` / `mintedTokenId!` below safe. If a downstream test
+  // ran after an upstream failure, those would crash with "undefined" in
+  // confusing ways; describe.serial guarantees they don't.
+  let mintedContract: string | undefined
+  let mintedTokenId: string | undefined
   let listingTradeId: string | undefined
 
-  test.beforeAll(async () => {
-    pool = await setupWalletPool()
-  })
+  test('seller buys an item (primary mint)', async ({ sellerWallet, page, navbar, asset, buyModal, authModal }) => {
+    console.log('[buy-and-sell] seller wallet:', sellerWallet.address)
 
-  test('seller mints + lists an NFT', async ({ page, navbar, asset, buyModal, authModal, sellModal }) => {
-    await setupTestWallet(page, pool.seller.privateKey)
+    await asset.goto(ITEM_TYPE, ITEM_CONTRACT!, ITEM_ID!)
+    await navbar.waitForConnected(60_000)
+    await asset.buyWithCryptoButton().waitFor({ state: 'visible', timeout: 30_000 })
+    await asset.clickBuyWithCrypto()
+
+    await buyModal.waitForOpen()
+    await buyModal.switchNetworkIfPrompted()
+    await buyModal.submitBuy()
 
     const minted = await executePrimaryBuy(
-      { page, navbar, asset, buyModal, authModal },
-      { contract: ITEM_CONTRACT!, itemId: ITEM_ID!, type: ITEM_TYPE }
+      page,
+      authModal.signButton(),
+      { contract: ITEM_CONTRACT!, type: ITEM_TYPE },
+      intervalMs => authModal.authorizeAndSign(intervalMs)
     )
-    listedContract = minted.contract
-    listedTokenId = minted.tokenId
+    mintedContract = minted.contract
+    mintedTokenId = minted.tokenId
+  })
 
-    const trade = await executeListing({ page, navbar, sellModal, authModal }, minted, LISTING_PRICE_MANA)
+  test('seller lists the just-minted NFT', async ({ sellerWallet, page, navbar, sellModal, authModal }) => {
+    test.expect(mintedContract && mintedTokenId, 'previous test must mint an NFT first').toBeTruthy()
+    console.log('[buy-and-sell] seller wallet:', sellerWallet.address)
+
+    await sellModal.goto('nft', mintedContract!, mintedTokenId!)
+    await navbar.waitForConnected(60_000)
+    await sellModal.waitForLoaded()
+
+    // The /v1/trades response is fired AFTER the auth-modal relayer POST
+    // (setApprovalForAll meta-tx) for first-time sellers. Register the
+    // listener BEFORE driving the modal so we don't miss the response.
+    const tradePromise = captureListingResponse(page, { timeout: 240_000 })
+
+    await sellModal.fillAndSubmit(LISTING_PRICE_MANA)
+    await authModal.authorizeAndSign()
+
+    const trade = await tradePromise
     listingTradeId = trade.tradeId
   })
 
-  test('buyer accepts the listing', async ({ page, navbar, asset, buyModal }) => {
-    test.expect(listingTradeId, 'seller test must produce a listing first').toBeTruthy()
-    test.expect(listedContract && listedTokenId, 'seller test must capture the listed NFT identity').toBeTruthy()
+  test('buyer buys the listed NFT', async ({ buyerWallet, page, navbar, asset, buyModal }) => {
+    test.expect(listingTradeId, 'previous tests must produce a listing first').toBeTruthy()
+    test.expect(mintedContract && mintedTokenId, 'previous tests must capture the listed NFT identity').toBeTruthy()
+    console.log('[buy-and-sell] buyer wallet:', buyerWallet.address)
 
-    await setupTestWallet(page, pool.buyer.privateKey)
+    await asset.goto('nft', mintedContract!, mintedTokenId!)
+    await navbar.waitForConnected(60_000)
+    await asset.buyWithCryptoButton().waitFor({ state: 'visible', timeout: 30_000 })
+    await asset.clickBuyWithCrypto()
 
-    const result = await executeAcceptListing(
-      { page, navbar, asset, buyModal },
-      { contract: listedContract!, tokenId: listedTokenId! }
-    )
+    await buyModal.waitForOpen()
+    await buyModal.switchNetworkIfPrompted()
+
+    // Register the /v1/transactions listener BEFORE submitting; the POST
+    // fires from the dapp's saga as soon as submitBuy() returns control.
+    const txPromise = captureAcceptListingTxHash(page)
+
+    await buyModal.submitBuy()
+
+    const result = await txPromise
     test.expect(result.txHash).toMatch(/^0x[0-9a-f]{64}$/i)
+
+    await page.waitForURL(/\/success(\?|$|\/)/, { timeout: 30_000 })
   })
 })

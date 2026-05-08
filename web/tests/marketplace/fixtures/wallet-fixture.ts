@@ -1,5 +1,7 @@
 import { test as base, type Fixtures, type PlaywrightTestArgs, type PlaywrightTestOptions } from '@playwright/test'
 import { walletTest as baseWalletTest } from '../../../shared/fixtures/wallet-fixture.js'
+import { setupTestWallet } from '../helpers/wallet-setup.js'
+import { setupWalletPool, type WalletPool } from '../helpers/wallet-pool.js'
 import { AccountPage } from '../pages/AccountPage.js'
 import { AssetPage } from '../pages/AssetPage.js'
 import { AuthorizationModal } from '../pages/AuthorizationModal.js'
@@ -65,4 +67,44 @@ const pageObjectFixtures: Fixtures<MarketplacePages, object, PlaywrightTestArgs 
 
 export const marketplaceTest = base.extend<MarketplacePages>(pageObjectFixtures)
 
-export const walletTest = baseWalletTest.extend<MarketplacePages>(pageObjectFixtures)
+/**
+ * On-chain wallet fixtures, layered on top of the POM-bundle walletTest.
+ *
+ *  - `walletPool` is **worker-scoped**: setupWalletPool() runs once per
+ *    worker process, the result is cached, and every test in that worker
+ *    that destructures the fixture sees the same pool. Under --workers=1
+ *    (the only supported mode for the marketplace-onchain project) this
+ *    means one pool initialization per CI run — identical to today's
+ *    beforeAll(setupWalletPool) semantics, but without the per-describe
+ *    ceremony.
+ *
+ *  - `sellerWallet` / `buyerWallet` are **test-scoped**: each runs once per
+ *    test that destructures it, calling setupTestWallet(page, role.privateKey)
+ *    against the shared pool and exposing { address } to the test.
+ *
+ * Off-chain specs that don't destructure these fixtures don't trigger the
+ * pool setup, so they continue to run without WALLET_A_PRIVATE_KEY etc. in
+ * env (which is the contract documented in web/CLAUDE.md "Marketplace tests
+ * — off-chain specs require no .env").
+ */
+export const walletTest = baseWalletTest
+  .extend<MarketplacePages>(pageObjectFixtures)
+  .extend<object, { walletPool: WalletPool }>({
+    walletPool: [
+      async ({}, use) => {
+        const pool = await setupWalletPool()
+        await use(pool)
+      },
+      { scope: 'worker' }
+    ]
+  })
+  .extend<{ sellerWallet: { address: string }; buyerWallet: { address: string } }>({
+    sellerWallet: async ({ page, walletPool }, use) => {
+      const { address } = await setupTestWallet(page, walletPool.seller.privateKey)
+      await use({ address })
+    },
+    buyerWallet: async ({ page, walletPool }, use) => {
+      const { address } = await setupTestWallet(page, walletPool.buyer.privateKey)
+      await use({ address })
+    }
+  })

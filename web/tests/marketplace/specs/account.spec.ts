@@ -1,6 +1,6 @@
 import { privateKeyToAddress } from 'viem/accounts'
 import { walletTest as test } from '../fixtures/wallet-fixture.js'
-import { injectAuthIdentity } from '../../../shared/helpers/auth-identity.js'
+import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
 import { SYNPRESS_DEFAULT_KEY } from '../../../shared/helpers/synpress.js'
 import { withEnv } from '../../../shared/helpers/url.js'
@@ -14,6 +14,7 @@ test.describe('@marketplace authenticated account view', () => {
     const address = privateKeyToAddress(privateKey)
 
     await injectAuthIdentity(page, privateKey)
+    await installInjectedWalletMock(page, privateKey)
     await mockExistingProfile(page, address)
 
     await page.goto(withEnv(`${baseURL.replace(/\/$/, '')}/account`))

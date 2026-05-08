@@ -28,9 +28,9 @@ web/
 │   ├── helpers/
 │   │   ├── env.ts                  # requireEnv / optionalEnv (.env at repo root)
 │   │   ├── identity.ts             # auth-chain primitives (RequestPage)
-│   │   ├── auth-identity.ts        # SSO localStorage seed (marketplace boot-as-signed-in)
+│   │   ├── auth-identity.ts        # injectAuthIdentity (SSO + decentraland-connect localStorage seed) + installInjectedWalletMock (Web3Mock account override + window.ethereum.request patch)
 │   │   ├── broadcast-wallet.ts     # viem-driven tx broadcast (eth_sendTransaction + signTypedData)
-│   │   ├── wallet-setup.ts         # convenience wrapper for the 3-layer marketplace setup
+│   │   ├── ethereum.ts             # waitForAmoyReceipt — single entry point for Amoy receipt + status assertion (used by primary-buy + accept-listing helpers)
 │   │   ├── profile.ts              # mockExistingProfile (catalyst route intercept)
 │   │   └── url.ts                  # withEnv() — appends ?env=dev for testnet switching
 │   ├── fixtures/
@@ -64,9 +64,10 @@ web/
     │       └── web-to-inworld-handoff.spec.ts    # @cross — web → desktop (currently skipped)
     └── marketplace/                # marketplace dapp tests
         ├── helpers/
-        │   ├── primary-buy.ts          # primary-mint flow + relayer txHash capture
-        │   ├── listing.ts              # off-chain trade signature → marketplace-api /v1/trades
-        │   ├── accept-listing.ts       # buyer's secondary-buy via meta-tx relayer
+        │   ├── wallet-setup.ts         # setupTestWallet — composes injectAuthIdentity + installInjectedWalletMock + mockExistingProfile + setupBroadcastWallet
+        │   ├── primary-buy.ts          # executePrimaryBuy — backend-capture only: relayer txHash + Amoy receipt + mint Transfer log decode + indexer wait
+        │   ├── listing.ts              # captureListingResponse — listens for marketplace-api /v1/trades 201 + extracts tradeId
+        │   ├── accept-listing.ts       # captureAcceptListingTxHash — listens for /v1/transactions POST + waits for Amoy receipt
         │   └── wallet-pool.ts          # 2-EOA pool, runtime role assignment by MANA balance
         ├── pages/                      # 8 POMs — testid-first locators
         │   ├── BrowsePage.ts
@@ -78,7 +79,7 @@ web/
         │   ├── Navbar.ts
         │   └── SignInPage.ts
         ├── fixtures/
-        │   └── wallet-fixture.ts       # marketplaceTest (POMs only) + walletTest (POMs + Synpress)
+        │   └── wallet-fixture.ts       # marketplaceTest (POMs only) + walletTest (POMs + Synpress + worker-scoped walletPool + test-scoped sellerWallet/buyerWallet)
         └── specs/                      # 4 specs, all tagged @marketplace (+ @on-chain where applicable)
             ├── browse.spec.ts                # @marketplace
             ├── account.spec.ts               # @marketplace
@@ -156,15 +157,20 @@ These are not style preferences. Violating them produces silently-passing-but-wr
 In every marketplace spec that needs a connected wallet:
 
 ```ts
-await injectAuthIdentity(page, privateKey)   // 1. SSO + Web3Mock account override
-await mockExistingProfile(page, address)      // 2. (optional) profile mock
-await setupBroadcastWallet(page, { ... })     // 3. tx broadcasting interceptors
-await page.goto(...)                          // 4. THEN navigate
+await injectAuthIdentity(page, privateKey)        // 1. SSO + decentraland-connect localStorage seed
+await installInjectedWalletMock(page, privateKey) // 2. Web3Mock account override + window.ethereum.request patch
+await mockExistingProfile(page, address)          // 3. (optional) profile mock
+await setupBroadcastWallet(page, { ... })         // 4. tx broadcasting interceptors
+await page.goto(...)                              // 5. THEN navigate
 ```
 
-(Or use `setupTestWallet(page, privateKey)` from `shared/helpers/wallet-setup.js` — it does steps 1+2+3 in order.)
+(Or use `setupTestWallet(page, privateKey)` from `tests/marketplace/helpers/wallet-setup.js` — it does steps 1–4 in order.)
 
-All three use `page.addInitScript`, which only runs on **subsequent** navigations. Calling them after `page.goto` is a silent no-op on that page.
+For on-chain marketplace specs, prefer the `sellerWallet` / `buyerWallet` fixtures in `tests/marketplace/fixtures/wallet-fixture.ts` — they call `setupTestWallet` against the worker-scoped `walletPool` automatically and expose `{ address }`.
+
+All four `addInitScript` calls only run on **subsequent** navigations. Calling them after `page.goto` is a silent no-op on that page.
+
+**Why the split between `injectAuthIdentity` and `installInjectedWalletMock`**: the SSO seed is wallet-agnostic (works with WalletConnect, real MetaMask, etc.); the Web3Mock patch only applies to `@synthetixio/ethereum-wallet-mock`-backed tests. A future real-wallet test calls `injectAuthIdentity` only.
 
 ### Auth wallet setup (web3 specs)
 
@@ -182,7 +188,7 @@ The "BUY WITH MANA" flow on dev/zone is a **sponsored meta-transaction**, not a 
 Implications:
 
 - Don't assume `eth_sendTransaction` will fire on the user's wallet — it won't.
-- Don't verify by looking up the user's wallet on `amoy.polygonscan.com` — `from` is the relayer EOA. Capture `txHash` from the `/v1/transactions` POST and call `waitForTransactionReceipt({ hash })` on a viem Amoy public client (see `helpers/primary-buy.ts` and `helpers/accept-listing.ts`).
+- Don't verify by looking up the user's wallet on `amoy.polygonscan.com` — `from` is the relayer EOA. Capture `txHash` from the `/v1/transactions` POST and pass it to `waitForAmoyReceipt({ txHash })` from `shared/helpers/ethereum.js` — single entry point that constructs the viem Amoy public client, polls the receipt, and asserts `status === 'success'`. Used by `helpers/primary-buy.ts` and `helpers/accept-listing.ts`; reuse instead of inlining `createPublicClient` per call site.
 - Don't treat `/status` as success — it's the in-flight polling page. Match `/\/success(\?|$|\/)/` exactly.
 
 ### Marketplace listing flow — off-chain only
@@ -199,7 +205,9 @@ Don't `waitForTransactionReceipt` for the listing — there's no tx. Don't confu
 
 On-chain marketplace specs share a 2-EOA pool (`WALLET_A_PRIVATE_KEY` + `WALLET_B_PRIVATE_KEY`). The `marketplace-onchain` Playwright project runs under `--workers=1` (set in `npm run test:marketplace:onchain`); `fullyParallel: false` in the project config is belt-and-suspenders.
 
-Roles (`seller`/`buyer`) are assigned at runtime in each spec's `beforeAll` by `setupWalletPool()` from `tests/marketplace/helpers/wallet-pool.js`, reading each wallet's MANA balance on Polygon Amoy. The wealthier wallet plays seller. Over many runs the assignment naturally inverts.
+Roles (`seller`/`buyer`) are assigned at runtime by `setupWalletPool()` from `tests/marketplace/helpers/wallet-pool.js`, reading each wallet's MANA balance on Polygon Amoy. The wealthier wallet plays seller. Over many runs the assignment naturally inverts.
+
+`setupWalletPool()` is invoked by the **worker-scoped `walletPool` fixture** in `tests/marketplace/fixtures/wallet-fixture.ts` — initialized once per worker process, reused across every test in that worker. Under `--workers=1` (the only supported mode for `marketplace-onchain`), this means one pool initialization per CI run. Tests that need a configured wallet destructure the test-scoped `sellerWallet` or `buyerWallet` fixture — those resolve `walletPool` lazily and call `setupTestWallet` against the assigned role's private key. Off-chain specs that don't destructure these fixtures don't trigger the pool setup, so they continue to run without `WALLET_A_PRIVATE_KEY` etc. in env.
 
 `setupWalletPool()` enforces a `MIN_WALLET_MANA` precheck and throws a clear "wallet pool low" error if either wallet falls below the threshold. **Top-ups are manual** — there's no auto-fund.
 
@@ -291,6 +299,7 @@ If those move, update `tests/auth/helpers/token-bridge.ts` or `tests/auth/helper
 - `test.setTimeout(...)` inside a test body does NOT extend back over the fixture phase — fixtures already ran under the project default. For fixture-heavy tests (e.g. `buy-and-sell.spec.ts`), set `test.describe.configure({ timeout: 420_000 })` at the top of the describe block.
 - Reporting Amoy as the wallet's `eth_chainId` when the NFT is on Amoy flips the dapp's authorization saga to the direct-broadcast path (`eth_sendTransaction` → INSUFFICIENT_FUNDS without POL gas). Keep the wallet on Sepolia so the dapp uses the meta-tx path through transactions-server.
 - Hard-coded sleeps — never. Use Playwright's auto-waiting or `waitForURL` / `waitFor` with explicit timeouts.
+- Passing a bound method as a callback (e.g. `authModal.authorizeAndSign` without an arrow) drops `this` and TypeErrors at runtime even though TS accepts it. Always wrap: `intervalMs => authModal.authorizeAndSign(intervalMs)`. See `tests/marketplace/specs/buy-and-sell.spec.ts` primary-buy call site.
 - `chromium.launchPersistentContext` for a real MetaMask extension — not needed; the Synpress mock approach in `tests/auth/helpers/wallet.ts` covers all current cases without that complexity.
 
 ## Don't

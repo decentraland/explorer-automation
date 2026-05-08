@@ -1,11 +1,7 @@
 import type { Page, Request, Response } from '@playwright/test'
-import { createPublicClient, http, type Hex } from 'viem'
-import { polygonAmoy } from 'viem/chains'
-import { requireEnv } from '../../../shared/helpers/env.js'
-import type { AssetPage, AssetType } from '../pages/AssetPage.js'
-import type { AuthorizationModal } from '../pages/AuthorizationModal.js'
-import type { BuyWithCryptoModal } from '../pages/BuyWithCryptoModal.js'
-import type { Navbar } from '../pages/Navbar.js'
+import type { Hex } from 'viem'
+import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
+import type { AssetType } from '../pages/AssetPage.js'
 
 export type PrimaryBuyResult = {
   contract: string
@@ -15,7 +11,6 @@ export type PrimaryBuyResult = {
 
 export type PrimaryBuyConfig = {
   contract: string
-  itemId: string
   type: AssetType
 }
 
@@ -48,36 +43,39 @@ async function waitForNftIndexed(page: Page, contract: string, tokenId: string, 
 }
 
 /**
- * Drives the marketplace's primary-buy flow end-to-end and returns the
- * minted NFT's identifier. Wallet setup is the caller's responsibility —
- * call `setupTestWallet(...)` first.
+ * Captures the relayer txHash from a primary-buy flow that the SPEC has just
+ * driven through the dapp's UI (asset.goto → clickBuyWithCrypto → buyModal
+ * .submitBuy). This helper is deliberately UI-free: it observes the network
+ * for the `/v1/transactions` POST(s), decides whether the auth modal is in
+ * play, drives the auth modal if so, picks the last POST (the buy, not the
+ * approval), waits for the Amoy receipt, and decodes the mint Transfer log
+ * to extract the minted tokenId.
  *
- * Steps: navigate to the asset page → click "Buy with MANA" → submit the
- * BuyWithCryptoModal → relayer broadcasts on Amoy → wait for the receipt →
- * decode the Transfer event log to extract the minted tokenId →
- * wait for the dapp's `/success` URL.
+ * Wallet setup is the caller's responsibility — a test fixture
+ * (`sellerWallet` / `buyerWallet`) covers it via `setupTestWallet`.
+ *
+ * Why network-observation in the helper instead of the spec: the dual-POST
+ * race (first-time wallets fire approval + buy; already-approved wallets
+ * fire only buy) needs careful collection logic, and the auth-modal driving
+ * is conditional on a network signal. Hand-rolling that in every spec would
+ * be error-prone. The helper hides exactly the part Playwright doesn't have
+ * a clean primitive for.
  *
  * Returns `{ contract, tokenId, txHash }`. Throws if the relayer rejects,
  * the receipt reverts, or no mint Transfer event appears in the logs.
  */
 export async function executePrimaryBuy(
-  ctx: {
-    page: Page
-    navbar: Navbar
-    asset: AssetPage
-    buyModal: BuyWithCryptoModal
-    authModal: AuthorizationModal
-  },
-  config: PrimaryBuyConfig
+  page: Page,
+  authModalSignButton: import('@playwright/test').Locator,
+  config: PrimaryBuyConfig,
+  authorizeAndSign: (intervalMs?: number) => Promise<boolean>
 ): Promise<PrimaryBuyResult> {
-  const { page, navbar, asset, buyModal, authModal } = ctx
-
   // First-time buyers from a fresh wallet need MANA approval before the mint,
   // which means TWO POSTs to /v1/transactions: approval first, then the buy.
   // `page.waitForResponse` would lock onto the FIRST one (the approval) and
   // we'd then try to extract a mint Transfer log from an approval receipt,
   // failing with "No mint Transfer event found". Collect all POSTs and pick
-  // the last one once `/success` confirms the flow finished.
+  // the last one once the buy resolves.
   const txResponses: Response[] = []
   let txRequestsAttempted = 0
   const onResponse = (res: Response) => {
@@ -94,35 +92,21 @@ export async function executePrimaryBuy(
   page.on('request', onRequest)
 
   try {
-    await asset.goto(config.type, config.contract, config.itemId)
-    await navbar.waitForConnected(60_000)
-    await asset.buyWithCryptoButton().waitFor({ state: 'visible', timeout: 30_000 })
-    await asset.clickBuyWithCrypto()
-
-    await buyModal.waitForOpen()
-    await buyModal.switchNetworkIfPrompted()
-
-    await buyModal.submitBuy()
     // First-time wallets hit the MANA-approval modal here: Authorize signs
     // the approval and POSTs to /v1/transactions, then Confirm transaction
     // signs the buy and POSTs to /v1/transactions. Already-approved wallets
     // skip the modal and the buy POST fires directly.
     //
     // Race the two outcomes (modal opens vs first POST fires) instead of
-    // committing to a path on a fixed timeout — the modal can take longer
-    // than 5s to render under slow loads / cold caches, in which case we
-    // used to wrongly conclude "already approved" and wait 180s for a POST
-    // the dapp was never going to send. Whichever signal arrives first
-    // tells us which path the dapp took.
+    // committing to a path on a fixed timeout. Modal-driven flows always
+    // render their sign button quickly; if 10s elapses with no button
+    // visible we're on the already-approved path. The relayer POST fallback
+    // timer keeps its longer 60s window because /v1/transactions can be
+    // slow even when no modal is in play.
     const modalDriven = await Promise.race([
-      authModal
-        .signButton()
-        .waitFor({ state: 'visible', timeout: 60_000 })
-        .then(async () => {
-          // Modal is open; drive it. authorizeAndSign re-checks visibility
-          // (resolves instantly here) and returns true once both clicks land.
-          return authModal.authorizeAndSign(2_000)
-        })
+      authModalSignButton
+        .waitFor({ state: 'visible', timeout: 10_000 })
+        .then(async () => authorizeAndSign(2_000))
         .catch(() => false),
       (async () => {
         const deadline = Date.now() + 60_000
@@ -146,7 +130,7 @@ export async function executePrimaryBuy(
       const hint =
         txRequestsAttempted > txResponses.length
           ? ` ${txRequestsAttempted - txResponses.length} request(s) went out but never received a response — transactions-api.decentraland.zone may be hung or rate-limiting this wallet.`
-          : ' No POST request was attempted — submitBuy likely did not trigger the dapp saga.'
+          : ' No POST request was attempted — the spec likely did not trigger the dapp saga.'
       throw new Error(
         `Expected ${expectedPosts} /v1/transactions POST(s), saw ${txResponses.length} response(s) (${txRequestsAttempted} request(s) attempted).${hint}`
       )
@@ -165,14 +149,7 @@ export async function executePrimaryBuy(
       throw new Error(`transactions-server response missing txHash: ${JSON.stringify(body)}`)
     }
 
-    const amoy = createPublicClient({
-      chain: polygonAmoy,
-      transport: http(requireEnv('POLYGON_AMOY_RPC_URL'))
-    })
-    const receipt = await amoy.waitForTransactionReceipt({ hash: txHash, timeout: 180_000 })
-    if (receipt.status !== 'success') {
-      throw new Error(`Primary-buy tx ${txHash} reverted on Amoy`)
-    }
+    const receipt = await waitForAmoyReceipt({ txHash })
 
     // CollectionStore.buy mints via ERC721 Transfer(address(0), buyer, tokenId).
     // topics[0] = event sig, topics[1] = from (zero for mints), topics[3] = tokenId.

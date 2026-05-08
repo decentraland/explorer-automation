@@ -5,6 +5,7 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module',
+    tsconfigRootDir: __dirname,
     project: './tsconfig.json'
   },
   plugins: ['@typescript-eslint', 'playwright'],
@@ -15,5 +16,5 @@ module.exports = {
     'playwright/no-skipped-test': 'warn',
     'playwright/no-conditional-in-test': 'warn'
   },
-  ignorePatterns: ['node_modules/', 'dist/', 'playwright-report/', 'test-results/', 'allure-results/']
+  ignorePatterns: ['node_modules/', 'dist/', 'playwright-report/', 'test-results/', 'allure-results/', '.eslintrc.cjs']
 }

@@ -1,14 +1,12 @@
 import type { Page, Response } from '@playwright/test'
-import { createPublicClient, http, type Hex } from 'viem'
-import { polygonAmoy } from 'viem/chains'
-import { requireEnv } from '../../../shared/helpers/env.js'
-import type { AssetPage } from '../pages/AssetPage.js'
-import type { BuyWithCryptoModal } from '../pages/BuyWithCryptoModal.js'
-import type { Navbar } from '../pages/Navbar.js'
+import type { Hex } from 'viem'
+import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
 
-export interface AcceptListingTarget {
-  contract: string
-  tokenId: string
+export interface CaptureAcceptListingOptions {
+  /** Wait window for the /v1/transactions POST. Default 120s. */
+  postTimeout?: number
+  /** Wait window for the Amoy receipt. Default 180s (matches waitForAmoyReceipt default). */
+  receiptTimeout?: number
 }
 
 export interface AcceptListingResult {
@@ -16,46 +14,29 @@ export interface AcceptListingResult {
 }
 
 /**
- * Drives the buyer side of a peer-to-peer secondary sale.
+ * Captures the relayer txHash from a peer-to-peer accept-listing flow that
+ * the SPEC has just driven through the dapp's UI (asset.goto →
+ * clickBuyWithCrypto → buyModal.submitBuy). UI-free: just waits for the
+ * /v1/transactions POST, extracts the txHash, and waits for the Amoy
+ * receipt via the shared `waitForAmoyReceipt` helper.
  *
- * Wallet must already be set up by the caller (via `setupTestWallet(...)`).
- * Flow: navigate to the listed NFT → BUY WITH MANA → submit the
- * BuyWithCryptoModal → dapp POSTs `OffChainMarketplace.accept(_trades)`
- * wrapped in `executeMetaTransaction` (selector 0xd8ed1acc) to
- * `/v1/transactions` → relayer broadcasts on Amoy → wait for the receipt →
- * wait for the dapp's `/success` URL.
+ * Same /v1/transactions endpoint as the primary-buy flow; only the inner
+ * calldata differs (`OffChainMarketplace.accept(_trades)` wrapped in
+ * `executeMetaTransaction`, selector 0xd8ed1acc).
  *
- * Same `/v1/transactions` endpoint as the primary-buy flow; only the inner
- * calldata differs.
+ * The spec is responsible for navigating to the listed NFT, opening the
+ * BuyWithCryptoModal, and submitting it. It is also responsible for any
+ * post-tx UI assertions (e.g. `/success` URL).
  */
-export async function executeAcceptListing(
-  ctx: {
-    page: Page
-    navbar: Navbar
-    asset: AssetPage
-    buyModal: BuyWithCryptoModal
-  },
-  listed: AcceptListingTarget
+export async function captureAcceptListingTxHash(
+  page: Page,
+  options: CaptureAcceptListingOptions = {}
 ): Promise<AcceptListingResult> {
-  const { page, navbar, asset, buyModal } = ctx
-
-  await asset.goto('nft', listed.contract, listed.tokenId)
-  await navbar.waitForConnected(60_000)
-
-  await asset.buyWithCryptoButton().waitFor({ state: 'visible', timeout: 30_000 })
-  await asset.clickBuyWithCrypto()
-
-  await buyModal.waitForOpen()
-  await buyModal.switchNetworkIfPrompted()
-
-  const txResponsePromise: Promise<Response> = page.waitForResponse(
+  const txResponse: Response = await page.waitForResponse(
     res => /\/v1\/transactions(\?|$)/.test(res.url()) && res.request().method() === 'POST',
-    { timeout: 120_000 }
+    { timeout: options.postTimeout ?? 120_000 }
   )
 
-  await buyModal.submitBuy()
-
-  const txResponse = await txResponsePromise
   if (!txResponse.ok()) {
     throw new Error(`transactions-server responded ${txResponse.status()}: ${await txResponse.text()}`)
   }
@@ -66,16 +47,7 @@ export async function executeAcceptListing(
     throw new Error(`transactions-server response missing txHash: ${JSON.stringify(body)}`)
   }
 
-  const amoy = createPublicClient({
-    chain: polygonAmoy,
-    transport: http(requireEnv('POLYGON_AMOY_RPC_URL'))
-  })
-  const receipt = await amoy.waitForTransactionReceipt({ hash: txHash, timeout: 180_000 })
-  if (receipt.status !== 'success') {
-    throw new Error(`Accept-listing tx ${txHash} reverted on Amoy`)
-  }
-
-  await page.waitForURL(/\/success(\?|$|\/)/, { timeout: 30_000 })
+  await waitForAmoyReceipt({ txHash, timeout: options.receiptTimeout })
 
   return { txHash }
 }
