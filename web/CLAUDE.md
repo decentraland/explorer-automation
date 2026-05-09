@@ -38,6 +38,12 @@ web/
 │   └── types/
 │       └── ethereum-wallet-mock.d.ts   # explicit declaration of EthereumWalletMock interface
 └── tests/
+    ├── landing/                    # public site (`decentraland.org/`) — login entry + hero CTAs
+    │   ├── pages/
+    │   │   ├── LandingPage.ts      # public hero (Sign In + DOWNLOAD CTA)
+    │   │   └── HomePage.ts         # post-login `/` URL check (auth specs assert here)
+    │   └── specs/                  # @web specs that don't drive an auth flow
+    │       └── download.spec.ts                  # @web @download — launcher .dmg download
     ├── auth/                       # browser-driven auth + cross-platform handoff
     │   ├── helpers/
     │   │   ├── wallet.ts           # setupMockedWallet, mockNoProfileOnCatalysts, rebindWalletMock
@@ -46,21 +52,18 @@ web/
     │   │   ├── token-bridge.ts     # auth-token-bridge.txt path/read/wait for @cross handoff
     │   │   └── explorer-runner.ts  # spawn metaforge + verify in-world via dotnet test
     │   ├── pages/
-    │   │   ├── LandingPage.ts
     │   │   ├── AuthPage.ts
     │   │   ├── QuickSetupPage.ts
-    │   │   ├── AvatarSetupPage.ts  # @webgpu Unity avatar editor
-    │   │   └── HomePage.ts
-    │   └── specs/                  # 10 specs, all tagged @web / @cross / @webgpu
-    │       ├── new-user.spec.ts                  # @web — 3 web3 signup variants
-    │       ├── otp-new-user.spec.ts              # @web — OTP signup
-    │       ├── recurrent-user.spec.ts            # @web — recurrent web3 + OTP
-    │       ├── cross-sites.spec.ts               # @web — session across /marketplace, /builder, /account
-    │       ├── web3-redirect.spec.ts             # @web — redirectTo query param handling
-    │       ├── request-page.spec.ts              # @web — RequestPage signature broker
-    │       ├── switch-method.spec.ts             # @web — switch from OTP to web3 in same context
+    │   │   └── AvatarSetupPage.ts  # @webgpu Unity avatar editor
+    │   └── specs/                  # all tagged @web / @cross / @webgpu — auth specs additionally carry @auth
+    │       ├── new-user.spec.ts                  # @web @auth — 3 web3 signup variants
+    │       ├── otp-new-user.spec.ts              # @web @auth — OTP signup
+    │       ├── recurrent-user.spec.ts            # @web @auth — recurrent web3 + OTP
+    │       ├── cross-sites.spec.ts               # @web @auth — session across /marketplace, /builder, /account
+    │       ├── web3-redirect.spec.ts             # @web @auth — redirectTo query param handling
+    │       ├── request-page.spec.ts              # @web @auth — RequestPage signature broker
+    │       ├── switch-method.spec.ts             # @web @auth — switch from OTP to web3 in same context
     │       ├── web3-avatar-setup.spec.ts         # @webgpu — Unity 3D avatar editor
-    │       ├── download.spec.ts                  # @web — launcher .dmg download
     │       └── web-to-inworld-handoff.spec.ts    # @cross — web → desktop (currently skipped)
     └── marketplace/                # marketplace dapp tests
         ├── helpers/

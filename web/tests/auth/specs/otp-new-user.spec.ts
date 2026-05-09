@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
-import { LandingPage } from '../pages/LandingPage.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
+import { HomePage } from '../../landing/pages/HomePage.js'
 import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**

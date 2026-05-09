@@ -10,7 +10,7 @@ import {
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
+import { HomePage } from '../../landing/pages/HomePage.js'
 import { createAuthRequest, pollAuthOutcome } from '../helpers/auth-server.js'
 import { buildAuthChain, getEphemeralMessage } from '../../../shared/helpers/identity.js'
 

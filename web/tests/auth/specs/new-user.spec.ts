@@ -5,7 +5,7 @@ import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.j
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
+import { HomePage } from '../../landing/pages/HomePage.js'
 
 /**
  * New-user signup flows. All variants use a mocked web3 wallet with a fresh

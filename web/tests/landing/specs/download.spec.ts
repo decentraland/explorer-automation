@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
 import { LandingPage } from '../pages/LandingPage.js'
-import { HomePage } from '../pages/HomePage.js'
 
 /**
  * The "DOWNLOAD FOR macOS" CTA is rendered on the public landing hero —
@@ -10,10 +9,9 @@ import { HomePage } from '../pages/HomePage.js'
 test.describe('@web @download launcher download', () => {
   test('clicking "DOWNLOAD FOR macOS" starts a download', async ({ page }) => {
     const landing = new LandingPage(page)
-    const home = new HomePage(page)
 
     await landing.goto()
-    const download = await home.downloadLauncher()
+    const download = await landing.downloadLauncher()
 
     expect(download.suggestedFilename().length).toBeGreaterThan(0)
   })

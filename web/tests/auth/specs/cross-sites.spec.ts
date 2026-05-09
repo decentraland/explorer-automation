@@ -5,7 +5,7 @@ import { setupMockedWallet, rebindWalletMock, mockNoProfileOnCatalysts } from '.
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
+import { HomePage } from '../../landing/pages/HomePage.js'
 
 /**
  * Verifies that a web3 session established on `decentraland.org/auth` carries

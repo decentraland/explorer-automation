@@ -1,16 +1,19 @@
-import type { Page, Download } from '@playwright/test'
+import type { Download, Page } from '@playwright/test'
 
 /**
- * Page Object for the post-login Decentraland homepage (`https://decentraland.org/`).
- * The hero exposes platform-specific download links plus the navbar.
+ * Page Object for the Decentraland landing page (`https://decentraland.org`).
+ * Logged-out visitors see a "Sign In" button that takes them to `/auth`, plus
+ * the "DOWNLOAD FOR <platform>" hero CTA.
  */
-export class HomePage {
+export class LandingPage {
   constructor(private readonly page: Page) {}
 
-  async waitFor(timeoutMs = 30_000): Promise<void> {
-    await this.page.waitForURL(url => /decentraland\.org\/?(\?.*)?$/.test(url.toString()), {
-      timeout: timeoutMs
-    })
+  async goto(): Promise<void> {
+    await this.page.goto('/')
+  }
+
+  async clickSignIn(): Promise<void> {
+    await this.page.getByRole('button', { name: 'Sign In' }).click()
   }
 
   /**

@@ -4,10 +4,10 @@ import { randomBytes } from 'node:crypto'
 import { walletTest } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
-import { LandingPage } from '../pages/LandingPage.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
+import { HomePage } from '../../landing/pages/HomePage.js'
 import { getBaseEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
