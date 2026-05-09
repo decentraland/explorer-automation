@@ -1,0 +1,82 @@
+name: Web E2E (PR)
+
+# Runs the @web Playwright suite (auth + landing — 12 tests today) against the
+# dev environment (`decentraland.zone`) on every PR that touches `web/**`.
+# Marketplace specs are deliberately out of scope — they're a different dapp
+# surface; the on-chain bucket needs a 1-worker pool and costs testnet funds.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-e2e-pr.yml'
+
+# Cancel an older in-progress run when a new commit lands on the same PR
+# branch. Saves CI minutes during rapid push cycles.
+concurrency:
+  group: web-e2e-pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    # Drafts skip CI to save minutes — flip the PR to "Ready for review" to trigger.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Write .env from secrets
+        # web/shared/helpers/env.ts loads `.env` from the repo root.
+        # CF Access creds are required because we always target `.zone`.
+        working-directory: ${{ github.workspace }}
+        run: |
+          cat > .env <<'EOF'
+          IMAP_HOST=${{ secrets.IMAP_HOST }}
+          IMAP_PORT=${{ secrets.IMAP_PORT }}
+          IMAP_USER=${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
+          IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
+          CF_ACCESS_CLIENT_ID=${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET=${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          EOF
+
+      - name: Run Playwright (--project=web on .zone)
+        env:
+          WEB_BASE_URL: https://decentraland.zone
+          BASE_URL: https://decentraland.zone
+        run: npx playwright test --project=web
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pr-${{ github.event.pull_request.number }}
+          path: |
+            web/playwright-report/**
+            web/test-results/**
+            web/allure-results/**
+          if-no-files-found: warn

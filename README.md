@@ -34,7 +34,10 @@ See each stack's README for the full prerequisite list, run modes, and troublesh
 
 ## Continuous integration
 
-The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (manual) → Run workflow**. Two inputs:
+Two GitHub Actions workflows for the web suite:
+
+- **Web E2E (PR)** (`.github/workflows/web-e2e-pr.yml`) — runs automatically on every pull request that touches `web/**`. Executes `--project=web` (auth + landing, 12 tests) against `decentraland.zone`. Skips drafts. Cancels older runs on the same PR when a new commit lands. Needs `IMAP_*` and `CF_ACCESS_CLIENT_*` secrets.
+- **Web E2E (manual)** (`.github/workflows/web-e2e.yml`) — on-demand from **Actions → Web E2E (manual) → Run workflow**. Two inputs:
 
 - **`environment`** — `org` (production, default) or `zone` (development). Sets `WEB_BASE_URL` and `BASE_URL` to `https://decentraland.<environment>`; the auth/landing suite reads the former (via `getBaseUrl()`), the marketplace suite reads the latter.
 - **`suite`** — which bucket to run:
