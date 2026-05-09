@@ -1,7 +1,8 @@
 import type { Download, Page } from '@playwright/test'
+import { getBaseUrl } from '../../../shared/helpers/env.js'
 
 /**
- * Page Object for the Decentraland landing page (`https://decentraland.org`).
+ * Page Object for the Decentraland landing page (`https://decentraland.<tld>`).
  *
  * Same URL renders for both states — pre-login (public hero with Sign In +
  * DOWNLOAD CTA) and post-login (logged-in dashboard). Auth specs use
@@ -32,15 +33,18 @@ export class LandingPage {
   }
 
   /**
-   * Waits for the page URL to match the landing/home URL — `decentraland.org/`
-   * with an optional trailing slash and/or query string. Used post-login to
-   * assert the auth flow redirected back to `/`. URL-only check, no DOM —
-   * the dapp's logged-in elements use volatile class names with no stable
-   * selectors yet.
+   * Waits for the page URL to match the landing/home URL — the configured
+   * dapp host with an optional trailing slash and/or query string. Used
+   * post-login to assert the auth flow redirected back to `/`. URL-only
+   * check, no DOM — the dapp's logged-in elements use volatile class names
+   * with no stable selectors yet.
+   *
+   * Builds the regex from `getBaseUrl()` so the match works against any
+   * configured environment (`decentraland.org`, `decentraland.zone`, etc.).
    */
   async waitForUrl(timeoutMs = 30_000): Promise<void> {
-    await this.page.waitForURL(url => /decentraland\.org\/?(\?.*)?$/.test(url.toString()), {
-      timeout: timeoutMs
-    })
+    const host = new URL(getBaseUrl()).host.replace(/\./g, '\\.')
+    const re = new RegExp(`${host}\\/?(\\?.*)?$`)
+    await this.page.waitForURL(url => re.test(url.toString()), { timeout: timeoutMs })
   }
 }
