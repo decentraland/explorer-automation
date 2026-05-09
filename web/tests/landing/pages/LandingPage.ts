@@ -43,8 +43,10 @@ export class LandingPage {
    * configured environment (`decentraland.org`, `decentraland.zone`, etc.).
    */
   async waitForUrl(timeoutMs = 30_000): Promise<void> {
+    // Anchor at `^https?://` so we don't accidentally match a host with the
+    // configured one as a substring (e.g. `evil-decentraland.org/`).
     const host = new URL(getBaseUrl()).host.replace(/\./g, '\\.')
-    const re = new RegExp(`${host}\\/?(\\?.*)?$`)
+    const re = new RegExp(`^https?://${host}\\/?(\\?.*)?$`)
     await this.page.waitForURL(url => re.test(url.toString()), { timeout: timeoutMs })
   }
 }

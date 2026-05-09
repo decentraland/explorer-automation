@@ -16,7 +16,11 @@ const SIX_DIGIT_CODE = /\d{6}/
  * pointed the suite at a different inbox or domain.
  */
 export function generateFreshEmail(): string {
-  const domain = optionalEnv('EMAIL_DOMAIN') ?? 'e2e.decentraland.org'
+  // Trim + strip a stray leading '@' so a slightly-malformed EMAIL_DOMAIN
+  // (e.g. "@e2e.decentraland.org" or " e2e.decentraland.org ") still produces
+  // a valid recipient.
+  const raw = optionalEnv('EMAIL_DOMAIN') ?? 'e2e.decentraland.org'
+  const domain = raw.trim().replace(/^@/, '')
   const local = `qa-${randomBytes(4).toString('hex')}`
   return `${local}@${domain}`
 }
