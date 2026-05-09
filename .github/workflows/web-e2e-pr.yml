@@ -1,7 +1,16 @@
 name: Web E2E (PR)
 
-# Runs the @web Playwright suite (auth + landing — 12 tests today) against the
-# dev environment (`decentraland.zone`) on every PR that touches `web/**`.
+# Runs the @web Playwright suite (auth + landing — 12 tests today) against
+# production (`decentraland.org`) on every PR that touches `web/**`.
+#
+# We target `.org` rather than the dev `.zone` host because `.zone` sits
+# behind multiple Cloudflare Access applications with scoped service-token
+# policies — the token covers `/auth/*` but not `/`, `/marketplace`, etc., so
+# any spec that navigates outside `/auth/*` gets bounced to a CF login wall.
+# Until that's resolved at the infra level, `.org` is the only host that
+# gives reliable, full-suite PR signal. The manual workflow still has the
+# `org` / `zone` toggle for ad-hoc runs once CF Access is sorted.
+#
 # Marketplace specs are deliberately out of scope — they're a different dapp
 # surface; the on-chain bucket needs a 1-worker pool and costs testnet funds.
 
@@ -51,7 +60,7 @@ jobs:
 
       - name: Write .env from secrets
         # web/shared/helpers/env.ts loads `.env` from the repo root.
-        # CF Access creds are required because we always target `.zone`.
+        # CF Access creds aren't needed against `.org` — the host isn't gated.
         working-directory: ${{ github.workspace }}
         run: |
           cat > .env <<'EOF'
@@ -60,14 +69,12 @@ jobs:
           IMAP_USER=${{ secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
           IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
-          CF_ACCESS_CLIENT_ID=${{ secrets.CF_ACCESS_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET=${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           EOF
 
-      - name: Run Playwright (--project=web on .zone)
+      - name: Run Playwright (--project=web on .org)
         env:
-          WEB_BASE_URL: https://decentraland.zone
-          BASE_URL: https://decentraland.zone
+          WEB_BASE_URL: https://decentraland.org
+          BASE_URL: https://decentraland.org
         run: npx playwright test --project=web
 
       - name: Upload Playwright report
