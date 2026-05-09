@@ -12,14 +12,16 @@ on:
           - org
           - zone
       suite:
-        description: "Which web suite to run"
+        description: "Which test suite to run"
         required: true
         type: choice
         default: all
         options:
           - all
           - auth
-          - download
+          - landing
+          - marketplace
+          - marketplace-onchain
           - cross
 
 jobs:
@@ -52,7 +54,9 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Write .env from secrets
-        # web/helpers/env.ts loads `.env` from the repo root (../../.env from web/helpers/).
+        # web/shared/helpers/env.ts loads `.env` from the repo root.
+        # Marketplace + on-chain secrets are optional — empty values cause
+        # the on-chain spec to self-skip via its `haveOnChainConfig` guard.
         working-directory: ${{ github.workspace }}
         run: |
           cat > .env <<'EOF'
@@ -63,21 +67,38 @@ jobs:
           IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
           CF_ACCESS_CLIENT_ID=${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET=${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          WALLET_A_PRIVATE_KEY=${{ secrets.WALLET_A_PRIVATE_KEY }}
+          WALLET_B_PRIVATE_KEY=${{ secrets.WALLET_B_PRIVATE_KEY }}
+          POLYGON_AMOY_RPC_URL=${{ secrets.POLYGON_AMOY_RPC_URL }}
+          SEPOLIA_RPC_URL=${{ secrets.SEPOLIA_RPC_URL }}
+          MARKETPLACE_TEST_ITEM_CONTRACT=${{ secrets.MARKETPLACE_TEST_ITEM_CONTRACT }}
+          MARKETPLACE_TEST_ITEM_ID=${{ secrets.MARKETPLACE_TEST_ITEM_ID }}
+          MARKETPLACE_TEST_ITEM_TYPE=${{ secrets.MARKETPLACE_TEST_ITEM_TYPE }}
+          MARKETPLACE_TEST_LISTING_PRICE_MANA=${{ secrets.MARKETPLACE_TEST_LISTING_PRICE_MANA }}
           EOF
 
       - name: Compute Playwright args
         id: args
         run: |
           case "${{ inputs.suite }}" in
-            all)      echo "pw=--project=web" ;;
-            auth)     echo "pw=--project=web --grep @auth" ;;
-            download) echo "pw=--project=web --grep @download" ;;
-            cross)    echo "pw=--project=cross" ;;
+            all)                  echo "pw=--project=web" ;;
+            auth)                 echo "pw=--project=web --grep @auth" ;;
+            landing)              echo "pw=--project=web --grep @landing" ;;
+            marketplace)          echo "pw=--project=marketplace" ;;
+            marketplace-onchain)  echo "pw=--project=marketplace-onchain" ;;
+            cross)                echo "pw=--project=cross" ;;
           esac >> "$GITHUB_OUTPUT"
 
       - name: Run Playwright
         env:
+          # `WEB_BASE_URL` drives the auth/landing suite (`getBaseUrl()`),
+          # `BASE_URL` drives the marketplace suite (its own playwright.config
+          # block). Setting both keeps every project pointed at the same env.
+          # `MARKETPLACE_ENV=dev` forces testnets (Polygon Amoy / Sepolia) for
+          # the on-chain bucket regardless of the dapp host.
           WEB_BASE_URL: https://decentraland.${{ inputs.environment }}
+          BASE_URL: https://decentraland.${{ inputs.environment }}
+          MARKETPLACE_ENV: ${{ inputs.suite == 'marketplace-onchain' && 'dev' || '' }}
         run: |
           echo "Running suite=${{ inputs.suite }} against $WEB_BASE_URL"
           npx playwright test ${{ steps.args.outputs.pw }}

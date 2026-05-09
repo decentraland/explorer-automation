@@ -2,10 +2,10 @@
 
 End-to-end UI automation across the Decentraland product surface — both the **desktop Explorer** (Unity client) and the **web dapp** (`decentraland.org`). The repo hosts two independent test stacks under one roof so they can share a single test identity, credentials, and tooling:
 
-| Stack | Tech | Targets | README |
-|---|---|---|---|
-| [`explorer/`](explorer/) | C# / .NET 10 / NUnit / [AltTester SDK 2.3.0](https://alttester.com/docs/sdk/latest/) | Decentraland Explorer **desktop client** (Unity) — login, in-world flows, panels, shortcuts | [explorer/README.md](explorer/README.md) |
-| [`web/`](web/) | TypeScript / [Playwright](https://playwright.dev/) | Decentraland **web dapp** (`decentraland.org`, `/auth`, `/auth/quick-setup`), launcher download, and the cross-platform handoff into the desktop client | [web/README.md](web/README.md) |
+| Stack                    | Tech                                                                                 | Targets                                                                                                                                                 | README                                   |
+| ------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| [`explorer/`](explorer/) | C# / .NET 10 / NUnit / [AltTester SDK 2.3.0](https://alttester.com/docs/sdk/latest/) | Decentraland Explorer **desktop client** (Unity) — login, in-world flows, panels, shortcuts                                                             | [explorer/README.md](explorer/README.md) |
+| [`web/`](web/)           | TypeScript / [Playwright](https://playwright.dev/)                                   | Decentraland **web dapp** (`decentraland.org`, `/auth`, `/auth/quick-setup`), launcher download, and the cross-platform handoff into the desktop client | [web/README.md](web/README.md)           |
 
 The two stacks are wired together through the `auth-token-bridge.txt` file: the dapp writes it after a successful web login, the desktop client reads + deletes it on launch to skip the login screen. The `@cross` Playwright tests are designed to verify the full chain (web login → bridge file → desktop launch → in-world).
 
@@ -36,19 +36,23 @@ See each stack's README for the full prerequisite list, run modes, and troublesh
 
 The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (manual) → Run workflow**. Two inputs:
 
-- **`environment`** — `org` (production, default) or `zone` (development). Sets `WEB_BASE_URL=https://decentraland.<environment>`, which `web/helpers/env.ts::getBaseUrl()` propagates to the Playwright `baseURL`, every spec's `REDIRECT_TO`, and the wallet helper's auth-page URL.
+- **`environment`** — `org` (production, default) or `zone` (development). Sets `WEB_BASE_URL` and `BASE_URL` to `https://decentraland.<environment>`; the auth/landing suite reads the former (via `getBaseUrl()`), the marketplace suite reads the latter.
 - **`suite`** — which bucket to run:
 
-| Suite | Runs | Notes |
-|---|---|---|
-| `all` | every `@web` test | default |
-| `auth` | new-user signup + recurrent-user login (web3 + OTP) | OTP test requires IMAP secrets |
-| `download` | launcher download CTA | no secrets needed |
-| `cross` | web → desktop handoff | currently `.skip`'d |
+| Suite                 | Runs                                                                     | Notes                                                                                             |
+| --------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `all`                 | every `@web` test (auth + landing)                                       | default                                                                                           |
+| `auth`                | new-user signup + recurrent-user login + cross-sites + RequestPage + ... | OTP test requires IMAP secrets                                                                    |
+| `landing`             | launcher download CTA + future landing specs                             | no secrets needed                                                                                 |
+| `marketplace`         | marketplace off-chain specs (browse, account, connect-wallet)            | no secrets needed                                                                                 |
+| `marketplace-onchain` | marketplace buy-and-sell on Polygon Amoy                                 | requires `WALLET_A_PRIVATE_KEY`, `WALLET_B_PRIVATE_KEY`, and the `MARKETPLACE_TEST_ITEM_*` config |
+| `cross`               | web → desktop handoff                                                    | currently `.skip`'d                                                                               |
 
-**Required GitHub Action secrets** (one-time, in repo Settings → Secrets and variables → Actions): `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER`. Without these only `download` and the wallet-mocked auth tests will pass.
+**Required GitHub Action secrets** for `auth`: `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER` (one-time, in repo Settings → Secrets and variables → Actions). Without these only `landing` and the wallet-mocked auth tests will pass.
 
 **Additional secrets for `environment=zone`**: `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`. The dapp at `decentraland.zone` is gated behind Cloudflare Access — without these the browser will hit a CF login wall on the first navigation and the run will fail. The `*.api.decentraland.zone` hosts (auth-api, marketplace-api) are publicly reachable and don't need these headers. Not needed for `environment=org`.
+
+**Additional secrets for `marketplace-onchain`**: `WALLET_A_PRIVATE_KEY`, `WALLET_B_PRIVATE_KEY` (testnet wallets funded with MANA on Polygon Amoy + ERC20 approval to OffChainMarketplaceV2 — one-time setup), and the test-item config: `MARKETPLACE_TEST_ITEM_CONTRACT`, `MARKETPLACE_TEST_ITEM_ID`, `MARKETPLACE_TEST_ITEM_TYPE`, optionally `MARKETPLACE_TEST_LISTING_PRICE_MANA`. Optional RPC overrides: `POLYGON_AMOY_RPC_URL`, `SEPOLIA_RPC_URL` (defaults are the public rate-limited endpoints).
 
 The desktop (C#) suite is not yet wired into CI — it needs a self-hosted Windows GPU runner with the instrumented Explorer client + AltTester Desktop on port 13000.
 

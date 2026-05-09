@@ -108,7 +108,7 @@ Playwright's projects use `grep` to route specs. An untagged `describe` doesn't 
 - `@webgpu` — Unity avatar editor (`npm run test:webgpu`)
 - `@marketplace` — every marketplace describe block
 - `@on-chain` — additionally on any spec that broadcasts a transaction. The `marketplace` project filters with `grepInvert: /@on-chain/`; the `marketplace-onchain` project filters with `grep: /@on-chain/`. **Forgetting `@on-chain` on a broadcast spec causes it to be silently skipped** by both projects.
-- `@auth` / `@download` — sub-tags on auth/download specs (always combined with `@web`). They drive the manual suite selector in `.github/workflows/web-e2e.yml` (`auth` / `download` choices).
+- `@auth` / `@landing` — sub-tags on the `@web` specs that bucket them by surface (auth flows vs. landing/main-site). Drive the manual suite selector in `.github/workflows/web-e2e.yml` (`auth` / `landing` choices). Marketplace specs don't need a sub-tag — the workflow targets them by `--project=marketplace[-onchain]`.
 
 Pure-signature flows (e.g. listing-only via `/v1/trades`, no relayer) do NOT carry `@on-chain` — they don't compete for the wallet pool.
 
