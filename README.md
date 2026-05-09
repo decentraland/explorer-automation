@@ -48,6 +48,8 @@ The web suite can be run on demand via GitHub Actions: **Actions → Web E2E (ma
 
 **Required GitHub Action secrets** (one-time, in repo Settings → Secrets and variables → Actions): `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER`. Without these only `download` and the wallet-mocked auth tests will pass.
 
+**Additional secrets for `environment=zone`**: `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`. The `.zone` hosts are gated behind Cloudflare Access — without these the workflow runs against `.zone` will hit a CF login wall and fail. Not needed for `environment=org`.
+
 The desktop (C#) suite is not yet wired into CI — it needs a self-hosted Windows GPU runner with the instrumented Explorer client + AltTester Desktop on port 13000.
 
 ## Layout

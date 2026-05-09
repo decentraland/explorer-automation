@@ -1,4 +1,4 @@
-import { optionalEnv } from '../../../shared/helpers/env.js'
+import { optionalEnv, getCloudflareAccessHeaders } from '../../../shared/helpers/env.js'
 import type { AuthChain } from '../../../shared/helpers/identity.js'
 
 /**
@@ -50,7 +50,7 @@ export async function createAuthRequest(
 
   const res = await fetch(`${AUTH_SERVER_URL}/requests`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getCloudflareAccessHeaders() },
     body: JSON.stringify(body)
   })
   if (!res.ok) {
@@ -67,7 +67,9 @@ export async function createAuthRequest(
 export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POLL_TIMEOUT_MS): Promise<RequestOutcome> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const res = await fetch(`${AUTH_SERVER_URL}/requests/${requestId}`)
+    const res = await fetch(`${AUTH_SERVER_URL}/requests/${requestId}`, {
+      headers: getCloudflareAccessHeaders()
+    })
     if (res.status === 204) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
       continue

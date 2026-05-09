@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 import { config as loadDotenv } from 'dotenv'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getBaseUrl } from './shared/helpers/env.js'
+import { getBaseUrl, getCloudflareAccessHeaders } from './shared/helpers/env.js'
 
 /**
  * Chrome launch args that enable WebGPU on the host's real GPU. Used by the
@@ -58,6 +58,10 @@ export default defineConfig({
   ],
   use: {
     baseURL: getBaseUrl(),
+    // CF Access service-token headers, only present when CF_ACCESS_CLIENT_ID /
+    // CF_ACCESS_CLIENT_SECRET are set in .env. Required for .zone targets
+    // (gated behind Cloudflare Access); harmless on .org.
+    extraHTTPHeaders: getCloudflareAccessHeaders(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure'

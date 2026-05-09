@@ -61,6 +61,8 @@ jobs:
           IMAP_USER=${{ secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
           IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
+          CF_ACCESS_CLIENT_ID=${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET=${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           EOF
 
       - name: Compute Playwright args

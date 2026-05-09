@@ -259,6 +259,10 @@ When iterating on a single test, prefer `--headed --workers=1` so the browser is
 
 Loaded from the repo-root `.env` (see `.env.example` for the full template). The env loader (`shared/helpers/env.ts`) calls `requireEnv` at **module-import time**, so any auth spec that imports an OTP helper hard-fails on collection if `IMAP_USER` (and friends) are missing — not at the test body. Run with a populated `../.env` or those specs won't even start. The on-chain marketplace spec uses `optionalEnv` at module level + a `haveOnChainConfig` guard, so it self-skips cleanly when wallets aren't configured; new specs with optional env should follow that pattern rather than `requireEnv` at top level.
 
+### Cloudflare Access (required for `.zone` targets)
+
+- `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` — service-token credentials. `getCloudflareAccessHeaders()` in `shared/helpers/env.ts` returns `{ 'CF-Access-Client-Id': …, 'CF-Access-Client-Secret': … }` when both are set, `{}` otherwise. Wired into `playwright.config.ts`'s `use.extraHTTPHeaders` (covers all browser navigation and `page.request.*` calls — including `nft-indexer.ts`) and spread into the `auth-server.ts` `fetch()` calls (Node global `fetch`, not routed through Playwright). Required when targeting any `.zone` host; harmless when targeting `.org`.
+
 ### Auth tests
 
 - `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER` — IMAP creds for OTP retrieval.
