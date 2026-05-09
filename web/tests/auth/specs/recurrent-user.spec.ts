@@ -82,11 +82,16 @@ test('@web @auth recurrent user can log in with email + OTP', async ({ page }) =
   await qs.clickStartExploring()
   await landing.waitForUrl()
 
-  // Phase 2 — re-log in as the now-registered user. Clear cookies first so
-  // the dapp treats us as a fresh visitor; otherwise /auth/login would just
-  // bounce us straight back to home and we'd never exercise the recurrent
-  // OTP path.
+  // Phase 2 — re-log in as the now-registered user. Clear cookies AND
+  // localStorage / sessionStorage so the dapp treats us as a fresh visitor:
+  // decentraland-connect persists the auth identity in localStorage, so
+  // clearing only HTTP cookies isn't enough — /auth/login would still see
+  // a logged-in user and bounce straight to home.
   await page.context().clearCookies()
+  await page.evaluate(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
   await landing.goto()
   await landing.clickSignIn()
   await auth.submitEmail(email)

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import { ImapFlow, type FetchMessageObject } from 'imapflow'
-import { simpleParser } from 'mailparser'
+import { ImapFlow } from 'imapflow'
+import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser'
 import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
 
 const SIX_DIGIT_CODE = /\d{6}/
@@ -31,23 +31,44 @@ export interface WaitForOtpOptions {
 }
 
 /**
- * Connect to IMAP and poll for an OTP email addressed to `toAddress` from the
- * configured Thirdweb sender. Returns the 6-digit code from the message body.
+ * Connect to IMAP and poll for an OTP email **explicitly addressed to**
+ * `toAddress` from the configured Thirdweb sender. Returns the 6-digit code
+ * from the message body.
  *
- * Captures `startedAt` at entry and only accepts messages whose `internalDate`
- * is at or after that moment. This guards against stale OTPs left in the
- * `IMAP_USER` mailbox from prior runs (or from an earlier phase of the same
- * test) — the IMAP `(to, from)` search is unscoped by date, so the newest
- * matching UID could otherwise be from minutes/hours ago, and the dapp would
- * reject the stale code on submit.
+ * Recipient verification — why we don't just trust the IMAP `to:` filter:
+ *   The dapp catch-all forwarder (Cloudflare Email Routing for
+ *   `*@e2e.decentraland.org`) doesn't reliably preserve the original `To:`
+ *   header when delivering forwarded mail to `IMAP_USER`'s mailbox; some
+ *   forwarders rewrite To to the destination, others tuck the original into
+ *   `Delivered-To` / `X-Original-To`, and a few only echo the recipient in
+ *   the body. So the IMAP-level `to:` filter would silently miss our
+ *   legitimate emails. Instead we filter the IMAP search by sender only and
+ *   then **verify on every candidate** that `toAddress` actually appears in
+ *   one of: To / Cc / Bcc / Delivered-To / X-Original-To, with the message
+ *   body as a final fallback. This is robust under any forwarder behaviour
+ *   and also rules out picking up a concurrent test run's OTP that landed
+ *   in the same shared mailbox.
+ *
+ * Stale-OTP guard:
+ *   Captures `startedAt` (with a 5s buffer to absorb the gap between
+ *   `auth.submitEmail()` triggering the send and this function being
+ *   called) and rejects any message whose `internalDate` is before that
+ *   moment. Walks UIDs newest-first and bails at the first stale message
+ *   since every UID below it must also be stale. The 5s buffer is well
+ *   under the typical phase-1 → phase-2 transition gap (~15s+) on the
+ *   recurrent OTP test, so it never lets a prior-phase OTP slip through.
  */
 export async function waitForOtp(toAddress: string, options: WaitForOtpOptions = {}): Promise<string> {
-  const startedAt = new Date()
+  const startedAt = new Date(Date.now() - 5_000)
   const timeoutMs = options.timeoutMs ?? 90_000
   const pollIntervalMs = options.pollIntervalMs ?? 3_000
 
   const host = requireEnv('IMAP_HOST')
-  const port = Number.parseInt(requireEnv('IMAP_PORT'), 10)
+  const portStr = requireEnv('IMAP_PORT')
+  const port = Number.parseInt(portStr, 10)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`IMAP_PORT must be a valid port number (1-65535), got "${portStr}"`)
+  }
   const user = requireEnv('IMAP_USER')
   const password = requireEnv('IMAP_PASSWORD')
   const fromAddress = requireEnv('OTP_FROM_EMAIL')
@@ -69,11 +90,10 @@ export async function waitForOtp(toAddress: string, options: WaitForOtpOptions =
     try {
       const deadline = Date.now() + timeoutMs
       while (Date.now() < deadline) {
-        const searchResult = await client.search({ to: toAddress, from: fromAddress }, { uid: true })
+        // Filter by sender only at the IMAP level — recipient is verified
+        // post-fetch (see emailIsForRecipient) because forwarders rewrite To.
+        const searchResult = await client.search({ from: fromAddress }, { uid: true })
         const uids = searchResult || []
-        // Walk newest-to-oldest. UIDs are server-monotonic so ordering reflects
-        // arrival; bail at the first message whose internalDate is before
-        // `startedAt` since every UID below it must also be stale.
         for (let i = uids.length - 1; i >= 0; i--) {
           const uid = uids[i]!
           const message = await client.fetchOne(String(uid), { source: true, internalDate: true }, { uid: true })
@@ -83,14 +103,21 @@ export async function waitForOtp(toAddress: string, options: WaitForOtpOptions =
             console.log('[otp] reached stale UID — fresh OTP not yet delivered')
             break
           }
-          const code = await extractCode(message)
+          if (!message.source) continue
+          const parsed = await simpleParser(message.source)
+          if (!emailIsForRecipient(parsed, toAddress)) {
+            // From Thirdweb but not addressed to us — concurrent run's OTP,
+            // or a noise email. Skip and check older.
+            continue
+          }
+          const code = extractCodeFromParsed(parsed)
           if (code) {
             // eslint-disable-next-line no-console
-            console.log('[otp] code extracted')
+            console.log(`[otp] code extracted (recipient verified for ${toAddress})`)
             return code
           }
           // eslint-disable-next-line no-console
-          console.log('[otp] message arrived but no 6-digit code in body — checking older')
+          console.log('[otp] recipient matched but no 6-digit code in body — checking older')
         }
         await sleep(pollIntervalMs)
       }
@@ -103,12 +130,53 @@ export async function waitForOtp(toAddress: string, options: WaitForOtpOptions =
   }
 }
 
-async function extractCode(message: FetchMessageObject): Promise<string | undefined> {
-  if (!message.source) return undefined
+/**
+ * True iff `expectedTo` appears in any recipient-bearing header
+ * (To / Cc / Bcc / Delivered-To / X-Original-To) or — as a final fallback —
+ * in the message body. Case-insensitive substring match: covers headers
+ * shaped as `"Name" <addr@host>` and forwarders that wrap multiple
+ * addresses on one line.
+ */
+function emailIsForRecipient(parsed: ParsedMail, expectedTo: string): boolean {
+  const expected = expectedTo.trim().toLowerCase()
+  if (!expected) return false
+
+  const candidates = [
+    addressText(parsed.to),
+    addressText(parsed.cc),
+    addressText(parsed.bcc),
+    headerText(parsed.headers.get('delivered-to')),
+    headerText(parsed.headers.get('x-original-to'))
+  ].filter((v): v is string => typeof v === 'string' && v.length > 0)
+
+  for (const c of candidates) {
+    if (c.toLowerCase().includes(expected)) return true
+  }
+
+  // Body fallback: Thirdweb-style OTP emails sometimes echo the recipient.
+  const body = `${parsed.text ?? ''}\n${stripHtml(parsed.html || '')}`
+  return body.toLowerCase().includes(expected)
+}
+
+function addressText(addr: AddressObject | AddressObject[] | undefined): string | undefined {
+  if (!addr) return undefined
+  if (Array.isArray(addr)) return addr.map(a => a.text ?? '').join(' ')
+  return addr.text
+}
+
+function headerText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    const strings = value.filter((v): v is string => typeof v === 'string')
+    return strings.length > 0 ? strings.join(' ') : undefined
+  }
+  return undefined
+}
+
+function extractCodeFromParsed(parsed: ParsedMail): string | undefined {
   // Parse the MIME message so we search only decoded body text — NOT headers.
-  // Headers commonly contain 6-digit runs (Message-IDs, DKIM signatures, timestamps)
-  // that would otherwise produce false positives.
-  const parsed = await simpleParser(message.source)
+  // Headers commonly contain 6-digit runs (Message-IDs, DKIM signatures,
+  // timestamps) that would otherwise produce false positives.
   const candidates = [parsed.text ?? '', stripHtml(parsed.html || '')]
   for (const body of candidates) {
     const match = SIX_DIGIT_CODE.exec(body)
