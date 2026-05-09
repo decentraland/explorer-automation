@@ -53,28 +53,35 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Write .env from secrets
+      - name: Write .env from secrets / variables
         # web/shared/helpers/env.ts loads `.env` from the repo root.
         # Marketplace + on-chain secrets are optional — empty values cause
         # the on-chain spec to self-skip via its `haveOnChainConfig` guard.
+        #
+        # Non-sensitive values (hosts, ports, sender filter, mailbox address,
+        # marketplace test-item config) may be configured under repo Settings
+        # → Secrets and variables → Actions in either the Secrets *or* the
+        # Variables tab — `vars.X || secrets.X` picks whichever is set.
+        # Sensitive values (passwords, CF Access tokens, wallet private keys,
+        # paid RPC URLs) MUST be in Secrets — don't store those as Variables.
         working-directory: ${{ github.workspace }}
         run: |
           cat > .env <<'EOF'
-          IMAP_HOST=${{ secrets.IMAP_HOST }}
-          IMAP_PORT=${{ secrets.IMAP_PORT }}
-          IMAP_USER=${{ secrets.IMAP_USER }}
+          IMAP_HOST=${{ vars.IMAP_HOST || secrets.IMAP_HOST }}
+          IMAP_PORT=${{ vars.IMAP_PORT || secrets.IMAP_PORT }}
+          IMAP_USER=${{ vars.IMAP_USER || secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
-          IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
+          IMAP_FROM_USER=${{ vars.IMAP_FROM_USER || secrets.IMAP_FROM_USER }}
           CF_ACCESS_CLIENT_ID=${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET=${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           WALLET_A_PRIVATE_KEY=${{ secrets.WALLET_A_PRIVATE_KEY }}
           WALLET_B_PRIVATE_KEY=${{ secrets.WALLET_B_PRIVATE_KEY }}
           POLYGON_AMOY_RPC_URL=${{ secrets.POLYGON_AMOY_RPC_URL }}
           SEPOLIA_RPC_URL=${{ secrets.SEPOLIA_RPC_URL }}
-          MARKETPLACE_TEST_ITEM_CONTRACT=${{ secrets.MARKETPLACE_TEST_ITEM_CONTRACT }}
-          MARKETPLACE_TEST_ITEM_ID=${{ secrets.MARKETPLACE_TEST_ITEM_ID }}
-          MARKETPLACE_TEST_ITEM_TYPE=${{ secrets.MARKETPLACE_TEST_ITEM_TYPE }}
-          MARKETPLACE_TEST_LISTING_PRICE_MANA=${{ secrets.MARKETPLACE_TEST_LISTING_PRICE_MANA }}
+          MARKETPLACE_TEST_ITEM_CONTRACT=${{ vars.MARKETPLACE_TEST_ITEM_CONTRACT || secrets.MARKETPLACE_TEST_ITEM_CONTRACT }}
+          MARKETPLACE_TEST_ITEM_ID=${{ vars.MARKETPLACE_TEST_ITEM_ID || secrets.MARKETPLACE_TEST_ITEM_ID }}
+          MARKETPLACE_TEST_ITEM_TYPE=${{ vars.MARKETPLACE_TEST_ITEM_TYPE || secrets.MARKETPLACE_TEST_ITEM_TYPE }}
+          MARKETPLACE_TEST_LISTING_PRICE_MANA=${{ vars.MARKETPLACE_TEST_LISTING_PRICE_MANA || secrets.MARKETPLACE_TEST_LISTING_PRICE_MANA }}
           EOF
 
       - name: Compute Playwright args

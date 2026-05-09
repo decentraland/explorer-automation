@@ -58,17 +58,24 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Write .env from secrets
+      - name: Write .env from secrets / variables
         # web/shared/helpers/env.ts loads `.env` from the repo root.
         # CF Access creds aren't needed against `.org` — the host isn't gated.
+        #
+        # Non-sensitive values (host, port, sender filter, mailbox address)
+        # may be configured under repo Settings → Secrets and variables → Actions
+        # in either the Secrets *or* Variables tab — `vars.X || secrets.X`
+        # picks whichever is set. Variables are plaintext and accessible to
+        # fork PRs; secrets are encrypted but blocked on fork PRs.
+        # IMAP_PASSWORD must be a Secret (don't store passwords as Variables).
         working-directory: ${{ github.workspace }}
         run: |
           cat > .env <<'EOF'
-          IMAP_HOST=${{ secrets.IMAP_HOST }}
-          IMAP_PORT=${{ secrets.IMAP_PORT }}
-          IMAP_USER=${{ secrets.IMAP_USER }}
+          IMAP_HOST=${{ vars.IMAP_HOST || secrets.IMAP_HOST }}
+          IMAP_PORT=${{ vars.IMAP_PORT || secrets.IMAP_PORT }}
+          IMAP_USER=${{ vars.IMAP_USER || secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
-          IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
+          IMAP_FROM_USER=${{ vars.IMAP_FROM_USER || secrets.IMAP_FROM_USER }}
           EOF
 
       - name: Run Playwright (--project=web on .org)

@@ -51,7 +51,7 @@ Two GitHub Actions workflows for the web suite:
 | `marketplace-onchain` | marketplace buy-and-sell on Polygon Amoy                                 | requires `WALLET_A_PRIVATE_KEY`, `WALLET_B_PRIVATE_KEY`, and the `MARKETPLACE_TEST_ITEM_*` config |
 | `cross`               | web → desktop handoff                                                    | currently `.skip`'d                                                                               |
 
-**Required GitHub Action secrets** for `auth`: `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER` (one-time, in repo Settings → Secrets and variables → Actions). Without these only `landing` and the wallet-mocked auth tests will pass.
+**Required configuration for `auth`** — in repo Settings → Secrets and variables → Actions. The non-sensitive values (`IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_FROM_USER`) can go in either the **Secrets** or the **Variables** tab; the workflows read `vars.X || secrets.X`. `IMAP_PASSWORD` must be a Secret. Without these only `landing` and the wallet-mocked auth tests will pass.
 
 **Additional secrets for `environment=zone`**: `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`. The dapp at `decentraland.zone` is gated behind Cloudflare Access — without these the browser will hit a CF login wall on the first navigation and the run will fail. The `*.api.decentraland.zone` hosts (auth-api, marketplace-api) are publicly reachable and don't need these headers. Not needed for `environment=org`.
 
