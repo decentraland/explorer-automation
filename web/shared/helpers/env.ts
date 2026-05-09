@@ -32,14 +32,15 @@ export function getBaseUrl(): string {
 
 /**
  * Cloudflare Access service-token headers, if both `CF_ACCESS_CLIENT_ID`
- * and `CF_ACCESS_CLIENT_SECRET` are set. Decentraland's `.zone` hosts are
- * gated behind CF Access, so these headers are required when targeting the
- * dev environment (`WEB_BASE_URL=https://decentraland.zone`,
- * `MARKETPLACE_API_BASE_URL=https://marketplace-api.decentraland.zone`, etc.).
+ * and `CF_ACCESS_CLIENT_SECRET` are set. Required for browser navigation
+ * to the dev dapp host (`WEB_BASE_URL=https://decentraland.zone`), which
+ * is the only `.zone` origin gated behind CF Access — the `*.api.decentraland.zone`
+ * subdomains (auth-api, marketplace-api) are publicly reachable.
  *
  * Returns `{}` when either env var is missing — safe to spread into any
- * `headers` object. CF Access ignores these headers on hosts that aren't
- * gated, so it's fine to leave them set even for `.org` runs.
+ * `headers` object. Non-gated hosts ignore these headers, so the broad
+ * `extraHTTPHeaders` wiring in `playwright.config.ts` is harmless even
+ * though only the dapp navigation strictly needs the tokens.
  */
 export function getCloudflareAccessHeaders(): Record<string, string> {
   const id = optionalEnv('CF_ACCESS_CLIENT_ID')

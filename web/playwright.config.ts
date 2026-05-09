@@ -59,8 +59,10 @@ export default defineConfig({
   use: {
     baseURL: getBaseUrl(),
     // CF Access service-token headers, only present when CF_ACCESS_CLIENT_ID /
-    // CF_ACCESS_CLIENT_SECRET are set in .env. Required for .zone targets
-    // (gated behind Cloudflare Access); harmless on .org.
+    // CF_ACCESS_CLIENT_SECRET are set in .env. Required for browser navigation
+    // to the dev dapp at `decentraland.zone` (the only CF-gated origin). Non-
+    // gated hosts (auth-api / marketplace-api / .org) ignore the headers, so
+    // the broad context-level wiring is harmless.
     extraHTTPHeaders: getCloudflareAccessHeaders(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',

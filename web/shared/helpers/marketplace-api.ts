@@ -6,9 +6,8 @@
  * Resolution rule (highest priority first):
  *
  *  1. `MARKETPLACE_API_BASE_URL` env var — explicit override, used verbatim
- *     (trailing slash stripped). Set this when CI runners can't reach `.zone`
- *     (which is gated behind Cloudflare Access) but need to test against a
- *     reachable mirror.
+ *     (trailing slash stripped). Set this if you want to point the indexer
+ *     reads at a different host (e.g. a staging mirror).
  *
  *  2. `MARKETPLACE_ENV === 'dev'` (the default per `withEnv()`) — return the
  *     `.zone` indexer, which carries testnet (Polygon Amoy / Sepolia) data.
@@ -21,6 +20,10 @@
  *
  * Reads env vars at call time (not import time) so tests that override env
  * vars in `beforeAll` see the new value.
+ *
+ * `marketplace-api.decentraland.zone` is publicly reachable — no Cloudflare
+ * Access service token needed; only browser navigation to the dapp host
+ * (`decentraland.zone` itself) requires those headers.
  */
 export function marketplaceApiBaseUrl(): string {
   const explicit = process.env.MARKETPLACE_API_BASE_URL
