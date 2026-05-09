@@ -3,9 +3,9 @@ import { randomBytes } from 'node:crypto'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, rebindWalletMock, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 
 /**
  * Verifies that a web3 session established on `decentraland.org/auth` carries
@@ -42,7 +42,7 @@ test('@web @auth web3 session persists across marketplace, builder, and account'
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await new HomePage(page).waitFor()
+  await new LandingPage(page).waitForUrl()
 
   // Phase 2 — drop the no-profile mock so subdomain catalyst lookups succeed,
   // then walk through each site and assert no bounce-to-/auth happens.

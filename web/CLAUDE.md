@@ -40,8 +40,7 @@ web/
 └── tests/
     ├── landing/                    # public site (`decentraland.org/`) — login entry + hero CTAs
     │   ├── pages/
-    │   │   ├── LandingPage.ts      # public hero (Sign In + DOWNLOAD CTA)
-    │   │   └── HomePage.ts         # post-login `/` URL check (auth specs assert here)
+    │   │   └── LandingPage.ts      # goto / clickSignIn / downloadLauncher (pre-login) + waitForUrl (post-login URL assertion)
     │   └── specs/                  # @web specs that don't drive an auth flow
     │       └── download.spec.ts                  # @web @download — launcher .dmg download
     ├── auth/                       # browser-driven auth + cross-platform handoff

@@ -7,7 +7,6 @@ import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 import { getBaseEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
@@ -43,7 +42,7 @@ walletTest('@web @auth recurrent user can log in with web3 wallet', async ({ pag
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await new HomePage(page).waitFor()
+  await new LandingPage(page).waitForUrl()
 
   // Phase 2 — re-login as a recurrent user. Drop the no-profile mock so the
   // catalyst returns the profile we just created. Same private key, same
@@ -52,7 +51,7 @@ walletTest('@web @auth recurrent user can log in with web3 wallet', async ({ pag
   await setupMockedWallet(page, ethereumWalletMock, { privateKey, redirectTo: REDIRECT_TO })
   await new AuthPage(page).clickMetaMaskButton()
 
-  await new HomePage(page).waitFor(60_000)
+  await new LandingPage(page).waitForUrl(60_000)
   walletTest.expect(page.url()).not.toMatch(/\/auth\/quick-setup/)
   walletTest.expect(page.url()).not.toMatch(/\/auth\/login/)
 })
@@ -61,7 +60,6 @@ test('@web @auth recurrent user can log in with email + OTP', async ({ page }) =
   const email = getBaseEmail()
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
-  const home = new HomePage(page)
 
   await landing.goto()
   await landing.clickSignIn()
@@ -70,7 +68,7 @@ test('@web @auth recurrent user can log in with email + OTP', async ({ page }) =
   const code = await waitForOtp(email)
   await auth.enterOtp(code)
 
-  await home.waitFor(60_000)
+  await landing.waitForUrl(60_000)
   test.expect(page.url()).not.toMatch(/\/auth\/quick-setup/)
   test.expect(page.url()).not.toMatch(/\/auth\/login/)
 })

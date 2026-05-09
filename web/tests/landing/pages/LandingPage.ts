@@ -2,8 +2,11 @@ import type { Download, Page } from '@playwright/test'
 
 /**
  * Page Object for the Decentraland landing page (`https://decentraland.org`).
- * Logged-out visitors see a "Sign In" button that takes them to `/auth`, plus
- * the "DOWNLOAD FOR <platform>" hero CTA.
+ *
+ * Same URL renders for both states — pre-login (public hero with Sign In +
+ * DOWNLOAD CTA) and post-login (logged-in dashboard). Auth specs use
+ * `goto()` / `clickSignIn()` as the entry point and then `waitForUrl()` to
+ * confirm we got redirected back to `/` after a successful login.
  */
 export class LandingPage {
   constructor(private readonly page: Page) {}
@@ -26,5 +29,18 @@ export class LandingPage {
     const downloadPromise = this.page.waitForEvent('download', { timeout: 30_000 })
     await this.page.locator('a[href^="/download_success"]').first().click()
     return downloadPromise
+  }
+
+  /**
+   * Waits for the page URL to match the landing/home URL — `decentraland.org/`
+   * with an optional trailing slash and/or query string. Used post-login to
+   * assert the auth flow redirected back to `/`. URL-only check, no DOM —
+   * the dapp's logged-in elements use volatile class names with no stable
+   * selectors yet.
+   */
+  async waitForUrl(timeoutMs = 30_000): Promise<void> {
+    await this.page.waitForURL(url => /decentraland\.org\/?(\?.*)?$/.test(url.toString()), {
+      timeout: timeoutMs
+    })
   }
 }

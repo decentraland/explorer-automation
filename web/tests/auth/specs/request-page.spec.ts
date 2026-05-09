@@ -8,9 +8,9 @@ import {
   applyPersonalSignOverride
 } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 import { createAuthRequest, pollAuthOutcome } from '../helpers/auth-server.js'
 import { buildAuthChain, getEphemeralMessage } from '../../../shared/helpers/identity.js'
 
@@ -52,7 +52,7 @@ test('@web @auth RequestPage login (dcl_personal_sign)', async ({ page, ethereum
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await new HomePage(page).waitFor()
+  await new LandingPage(page).waitForUrl()
   await unmockProfile()
 
   // 2. Simulate the desktop side: generate an ephemeral key pair, ask the
@@ -105,7 +105,7 @@ test('@web @auth RequestPage wallet interaction (eth_sendTransaction)', async ({
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await new HomePage(page).waitFor()
+  await new LandingPage(page).waitForUrl()
   await unmockProfile()
 
   // 2. Build an auth chain (signer-grants-ephemeral) — required for any

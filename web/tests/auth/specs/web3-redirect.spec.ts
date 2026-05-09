@@ -3,9 +3,9 @@ import { randomBytes } from 'node:crypto'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 
 /**
  * Verifies the dapp respects the `redirectTo` query param: a recurrent web3
@@ -43,7 +43,7 @@ test('@web @auth web3 login respects redirectTo (lands on /marketplace)', async 
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await new HomePage(page).waitFor()
+  await new LandingPage(page).waitForUrl()
 
   // Phase 2 — recurrent login with the marketplace as the redirectTo target.
   await unmockProfile()

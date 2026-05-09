@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 import { removeTokenBridge, waitForTokenBridge } from '../helpers/token-bridge.js'
 import { runExplorer, verifyExplorerInWorld } from '../helpers/explorer-runner.js'
@@ -29,7 +28,6 @@ test.describe.skip('@cross web → desktop handoff', () => {
 
     const landing = new LandingPage(page)
     const auth = new AuthPage(page)
-    const home = new HomePage(page)
 
     await landing.goto()
     await landing.clickSignIn()
@@ -37,7 +35,7 @@ test.describe.skip('@cross web → desktop handoff', () => {
     await auth.waitForOtpScreen()
     const code = await waitForOtp(email)
     await auth.enterOtp(code)
-    await home.waitFor(120_000)
+    await landing.waitForUrl(120_000)
 
     // TODO: trigger the "Jump Into Decentraland" CTA that writes the bridge file.
     // Selector unknown until codegen records that flow.

@@ -3,7 +3,6 @@ import { randomBytes } from 'node:crypto'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
@@ -24,7 +23,6 @@ test('@web @auth new user can sign up via email + OTP', async ({ page }) => {
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
   const qs = new QuickSetupPage(page)
-  const home = new HomePage(page)
 
   await landing.goto()
   await landing.clickSignIn()
@@ -39,6 +37,6 @@ test('@web @auth new user can sign up via email + OTP', async ({ page }) => {
   await qs.submit()
   await qs.clickStartExploring()
 
-  await home.waitFor()
+  await landing.waitForUrl()
   expect(page.url()).not.toMatch(/\/auth/)
 })

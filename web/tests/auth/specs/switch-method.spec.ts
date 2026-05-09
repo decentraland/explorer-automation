@@ -6,7 +6,6 @@ import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
@@ -30,7 +29,6 @@ test('@web @auth user can switch from OTP to web3 wallet sign-up', async ({ page
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
   const qs = new QuickSetupPage(page)
-  const home = new HomePage(page)
 
   await landing.goto()
   await landing.clickSignIn()
@@ -44,7 +42,7 @@ test('@web @auth user can switch from OTP to web3 wallet sign-up', async ({ page
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await home.waitFor()
+  await landing.waitForUrl()
   expect(page.url()).not.toMatch(/\/auth/)
 
   // Phase 2 — open a fresh page in the SAME context and sign up via web3.
@@ -65,7 +63,7 @@ test('@web @auth user can switch from OTP to web3 wallet sign-up', async ({ page
   await qs2.submit()
   await qs2.clickStartExploring()
 
-  await new HomePage(page2).waitFor()
+  await new LandingPage(page2).waitForUrl()
   expect(page2.url()).not.toMatch(/\/auth/)
 
   await page2.close()

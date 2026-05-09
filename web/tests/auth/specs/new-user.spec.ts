@@ -3,9 +3,9 @@ import { randomBytes } from 'node:crypto'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../../landing/pages/HomePage.js'
 
 /**
  * New-user signup flows. All variants use a mocked web3 wallet with a fresh
@@ -35,7 +35,7 @@ test.describe('@web @auth new user signup (web3)', () => {
     })
     const auth = new AuthPage(page)
     const qs = new QuickSetupPage(page)
-    const home = new HomePage(page)
+    const landing = new LandingPage(page)
 
     await auth.clickMetaMaskButton()
 
@@ -46,7 +46,7 @@ test.describe('@web @auth new user signup (web3)', () => {
     await qs.submit()
 
     await qs.clickStartExploring()
-    await home.waitFor()
+    await landing.waitForUrl()
     expect(page.url()).not.toMatch(/\/auth/)
   })
 
@@ -58,7 +58,7 @@ test.describe('@web @auth new user signup (web3)', () => {
     })
     const auth = new AuthPage(page)
     const qs = new QuickSetupPage(page)
-    const home = new HomePage(page)
+    const landing = new LandingPage(page)
 
     await auth.clickMetaMaskButton()
 
@@ -72,7 +72,7 @@ test.describe('@web @auth new user signup (web3)', () => {
     await qs.submit()
 
     await qs.clickStartExploring()
-    await home.waitFor()
+    await landing.waitForUrl()
     expect(page.url()).not.toMatch(/\/auth/)
   })
 
@@ -84,7 +84,7 @@ test.describe('@web @auth new user signup (web3)', () => {
     })
     const auth = new AuthPage(page)
     const qs = new QuickSetupPage(page)
-    const home = new HomePage(page)
+    const landing = new LandingPage(page)
 
     await auth.clickMetaMaskButton()
 
@@ -103,7 +103,7 @@ test.describe('@web @auth new user signup (web3)', () => {
 
     await qs.submit()
     await qs.clickStartExploring()
-    await home.waitFor()
+    await landing.waitForUrl()
     expect(page.url()).not.toMatch(/\/auth/)
   })
 })
