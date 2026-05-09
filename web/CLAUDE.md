@@ -261,7 +261,7 @@ Loaded from the repo-root `.env` (see `.env.example` for the full template). The
 
 ### Cloudflare Access (required for `.zone` targets)
 
-- `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` — service-token credentials. `getCloudflareAccessHeaders()` in `shared/helpers/env.ts` returns `{ 'CF-Access-Client-Id': …, 'CF-Access-Client-Secret': … }` when both are set, `{}` otherwise. Wired into `playwright.config.ts`'s `use.extraHTTPHeaders` (covers all browser navigation and `page.request.*` calls — including `nft-indexer.ts`) and spread into the `auth-server.ts` `fetch()` calls (Node global `fetch`, not routed through Playwright). Required when targeting any `.zone` host; harmless when targeting `.org`.
+- `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` — service-token credentials. `getCloudflareAccessHeaders()` in `shared/helpers/env.ts` returns `{ 'CF-Access-Client-Id': …, 'CF-Access-Client-Secret': … }` when both are set, `{}` otherwise. Wired into `playwright.config.ts`'s `use.extraHTTPHeaders`, which covers all browser navigation plus every `page.request.*` call (including `nft-indexer.ts`'s `marketplace-api.decentraland.zone` poll). Required when targeting any `.zone` host (dapp or marketplace-api); harmless when targeting `.org`. The auth-api (`auth-server.ts`) is not CF-gated and doesn't need these headers.
 
 ### Auth tests
 
