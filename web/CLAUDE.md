@@ -267,7 +267,7 @@ Loaded from the repo-root `.env` (see `.env.example` for the full template). The
 
 ### Auth tests
 
-- `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER` — IMAP creds for OTP retrieval.
+- `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `OTP_FROM_EMAIL` — IMAP creds for OTP retrieval.
 - `EMAIL_DOMAIN` (default `e2e.decentraland.org`) — domain used by `generateFreshEmail()` for new-user OTP signups. Each call returns `qa-<hash>@<domain>` and the catch-all routes deliveries to `IMAP_USER`'s inbox.
 - `WEB_BASE_URL` (default `https://decentraland.org`) — dapp base URL; switch to `https://decentraland.zone` to target development.
 - `AUTH_SERVER_URL` (default prod) — RequestPage tests broker `dcl_personal_sign` / `eth_sendTransaction` requests through this.

@@ -71,7 +71,7 @@ jobs:
           IMAP_PORT=${{ vars.IMAP_PORT || secrets.IMAP_PORT }}
           IMAP_USER=${{ vars.IMAP_USER || secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
-          IMAP_FROM_USER=${{ vars.IMAP_FROM_USER || secrets.IMAP_FROM_USER }}
+          OTP_FROM_EMAIL=${{ vars.OTP_FROM_EMAIL || secrets.OTP_FROM_EMAIL }}
           CF_ACCESS_CLIENT_ID=${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET=${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           WALLET_A_PRIVATE_KEY=${{ secrets.WALLET_A_PRIVATE_KEY }}

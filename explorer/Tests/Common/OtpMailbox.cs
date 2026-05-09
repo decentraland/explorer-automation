@@ -40,7 +40,7 @@ public static class OtpMailbox
         var port = int.Parse(RequireEnv("IMAP_PORT"));
         var user = RequireEnv("IMAP_USER");
         var password = RequireEnv("IMAP_PASSWORD");
-        var fromAddress = RequireEnv("IMAP_FROM_USER");
+        var fromAddress = RequireEnv("OTP_FROM_EMAIL");
 
         Reporter.Log($"Waiting for OTP email to {toAddress} from {fromAddress} (timeout {actualTimeout.TotalSeconds}s)");
 

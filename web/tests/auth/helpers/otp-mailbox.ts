@@ -46,7 +46,7 @@ export async function waitForOtp(toAddress: string, options: WaitForOtpOptions =
   const port = Number.parseInt(requireEnv('IMAP_PORT'), 10)
   const user = requireEnv('IMAP_USER')
   const password = requireEnv('IMAP_PASSWORD')
-  const fromAddress = requireEnv('IMAP_FROM_USER')
+  const fromAddress = requireEnv('OTP_FROM_EMAIL')
 
   // eslint-disable-next-line no-console
   console.log(`[otp] waiting for email to ${toAddress} from ${fromAddress} (timeout ${timeoutMs / 1000}s)`)

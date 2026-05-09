@@ -75,7 +75,7 @@ jobs:
           IMAP_PORT=${{ vars.IMAP_PORT || secrets.IMAP_PORT }}
           IMAP_USER=${{ vars.IMAP_USER || secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
-          IMAP_FROM_USER=${{ vars.IMAP_FROM_USER || secrets.IMAP_FROM_USER }}
+          OTP_FROM_EMAIL=${{ vars.OTP_FROM_EMAIL || secrets.OTP_FROM_EMAIL }}
           EOF
 
       - name: Run Playwright (--project=web on .org)
