@@ -7,19 +7,23 @@ import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { getBaseEmail, waitForOtp } from '../helpers/otp-mailbox.js'
+import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
  * Recurrent-user login flows. Already-registered accounts skip the
  * `/auth/quick-setup` screen entirely and land directly on the homepage.
  *
- * Two parallel tests, one per auth method:
- *   - web3 wallet — self-bootstraps: generates a fresh key, completes the
- *     new-user flow once (which registers the wallet on prod's catalyst),
- *     then re-logs in with the same key and asserts no quick-setup. No env
- *     var needed.
- *   - email + OTP — uses `IMAP_USER` (must already be a registered
- *     Decentraland account). Only test in the suite that consumes a code.
+ * Both tests self-bootstrap a fresh user — never reuse a shared registered
+ * account — so each run uses a brand-new email/wallet from Thirdweb's POV
+ * (its own per-address rate-limit bucket, no stale-state leakage between
+ * runs):
+ *   - web3 wallet — generates a fresh key, completes the new-user flow once
+ *     (registers the wallet on prod's catalyst), then re-logs in with the
+ *     same key and asserts no quick-setup.
+ *   - email + OTP — generates a fresh `qa-<hash>@<EMAIL_DOMAIN>` address,
+ *     signs up via OTP (consuming OTP #1), clears cookies, then signs in
+ *     again with the now-registered email (consuming OTP #2) and asserts
+ *     no quick-setup.
  */
 
 const REDIRECT_TO = `${getBaseUrl()}/`
@@ -57,16 +61,38 @@ walletTest('@web @auth recurrent user can log in with web3 wallet', async ({ pag
 })
 
 test('@web @auth recurrent user can log in with email + OTP', async ({ page }) => {
-  const email = getBaseEmail()
+  const email = generateFreshEmail()
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
+  const qs = new QuickSetupPage(page)
 
+  // Phase 1 — sign up a brand-new user via OTP. Each test run uses a fresh
+  // email so we never accumulate Thirdweb rate limit on a shared address.
   await landing.goto()
   await landing.clickSignIn()
   await auth.submitEmail(email)
   await auth.waitForOtpScreen()
-  const code = await waitForOtp(email)
-  await auth.enterOtp(code)
+  const signupCode = await waitForOtp(email)
+  await auth.enterOtp(signupCode)
+
+  await qs.waitFor()
+  await qs.fillUsername(uniqueUsername())
+  await qs.acceptTerms()
+  await qs.submit()
+  await qs.clickStartExploring()
+  await landing.waitForUrl()
+
+  // Phase 2 — re-log in as the now-registered user. Clear cookies first so
+  // the dapp treats us as a fresh visitor; otherwise /auth/login would just
+  // bounce us straight back to home and we'd never exercise the recurrent
+  // OTP path.
+  await page.context().clearCookies()
+  await landing.goto()
+  await landing.clickSignIn()
+  await auth.submitEmail(email)
+  await auth.waitForOtpScreen()
+  const loginCode = await waitForOtp(email)
+  await auth.enterOtp(loginCode)
 
   await landing.waitForUrl(60_000)
   test.expect(page.url()).not.toMatch(/\/auth\/quick-setup/)

@@ -21,10 +21,6 @@ export function generateFreshEmail(): string {
   return `${local}@${domain}`
 }
 
-export function getBaseEmail(): string {
-  return requireEnv('IMAP_USER')
-}
-
 export interface WaitForOtpOptions {
   timeoutMs?: number
   pollIntervalMs?: number
@@ -34,11 +30,15 @@ export interface WaitForOtpOptions {
  * Connect to IMAP and poll for an OTP email addressed to `toAddress` from the
  * configured Thirdweb sender. Returns the 6-digit code from the message body.
  *
- * Mirrors the C# OtpMailbox.WaitForOtp logic — deliberately does NOT filter by
- * SINCE/DeliveredAfter (day-only granularity bites us across timezone boundaries).
- * The unique TO alias prevents stale matches.
+ * Captures `startedAt` at entry and only accepts messages whose `internalDate`
+ * is at or after that moment. This guards against stale OTPs left in the
+ * `IMAP_USER` mailbox from prior runs (or from an earlier phase of the same
+ * test) — the IMAP `(to, from)` search is unscoped by date, so the newest
+ * matching UID could otherwise be from minutes/hours ago, and the dapp would
+ * reject the stale code on submit.
  */
 export async function waitForOtp(toAddress: string, options: WaitForOtpOptions = {}): Promise<string> {
+  const startedAt = new Date()
   const timeoutMs = options.timeoutMs ?? 90_000
   const pollIntervalMs = options.pollIntervalMs ?? 3_000
 
@@ -67,19 +67,26 @@ export async function waitForOtp(toAddress: string, options: WaitForOtpOptions =
       while (Date.now() < deadline) {
         const searchResult = await client.search({ to: toAddress, from: fromAddress }, { uid: true })
         const uids = searchResult || []
-        if (uids.length > 0) {
-          const newest = uids[uids.length - 1]!
-          const message = await client.fetchOne(String(newest), { source: true }, { uid: true })
-          if (message) {
-            const code = await extractCode(message)
-            if (code) {
-              // eslint-disable-next-line no-console
-              console.log('[otp] code extracted')
-              return code
-            }
+        // Walk newest-to-oldest. UIDs are server-monotonic so ordering reflects
+        // arrival; bail at the first message whose internalDate is before
+        // `startedAt` since every UID below it must also be stale.
+        for (let i = uids.length - 1; i >= 0; i--) {
+          const uid = uids[i]!
+          const message = await client.fetchOne(String(uid), { source: true, internalDate: true }, { uid: true })
+          if (!message) continue
+          if (message.internalDate && message.internalDate < startedAt) {
             // eslint-disable-next-line no-console
-            console.log('[otp] email arrived but no 6-digit code in body — retrying')
+            console.log('[otp] reached stale UID — fresh OTP not yet delivered')
+            break
           }
+          const code = await extractCode(message)
+          if (code) {
+            // eslint-disable-next-line no-console
+            console.log('[otp] code extracted')
+            return code
+          }
+          // eslint-disable-next-line no-console
+          console.log('[otp] message arrived but no 6-digit code in body — checking older')
         }
         await sleep(pollIntervalMs)
       }
