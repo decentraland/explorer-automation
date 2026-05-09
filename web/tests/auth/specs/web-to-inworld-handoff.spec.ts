@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { LandingPage } from '../pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { HomePage } from '../pages/HomePage.js'
-import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
+import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 import { removeTokenBridge, waitForTokenBridge } from '../helpers/token-bridge.js'
 import { runExplorer, verifyExplorerInWorld } from '../helpers/explorer-runner.js'
 import type { ChildProcess } from 'node:child_process'
@@ -25,7 +25,7 @@ test.describe.skip('@cross web → desktop handoff', () => {
   })
 
   test('web login writes token bridge and Explorer lands in-world', async ({ page }) => {
-    const email = generatePlusAliasEmail()
+    const email = generateFreshEmail()
 
     const landing = new LandingPage(page)
     const auth = new AuthPage(page)

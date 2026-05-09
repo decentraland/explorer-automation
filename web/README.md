@@ -76,7 +76,7 @@ npx playwright test tests/download.spec.ts
 
 ### OTP rate limits
 
-Only the recurrent-user OTP test consumes a Thirdweb code (~3/min limit per recipient). All new-user variants are web3-mocked and have no rate limit. For CI / heavy loops, populate `ALTERNATE_EMAILS` in `.env` with addresses that route to the same inbox if you need a fallback for the OTP test.
+Only the recurrent-user OTP test consumes a Thirdweb code (~3/min limit per recipient). All new-user variants are web3-mocked and have no rate limit. The OTP new-user spec generates a fresh `qa-<hash>@e2e.decentraland.org` per run via `generateFreshEmail()` — each address is its own rate-limit bucket. Override the domain via `EMAIL_DOMAIN` if you've pointed the suite at a different inbox.
 
 ### Watching OTPs during local debugging
 

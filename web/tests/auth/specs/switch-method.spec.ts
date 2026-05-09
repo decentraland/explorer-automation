@@ -7,7 +7,7 @@ import { LandingPage } from '../pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
 import { HomePage } from '../pages/HomePage.js'
-import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
+import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
  * Switches authentication method mid-session: signs up first via OTP, then
@@ -26,7 +26,7 @@ const { expect } = test
 
 test('@web @auth user can switch from OTP to web3 wallet sign-up', async ({ page, context, ethereumWalletMock }) => {
   // Phase 1 — sign up a fresh user via OTP.
-  const email = generatePlusAliasEmail()
+  const email = generateFreshEmail()
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
   const qs = new QuickSetupPage(page)

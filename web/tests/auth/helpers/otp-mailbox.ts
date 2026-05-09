@@ -6,37 +6,23 @@ import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
 const SIX_DIGIT_CODE = /\d{6}/
 
 /**
- * Generate a fresh plus-alias email of the form `local+hash@domain`.
- * `baseAddress` defaults to `IMAP_USER`. The address must NOT already
- * contain a '+' alias — the hash is inserted before the '@'.
+ * Generate a fresh test email of the form `qa-<hash>@<EMAIL_DOMAIN>`. Each
+ * call returns a distinct local-part so every signup looks like a brand-new
+ * recipient to Thirdweb (its own per-address rate-limit bucket — no curated
+ * fallback list needed).
+ *
+ * Defaults to `e2e.decentraland.org`, a Workspace catch-all whose deliveries
+ * route to the inbox at `IMAP_USER`. Override with `EMAIL_DOMAIN` if you've
+ * pointed the suite at a different inbox or domain.
  */
-export function generatePlusAliasEmail(baseAddress?: string): string {
-  const base = baseAddress && baseAddress.length > 0 ? baseAddress : requireEnv('IMAP_USER')
-  const atIdx = base.indexOf('@')
-  if (atIdx <= 0) {
-    throw new Error(`'${base}' is not a valid email address`)
-  }
-  const suffix = randomBytes(4).toString('hex')
-  return `${base.slice(0, atIdx)}+${suffix}${base.slice(atIdx)}`
+export function generateFreshEmail(): string {
+  const domain = optionalEnv('EMAIL_DOMAIN') ?? 'e2e.decentraland.org'
+  const local = `qa-${randomBytes(4).toString('hex')}`
+  return `${local}@${domain}`
 }
 
 export function getBaseEmail(): string {
   return requireEnv('IMAP_USER')
-}
-
-/**
- * Alternate signup base addresses for fallback when the primary hits Thirdweb's
- * per-address rate limit. All listed addresses MUST route to the inbox at
- * IMAP_USER (Gmail plus-aliases or domain aliases that forward to it),
- * since the OTP is read back via a single IMAP connection.
- */
-export function getAlternateEmails(): string[] {
-  const raw = optionalEnv('ALTERNATE_EMAILS')
-  if (!raw) return []
-  return raw
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0)
 }
 
 export interface WaitForOtpOptions {

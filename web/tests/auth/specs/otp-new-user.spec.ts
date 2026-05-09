@@ -4,7 +4,7 @@ import { LandingPage } from '../pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
 import { HomePage } from '../pages/HomePage.js'
-import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
+import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
  * New-user signup via the email + OTP path. Mirrors `auth-e2e-tests`'
@@ -20,7 +20,7 @@ import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 test('@web @auth new user can sign up via email + OTP', async ({ page }) => {
-  const email = generatePlusAliasEmail()
+  const email = generateFreshEmail()
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
   const qs = new QuickSetupPage(page)

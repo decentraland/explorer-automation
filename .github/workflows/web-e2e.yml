@@ -61,7 +61,6 @@ jobs:
           IMAP_USER=${{ secrets.IMAP_USER }}
           IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
           IMAP_FROM_USER=${{ secrets.IMAP_FROM_USER }}
-          ALTERNATE_EMAILS=${{ secrets.ALTERNATE_EMAILS }}
           EOF
 
       - name: Compute Playwright args

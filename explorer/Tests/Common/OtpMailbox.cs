@@ -11,43 +11,25 @@ public static class OtpMailbox
     private static readonly Regex SixDigitCode = new(@"\d{6}", RegexOptions.Compiled);
 
     /// <summary>
-    /// Generates a fresh plus-alias email of the form <c>local+hash@domain</c>.
+    /// Generates a fresh test email of the form <c>qa-&lt;hash&gt;@&lt;EMAIL_DOMAIN&gt;</c>.
+    /// Each call returns a distinct local-part so every signup looks like a brand-new
+    /// recipient to Thirdweb (its own per-address rate-limit bucket — no curated
+    /// fallback list needed).
+    ///
+    /// Defaults to <c>e2e.decentraland.org</c>, a Workspace catch-all whose deliveries
+    /// route to the inbox at <c>IMAP_USER</c>. Override with <c>EMAIL_DOMAIN</c> if
+    /// you've pointed the suite at a different inbox or domain.
     /// </summary>
-    /// <param name="baseAddress">
-    /// Optional base address. Defaults to <c>IMAP_USER</c>. The address must NOT
-    /// already contain a '+' alias (the hash is inserted before the '@').
-    /// </param>
-    public static string GeneratePlusAliasEmail(string baseAddress = "")
+    public static string GenerateFreshEmail()
     {
-        if (string.IsNullOrEmpty(baseAddress))
-            baseAddress = RequireEnv("IMAP_USER");
-        var atIdx = baseAddress.IndexOf('@');
-        if (atIdx <= 0)
-            throw new InvalidOperationException($"'{baseAddress}' is not a valid email address");
-
-        var suffix = Guid.NewGuid().ToString("N")[..8];
-        return baseAddress.Insert(atIdx, "+" + suffix);
+        var domain = Environment.GetEnvironmentVariable("EMAIL_DOMAIN");
+        if (string.IsNullOrWhiteSpace(domain))
+            domain = "e2e.decentraland.org";
+        var local = "qa-" + Guid.NewGuid().ToString("N")[..8];
+        return $"{local}@{domain}";
     }
 
     public static string GetBaseEmail() => RequireEnv("IMAP_USER");
-
-    /// <summary>
-    /// Returns alternate signup addresses configured via the ALTERNATE_EMAILS env var
-    /// (comma-separated). These must all route to the inbox at IMAP_USER (e.g.
-    /// Gmail plus-aliases or domain aliases that forward to the same mailbox), since the OTP
-    /// is read back via a single IMAP connection. Used as a fallback when the primary email
-    /// hits Thirdweb's per-address rate limit (429).
-    /// </summary>
-    public static List<string> GetAlternateEmails()
-    {
-        var raw = Environment.GetEnvironmentVariable("ALTERNATE_EMAILS");
-        if (string.IsNullOrWhiteSpace(raw))
-            return [];
-        return raw.Split(',')
-                  .Select(s => s.Trim())
-                  .Where(s => s.Length > 0)
-                  .ToList();
-    }
 
     public static string WaitForOtp(string toAddress, TimeSpan? timeout = null, TimeSpan? pollInterval = null)
     {

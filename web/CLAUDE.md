@@ -257,12 +257,13 @@ When iterating on a single test, prefer `--headed --workers=1` so the browser is
 
 ## Environment variables
 
-Loaded from the repo-root `.env` (see `.env.example` for the full template). The env loader (`shared/helpers/env.ts`) calls `requireEnv` at **module-import time**, so any auth spec that imports an OTP helper hard-fails on collection if `EXPLORER_IMAP_USER` (and friends) are missing — not at the test body. Run with a populated `../.env` or those specs won't even start. The on-chain marketplace spec uses `optionalEnv` at module level + a `haveOnChainConfig` guard, so it self-skips cleanly when wallets aren't configured; new specs with optional env should follow that pattern rather than `requireEnv` at top level.
+Loaded from the repo-root `.env` (see `.env.example` for the full template). The env loader (`shared/helpers/env.ts`) calls `requireEnv` at **module-import time**, so any auth spec that imports an OTP helper hard-fails on collection if `IMAP_USER` (and friends) are missing — not at the test body. Run with a populated `../.env` or those specs won't even start. The on-chain marketplace spec uses `optionalEnv` at module level + a `haveOnChainConfig` guard, so it self-skips cleanly when wallets aren't configured; new specs with optional env should follow that pattern rather than `requireEnv` at top level.
 
 ### Auth tests
 
-- `EXPLORER_IMAP_HOST`, `EXPLORER_IMAP_PORT`, `EXPLORER_IMAP_USER`, `EXPLORER_IMAP_PASSWORD`, `EXPLORER_IMAP_FROM_USER` — IMAP creds for OTP retrieval.
-- `EXPLORER_ALTERNATE_EMAILS` — fallback addresses when the primary hits Thirdweb's rate limit.
+- `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FROM_USER` — IMAP creds for OTP retrieval.
+- `EMAIL_DOMAIN` (default `e2e.decentraland.org`) — domain used by `generateFreshEmail()` for new-user OTP signups. Each call returns `qa-<hash>@<domain>` and the catch-all routes deliveries to `IMAP_USER`'s inbox.
+- `WEB_BASE_URL` (default `https://decentraland.org`) — dapp base URL; switch to `https://decentraland.zone` to target development.
 - `AUTH_SERVER_URL` (default prod) — RequestPage tests broker `dcl_personal_sign` / `eth_sendTransaction` requests through this.
 
 ### Marketplace tests
