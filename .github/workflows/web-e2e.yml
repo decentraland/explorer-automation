@@ -49,6 +49,12 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: pw-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          # Fall back to any prior `pw-<os>-…` cache if the lockfile-derived
+          # key is a miss (lockfile bumped without changing Playwright). The
+          # `playwright install` step still runs to bring in any missing
+          # browsers, but starting from a warm cache saves a few minutes.
+          restore-keys: |
+            pw-${{ runner.os }}-
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

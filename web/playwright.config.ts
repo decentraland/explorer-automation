@@ -72,7 +72,7 @@ export default defineConfig({
     {
       name: 'web',
       // Spans both auth (`tests/auth/specs`) and landing (`tests/landing/specs`)
-      // — `@web @auth` and `@web @download` both flow through this project.
+      // — `@web @auth` and `@web @landing` both flow through this project.
       // Marketplace specs aren't tagged @web (they use @marketplace), but
       // `testIgnore` keeps them off the scan path so a top-level marketplace
       // import error wouldn't trip discovery.
