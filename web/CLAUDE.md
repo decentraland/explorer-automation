@@ -38,6 +38,11 @@ web/
 │   └── types/
 │       └── ethereum-wallet-mock.d.ts   # explicit declaration of EthereumWalletMock interface
 └── tests/
+    ├── landing/                    # public site (`decentraland.org/`) — login entry + hero CTAs
+    │   ├── pages/
+    │   │   └── LandingPage.ts      # goto / clickSignIn / downloadLauncher (pre-login) + waitForUrl (post-login URL assertion)
+    │   └── specs/                  # @web specs that don't drive an auth flow
+    │       └── download.spec.ts                  # @web @landing — launcher .dmg download
     ├── auth/                       # browser-driven auth + cross-platform handoff
     │   ├── helpers/
     │   │   ├── wallet.ts           # setupMockedWallet, mockNoProfileOnCatalysts, rebindWalletMock
@@ -46,21 +51,18 @@ web/
     │   │   ├── token-bridge.ts     # auth-token-bridge.txt path/read/wait for @cross handoff
     │   │   └── explorer-runner.ts  # spawn metaforge + verify in-world via dotnet test
     │   ├── pages/
-    │   │   ├── LandingPage.ts
     │   │   ├── AuthPage.ts
     │   │   ├── QuickSetupPage.ts
-    │   │   ├── AvatarSetupPage.ts  # @webgpu Unity avatar editor
-    │   │   └── HomePage.ts
-    │   └── specs/                  # 10 specs, all tagged @web / @cross / @webgpu
-    │       ├── new-user.spec.ts                  # @web — 3 web3 signup variants
-    │       ├── otp-new-user.spec.ts              # @web — OTP signup
-    │       ├── recurrent-user.spec.ts            # @web — recurrent web3 + OTP
-    │       ├── cross-sites.spec.ts               # @web — session across /marketplace, /builder, /account
-    │       ├── web3-redirect.spec.ts             # @web — redirectTo query param handling
-    │       ├── request-page.spec.ts              # @web — RequestPage signature broker
-    │       ├── switch-method.spec.ts             # @web — switch from OTP to web3 in same context
+    │   │   └── AvatarSetupPage.ts  # @webgpu Unity avatar editor
+    │   └── specs/                  # all tagged @web / @cross / @webgpu — auth specs additionally carry @auth
+    │       ├── new-user.spec.ts                  # @web @auth — 3 web3 signup variants
+    │       ├── otp-new-user.spec.ts              # @web @auth — OTP signup
+    │       ├── recurrent-user.spec.ts            # @web @auth — recurrent web3 + OTP
+    │       ├── cross-sites.spec.ts               # @web @auth — session across /marketplace, /builder, /account
+    │       ├── web3-redirect.spec.ts             # @web @auth — redirectTo query param handling
+    │       ├── request-page.spec.ts              # @web @auth — RequestPage signature broker
+    │       ├── switch-method.spec.ts             # @web @auth — switch from OTP to web3 in same context
     │       ├── web3-avatar-setup.spec.ts         # @webgpu — Unity 3D avatar editor
-    │       ├── download.spec.ts                  # @web — launcher .dmg download
     │       └── web-to-inworld-handoff.spec.ts    # @cross — web → desktop (currently skipped)
     └── marketplace/                # marketplace dapp tests
         ├── helpers/
@@ -106,6 +108,7 @@ Playwright's projects use `grep` to route specs. An untagged `describe` doesn't 
 - `@webgpu` — Unity avatar editor (`npm run test:webgpu`)
 - `@marketplace` — every marketplace describe block
 - `@on-chain` — additionally on any spec that broadcasts a transaction. The `marketplace` project filters with `grepInvert: /@on-chain/`; the `marketplace-onchain` project filters with `grep: /@on-chain/`. **Forgetting `@on-chain` on a broadcast spec causes it to be silently skipped** by both projects.
+- `@auth` / `@landing` — sub-tags on the `@web` specs that bucket them by surface (auth flows vs. landing/main-site). Drive the manual suite selector in `.github/workflows/web-e2e.yml` (`auth` / `landing` choices). Marketplace specs don't need a sub-tag — the workflow targets them by `--project=marketplace[-onchain]`.
 
 Pure-signature flows (e.g. listing-only via `/v1/trades`, no relayer) do NOT carry `@on-chain` — they don't compete for the wallet pool.
 
@@ -256,12 +259,17 @@ When iterating on a single test, prefer `--headed --workers=1` so the browser is
 
 ## Environment variables
 
-Loaded from the repo-root `.env` (see `.env.example` for the full template). The env loader (`shared/helpers/env.ts`) calls `requireEnv` at **module-import time**, so any auth spec that imports an OTP helper hard-fails on collection if `EXPLORER_IMAP_USER` (and friends) are missing — not at the test body. Run with a populated `../.env` or those specs won't even start. The on-chain marketplace spec uses `optionalEnv` at module level + a `haveOnChainConfig` guard, so it self-skips cleanly when wallets aren't configured; new specs with optional env should follow that pattern rather than `requireEnv` at top level.
+Loaded from the repo-root `.env` (see `.env.example` for the full template). The env loader (`shared/helpers/env.ts`) calls `requireEnv` at **module-import time**, so any auth spec that imports an OTP helper hard-fails on collection if `IMAP_USER` (and friends) are missing — not at the test body. Run with a populated `../.env` or those specs won't even start. The on-chain marketplace spec uses `optionalEnv` at module level + a `haveOnChainConfig` guard, so it self-skips cleanly when wallets aren't configured; new specs with optional env should follow that pattern rather than `requireEnv` at top level.
+
+### Cloudflare Access (required for `.zone` targets)
+
+- `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` — service-token credentials. `getCloudflareAccessHeaders()` in `shared/helpers/env.ts` returns `{ 'CF-Access-Client-Id': …, 'CF-Access-Client-Secret': … }` when both are set, `{}` otherwise. Wired into `playwright.config.ts`'s `use.extraHTTPHeaders`. **Required only when navigating the dapp at `decentraland.zone`** (the only CF-gated origin). The `*.api.decentraland.zone` subdomains (auth-api, marketplace-api) are publicly reachable and don't need the headers. The wiring is context-level (broad), so the headers also reach those API hosts when set — harmless because non-gated origins ignore them.
 
 ### Auth tests
 
-- `EXPLORER_IMAP_HOST`, `EXPLORER_IMAP_PORT`, `EXPLORER_IMAP_USER`, `EXPLORER_IMAP_PASSWORD`, `EXPLORER_IMAP_FROM_USER` — IMAP creds for OTP retrieval.
-- `EXPLORER_ALTERNATE_EMAILS` — fallback addresses when the primary hits Thirdweb's rate limit.
+- `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `OTP_FROM_EMAIL` — IMAP creds for OTP retrieval.
+- `EMAIL_DOMAIN` (default `e2e.decentraland.org`) — domain used by `generateFreshEmail()` for new-user OTP signups. Each call returns `qa-<hash>@<domain>` and the catch-all routes deliveries to `IMAP_USER`'s inbox.
+- `WEB_BASE_URL` (default `https://decentraland.org`) — dapp base URL; switch to `https://decentraland.zone` to target development.
 - `AUTH_SERVER_URL` (default prod) — RequestPage tests broker `dcl_personal_sign` / `eth_sendTransaction` requests through this.
 
 ### Marketplace tests

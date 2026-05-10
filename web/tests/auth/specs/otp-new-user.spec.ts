@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
-import { LandingPage } from '../pages/LandingPage.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
-import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
+import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
  * New-user signup via the email + OTP path. Mirrors `auth-e2e-tests`'
@@ -19,12 +18,11 @@ import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
-test('@web new user can sign up via email + OTP', async ({ page }) => {
-  const email = generatePlusAliasEmail()
+test('@web @auth new user can sign up via email + OTP', async ({ page }) => {
+  const email = generateFreshEmail()
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
   const qs = new QuickSetupPage(page)
-  const home = new HomePage(page)
 
   await landing.goto()
   await landing.clickSignIn()
@@ -39,6 +37,6 @@ test('@web new user can sign up via email + OTP', async ({ page }) => {
   await qs.submit()
   await qs.clickStartExploring()
 
-  await home.waitFor()
+  await landing.waitForUrl()
   expect(page.url()).not.toMatch(/\/auth/)
 })

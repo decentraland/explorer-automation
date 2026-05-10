@@ -2,11 +2,11 @@ import { generatePrivateKey } from 'viem/accounts'
 import { randomBytes } from 'node:crypto'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
-import { LandingPage } from '../pages/LandingPage.js'
+import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
-import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
+import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
 
 /**
  * Switches authentication method mid-session: signs up first via OTP, then
@@ -18,18 +18,17 @@ import { generatePlusAliasEmail, waitForOtp } from '../helpers/otp-mailbox.js'
  * non-WebGL variant). Consumes one OTP per run.
  */
 
-const REDIRECT_TO = 'https://decentraland.org/'
+const REDIRECT_TO = `${getBaseUrl()}/`
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 const { expect } = test
 
-test('@web user can switch from OTP to web3 wallet sign-up', async ({ page, context, ethereumWalletMock }) => {
+test('@web @auth user can switch from OTP to web3 wallet sign-up', async ({ page, context, ethereumWalletMock }) => {
   // Phase 1 — sign up a fresh user via OTP.
-  const email = generatePlusAliasEmail()
+  const email = generateFreshEmail()
   const landing = new LandingPage(page)
   const auth = new AuthPage(page)
   const qs = new QuickSetupPage(page)
-  const home = new HomePage(page)
 
   await landing.goto()
   await landing.clickSignIn()
@@ -43,7 +42,7 @@ test('@web user can switch from OTP to web3 wallet sign-up', async ({ page, cont
   await qs.acceptTerms()
   await qs.submit()
   await qs.clickStartExploring()
-  await home.waitFor()
+  await landing.waitForUrl()
   expect(page.url()).not.toMatch(/\/auth/)
 
   // Phase 2 — open a fresh page in the SAME context and sign up via web3.
@@ -64,7 +63,7 @@ test('@web user can switch from OTP to web3 wallet sign-up', async ({ page, cont
   await qs2.submit()
   await qs2.clickStartExploring()
 
-  await new HomePage(page2).waitFor()
+  await new LandingPage(page2).waitForUrl()
   expect(page2.url()).not.toMatch(/\/auth/)
 
   await page2.close()

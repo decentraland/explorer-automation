@@ -1,6 +1,7 @@
 import { privateKeyToAccount } from 'viem/accounts'
 import type { Page, Route } from '@playwright/test'
 import type { EthereumWalletMock } from '@synthetixio/ethereum-wallet-mock/playwright'
+import { getBaseUrl } from '../../../shared/helpers/env.js'
 
 /**
  * Intercepts every Decentraland catalyst `/lambdas/profiles/<address>` call
@@ -86,7 +87,7 @@ export async function setupMockedWallet(
     installedOn.add(page)
   }
 
-  const url = new URL('https://decentraland.org/auth/login')
+  const url = new URL(`${getBaseUrl()}/auth/login`)
   if (redirectTo) url.searchParams.set('redirectTo', redirectTo)
   await page.goto(url.toString(), { waitUntil: 'load' })
 

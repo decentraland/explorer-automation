@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 import { config as loadDotenv } from 'dotenv'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getBaseUrl, getCloudflareAccessHeaders } from './shared/helpers/env.js'
 
 /**
  * Chrome launch args that enable WebGPU on the host's real GPU. Used by the
@@ -30,7 +31,7 @@ const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${BASE_URL}/ma
 
 /**
  * Five projects:
- *   - `web`                  → tests tagged @web    (headless, no GPU)
+ *   - `web`                  → tests tagged @web    (auth + landing, headless, no GPU)
  *   - `cross`                → tests tagged @cross  (web → desktop handoff via auth-token-bridge.txt)
  *   - `webgpu`               → tests tagged @webgpu (Unity-rendered avatar editor; requires WebGPU)
  *   - `marketplace`          → marketplace off-chain specs (@marketplace, excluding @on-chain)
@@ -45,7 +46,7 @@ const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${BASE_URL}/ma
  */
 export default defineConfig({
   // testDir is set per-project below; auth specs live under tests/auth/specs,
-  // marketplace under tests/marketplace/specs.
+  // landing under tests/landing/specs, marketplace under tests/marketplace/specs.
   timeout: 120_000,
   expect: { timeout: 15_000 },
   forbidOnly: !!process.env.CI,
@@ -56,7 +57,13 @@ export default defineConfig({
     ['allure-playwright', { outputFolder: 'allure-results' }]
   ],
   use: {
-    baseURL: 'https://decentraland.org',
+    baseURL: getBaseUrl(),
+    // CF Access service-token headers, only present when CF_ACCESS_CLIENT_ID /
+    // CF_ACCESS_CLIENT_SECRET are set in .env. Required for browser navigation
+    // to the dev dapp at `decentraland.zone` (the only CF-gated origin). Non-
+    // gated hosts (auth-api / marketplace-api / .org) ignore the headers, so
+    // the broad context-level wiring is harmless.
+    extraHTTPHeaders: getCloudflareAccessHeaders(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure'
@@ -64,7 +71,13 @@ export default defineConfig({
   projects: [
     {
       name: 'web',
-      testDir: './tests/auth/specs',
+      // Spans both auth (`tests/auth/specs`) and landing (`tests/landing/specs`)
+      // — `@web @auth` and `@web @landing` both flow through this project.
+      // Marketplace specs aren't tagged @web (they use @marketplace), but
+      // `testIgnore` keeps them off the scan path so a top-level marketplace
+      // import error wouldn't trip discovery.
+      testDir: './tests',
+      testIgnore: ['**/marketplace/**'],
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,

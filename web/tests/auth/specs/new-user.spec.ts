@@ -2,9 +2,10 @@ import { generatePrivateKey } from 'viem/accounts'
 import { randomBytes } from 'node:crypto'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
+import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { HomePage } from '../pages/HomePage.js'
 
 /**
  * New-user signup flows. All variants use a mocked web3 wallet with a fresh
@@ -23,9 +24,9 @@ import { HomePage } from '../pages/HomePage.js'
 
 const { expect } = test
 const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
-const REDIRECT_TO = 'https://decentraland.org/'
+const REDIRECT_TO = `${getBaseUrl()}/`
 
-test.describe('@web new user signup (web3)', () => {
+test.describe('@web @auth new user signup (web3)', () => {
   test('new user can sign up without subscribing to newsletter', async ({ page, ethereumWalletMock }) => {
     await mockNoProfileOnCatalysts(page)
     await setupMockedWallet(page, ethereumWalletMock, {
@@ -34,7 +35,7 @@ test.describe('@web new user signup (web3)', () => {
     })
     const auth = new AuthPage(page)
     const qs = new QuickSetupPage(page)
-    const home = new HomePage(page)
+    const landing = new LandingPage(page)
 
     await auth.clickMetaMaskButton()
 
@@ -45,7 +46,7 @@ test.describe('@web new user signup (web3)', () => {
     await qs.submit()
 
     await qs.clickStartExploring()
-    await home.waitFor()
+    await landing.waitForUrl()
     expect(page.url()).not.toMatch(/\/auth/)
   })
 
@@ -57,7 +58,7 @@ test.describe('@web new user signup (web3)', () => {
     })
     const auth = new AuthPage(page)
     const qs = new QuickSetupPage(page)
-    const home = new HomePage(page)
+    const landing = new LandingPage(page)
 
     await auth.clickMetaMaskButton()
 
@@ -71,7 +72,7 @@ test.describe('@web new user signup (web3)', () => {
     await qs.submit()
 
     await qs.clickStartExploring()
-    await home.waitFor()
+    await landing.waitForUrl()
     expect(page.url()).not.toMatch(/\/auth/)
   })
 
@@ -83,7 +84,7 @@ test.describe('@web new user signup (web3)', () => {
     })
     const auth = new AuthPage(page)
     const qs = new QuickSetupPage(page)
-    const home = new HomePage(page)
+    const landing = new LandingPage(page)
 
     await auth.clickMetaMaskButton()
 
@@ -102,7 +103,7 @@ test.describe('@web new user signup (web3)', () => {
 
     await qs.submit()
     await qs.clickStartExploring()
-    await home.waitFor()
+    await landing.waitForUrl()
     expect(page.url()).not.toMatch(/\/auth/)
   })
 })
