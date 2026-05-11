@@ -12,9 +12,13 @@ name: Runner Validation (Windows hosted probe)
 # targets the self-hosted `win-gpu-t4-onboarding` GPU runner. The
 # self-hosted path is the primary bet; this is the cheap-fallback probe.
 #
-# Triggers: workflow_dispatch only. No auto-runs — we don't want to burn
-# GH-minutes on every push. Re-run manually whenever GH bumps the
-# `windows-latest` image and we want to re-baseline.
+# Triggers:
+#   - workflow_dispatch (manual re-runs once merged to main; conserves
+#     GH-minutes for ad-hoc image re-baselining)
+#   - push on the experiment branch when this YAML changes (so the PR
+#     reviewers can see probe results without merging — workflow_dispatch
+#     can't be triggered from a branch ref until the workflow lives on the
+#     default branch, so we need an explicit branch trigger to test in PR)
 #
 # All probe steps tolerate failure (`continue-on-error: true` where the
 # command itself may be absent) so the workflow always completes and the
@@ -22,6 +26,11 @@ name: Runner Validation (Windows hosted probe)
 
 on:
   workflow_dispatch:
+
+  push:
+    branches: [feat/runner-validation-gh-hosted]
+    paths:
+      - '.github/workflows/runner-validation-windows-hosted.yml'
 
 permissions:
   contents: read
