@@ -270,14 +270,14 @@ Loaded from the repo-root `.env` (see `.env.example` for the full template). The
 - `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `OTP_FROM_EMAIL` — IMAP creds for OTP retrieval.
 - `EMAIL_DOMAIN` (default `e2e.decentraland.org`) — domain used by `generateFreshEmail()` for new-user OTP signups. Each call returns `qa-<hash>@<domain>` and the catch-all routes deliveries to `IMAP_USER`'s inbox.
 - `WEB_BASE_URL` (default `https://decentraland.org`) — dapp base URL; switch to `https://decentraland.zone` or `https://decentraland.today` to target development / staging (both CF-gated — see CF Access section above).
-- `AUTH_SERVER_URL` (default prod) — RequestPage tests broker `dcl_personal_sign` / `eth_sendTransaction` requests through this.
+- `AUTH_SERVER_URL` — RequestPage tests broker `dcl_personal_sign` / `eth_sendTransaction` requests through this. Auto-derived as `auth-api.<host>` from `WEB_BASE_URL` (so a `.today` dapp run talks to `auth-api.decentraland.today`); set this only to point at a non-paired auth-api host.
 
 ### Marketplace tests
 
 - `BASE_URL` (default `https://decentraland.org`).
 - `MARKETPLACE_BASE_URL` — overrides `${BASE_URL}/marketplace/`. Trailing slash required.
 - `MARKETPLACE_ENV` — `dev` to switch the dapp to Polygon Amoy / Sepolia (testnets) on the public `.org` host.
-- `MARKETPLACE_API_BASE_URL` — explicit override for the marketplace-api host (used by helpers that query the indexer directly, e.g. `nft-indexer.ts`). Optional. Defaults: `MARKETPLACE_ENV=dev` → `https://marketplace-api.decentraland.zone`; `MARKETPLACE_ENV=prod` (or any non-`dev` value) → `https://marketplace-api.<BASE_URL host>`. Set this when CI runners can't reach `.zone` (Cloudflare-gated). Note: `MARKETPLACE_ENV=prod` resolves to the production indexer (mainnet NFTs only); on-chain testnet specs targeting `MARKETPLACE_TEST_ITEM_*` will not find their items there. See `shared/helpers/marketplace-api.ts` for the full resolution rule.
+- `MARKETPLACE_API_BASE_URL` — explicit override for the marketplace-api host (used by helpers that query the indexer directly, e.g. `nft-indexer.ts`). Optional. Default behavior derives `marketplace-api.<host>` from `BASE_URL`'s host, with one legacy exception: `BASE_URL=https://decentraland.org` + `MARKETPLACE_ENV=dev` routes to `marketplace-api.decentraland.zone` (testnet indexer reached from the prod dapp via `?env=dev`). So a run with `BASE_URL=https://decentraland.today` automatically reads from `marketplace-api.decentraland.today`. Note: a run with `BASE_URL=https://decentraland.org` + `MARKETPLACE_ENV=prod` resolves to the production indexer (mainnet NFTs only); on-chain testnet specs targeting `MARKETPLACE_TEST_ITEM_*` will not find their items there. See `shared/helpers/marketplace-api.ts` for the full resolution rule.
 
 ### On-chain marketplace tests (testnet only — never use real-fund wallets)
 
