@@ -34,6 +34,19 @@ jobs:
         working-directory: web
 
     steps:
+      - name: Validate environment / suite combination
+        # `.today` has no marketplace deployment — the .today dapp reads
+        # from `marketplace-api.decentraland.org` (mainnet). Running the
+        # marketplace specs against `.today` would mix testnet expectations
+        # with mainnet results, so refuse the combination loudly here
+        # rather than let the run produce confusing failures.
+        if: ${{ inputs.environment == 'today' && (inputs.suite == 'marketplace' || inputs.suite == 'marketplace-onchain') }}
+        run: |
+          echo "::error::environment=today is not supported with suite=${{ inputs.suite }}."
+          echo "::error::Marketplace has no .today deployment (the .today dapp uses prod's marketplace-api)."
+          echo "::error::Re-run with environment=org or environment=zone."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
