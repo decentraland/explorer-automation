@@ -33,9 +33,14 @@ local-scripts/
 screenshots/
 
 .claude/settings.local.json
+.claude/skills/dcl-testing/
+.claude/skills/dcl-testing-playwright/
+.claude/skills/playwright-best-practices/
 
 # Web (TypeScript / Playwright) stack
 web/node_modules/
 web/playwright-report/
 web/test-results/
 web/allure-results/
+web/.agents/skills/dcl-testing-playwright/
+web/.agents/skills/playwright-best-practices/

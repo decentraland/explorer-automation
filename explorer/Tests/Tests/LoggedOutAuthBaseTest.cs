@@ -77,42 +77,26 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         Reporter.Log("Reached logged-out auth screen");
     }
 
-    private static readonly Random Rng = new();
-
     /// <summary>
-    /// Submits an email and waits for the OTP screen. Builds a pool with the primary plus
-    /// the addresses configured in <c>EXPLORER_ALTERNATE_EMAILS</c> (each freshened with a
-    /// new <c>+hash</c>). When <paramref name="shufflePool"/> is true the pool is randomized
-    /// to spread load across Thirdweb's per-address rate-limit buckets — recommended for
-    /// new-user signup tests. Recurrent tests should pass <c>false</c> (and a primary that
-    /// is the actual existing account) so we don't sign up a different account by accident.
-    /// On 429 (OTP screen never appears), the helper moves to the next candidate.
-    /// Returns the email that actually got the OTP screen.
+    /// Submits an email and waits for the OTP screen. On failure (transient error or rare
+    /// per-address rate limit), regenerates the email via <paramref name="emailFactory"/>
+    /// and retries up to <paramref name="maxAttempts"/>. Returns the email that succeeded.
+    ///
+    /// New-user tests should pass <see cref="OtpMailbox.GenerateFreshEmail"/> as the
+    /// factory so each attempt is a brand-new recipient (its own rate-limit bucket).
+    /// Recurrent-login tests should pass a closure that returns the registered
+    /// <c>IMAP_USER</c> and use <c>maxAttempts=1</c> — re-submitting the same registered
+    /// account doesn't help.
     /// </summary>
-    /// <param name="primaryEmail">The email to try first (or one of, when shuffling).</param>
+    /// <param name="emailFactory">Returns the email to submit on each attempt.</param>
     /// <param name="otpScreenTimeoutSec">How long to wait for the OTP screen per attempt.</param>
-    /// <param name="shufflePool">Randomize the order of candidates.</param>
-    protected string SubmitEmailWithRateLimitFallback(string primaryEmail, int otpScreenTimeoutSec = 25, bool shufflePool = false)
+    /// <param name="maxAttempts">Maximum number of attempts before failing.</param>
+    protected string SubmitEmailWithRetry(Func<string> emailFactory, int otpScreenTimeoutSec = 25, int maxAttempts = 3)
     {
-        var candidates = new List<string> { primaryEmail };
-        candidates.AddRange(OtpMailbox.GetAlternateEmails()
-                                      .Select(OtpMailbox.GeneratePlusAliasEmail));
-
-        if (shufflePool)
+        for (var i = 0; i < maxAttempts; i++)
         {
-            // Fisher-Yates shuffle.
-            for (var i = candidates.Count - 1; i > 0; i--)
-            {
-                var j = Rng.Next(i + 1);
-                (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
-            }
-            Reporter.Log($"Pool shuffled — first try: {candidates[0]}");
-        }
-
-        for (var i = 0; i < candidates.Count; i++)
-        {
-            var email = candidates[i];
-            Reporter.Log($"Submitting email ({i + 1}/{candidates.Count}): {email}");
+            var email = emailFactory();
+            Reporter.Log($"Submitting email ({i + 1}/{maxAttempts}): {email}");
             Views.AuthenticationMainScreen.EmailInput.SetText(email);
 
             try
@@ -123,14 +107,14 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
             }
             catch (AssertionException)
             {
-                Reporter.Log($"OTP screen did not appear for {email} within {otpScreenTimeoutSec}s — likely rate-limited; trying next candidate");
-                Reporter.TakeScreenshot($"RateLimit_{email.Replace('@', '_').Replace('+', '_')}");
+                Reporter.Log($"OTP screen did not appear for {email} within {otpScreenTimeoutSec}s");
+                Reporter.TakeScreenshot($"OtpScreenMissing_{email.Replace('@', '_').Replace('+', '_')}");
 
                 // The Thirdweb error popup blocks input — Escape closes it (or its EXIT button).
                 PressEscape();
                 Wait(1);
 
-                // Make sure we're back at LoginSelection before trying the next email.
+                // Make sure we're back at LoginSelection before trying again.
                 if (!Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent())
                 {
                     PressEscape();
@@ -140,8 +124,6 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         }
 
         throw new AssertionException(
-            $"All {candidates.Count} email candidates failed to bring up the OTP screen. " +
-            "Set EXPLORER_ALTERNATE_EMAILS to a comma-separated list of fallback addresses, " +
-            "or wait for the Thirdweb rate-limit window to clear.");
+            $"All {maxAttempts} email attempts failed to bring up the OTP screen.");
     }
 }

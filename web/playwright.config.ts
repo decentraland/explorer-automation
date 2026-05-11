@@ -1,4 +1,8 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test'
+import { config as loadDotenv } from 'dotenv'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { getBaseUrl, getCloudflareAccessHeaders } from './shared/helpers/env.js'
 
 /**
  * Chrome launch args that enable WebGPU on the host's real GPU. Used by the
@@ -11,17 +15,27 @@ import { defineConfig, devices } from '@playwright/test';
  * the no-GPU `/auth/quick-setup` path instead of `/avatar-setup`. The browser
  * is launched headed (`headless: false` below) so the GPU process is real.
  */
-const WEBGPU_ARGS = [
-  '--enable-unsafe-webgpu',
-  '--enable-features=Vulkan',
-  '--ignore-gpu-blocklist',
-];
+const WEBGPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--ignore-gpu-blocklist']
+
+// Load .env so MARKETPLACE_BASE_URL etc. are available when this module evaluates.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+loadDotenv({ path: path.resolve(__dirname, '../.env') })
+
+// .org is publicly reachable; .zone is gated behind Cloudflare Access (internal-only).
+// Use ?env=dev (via `withEnv()` in shared/helpers/url.ts) to switch the dapp to
+// Polygon Amoy / Sepolia while still hitting the public .org host.
+const BASE_URL = (process.env.BASE_URL ?? 'https://decentraland.org').replace(/\/$/, '')
+// Trailing slash is required so relative `goto('browse')` resolves under /marketplace/.
+// Without it, `goto('/browse')` would replace the path and hit the root landing page.
+const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${BASE_URL}/marketplace/`
 
 /**
- * Three projects:
- *   - `web`    → tests tagged @web    (headless, no GPU)
- *   - `cross`  → tests tagged @cross  (web → desktop handoff via auth-token-bridge.txt)
- *   - `webgpu` → tests tagged @webgpu (Unity-rendered avatar editor; requires WebGPU)
+ * Five projects:
+ *   - `web`                  → tests tagged @web    (auth + landing, headless, no GPU)
+ *   - `cross`                → tests tagged @cross  (web → desktop handoff via auth-token-bridge.txt)
+ *   - `webgpu`               → tests tagged @webgpu (Unity-rendered avatar editor; requires WebGPU)
+ *   - `marketplace`          → marketplace off-chain specs (@marketplace, excluding @on-chain)
+ *   - `marketplace-onchain`  → marketplace on-chain specs (@on-chain) — needs funded wallets
  *
  * `cross` runs serially (workers: 1) because the handoff manipulates a single
  * shared file at ~/Library/Application Support/DecentralandLauncherLight/ and
@@ -31,37 +45,54 @@ const WEBGPU_ARGS = [
  * relative-coordinate clicks in `AvatarSetupPage` land on the right grid cells.
  */
 export default defineConfig({
-  testDir: './tests',
+  // testDir is set per-project below; auth specs live under tests/auth/specs,
+  // landing under tests/landing/specs, marketplace under tests/marketplace/specs.
   timeout: 120_000,
   expect: { timeout: 15_000 },
+  forbidOnly: !!process.env.CI,
   retries: 1,
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
-    ['allure-playwright', { outputFolder: 'allure-results' }],
+    ['allure-playwright', { outputFolder: 'allure-results' }]
   ],
   use: {
-    baseURL: 'https://decentraland.org',
+    baseURL: getBaseUrl(),
+    // CF Access service-token headers, only present when CF_ACCESS_CLIENT_ID /
+    // CF_ACCESS_CLIENT_SECRET are set in .env. Required for browser navigation
+    // to the dev dapp at `decentraland.zone` (the only CF-gated origin). Non-
+    // gated hosts (auth-api / marketplace-api / .org) ignore the headers, so
+    // the broad context-level wiring is harmless.
+    extraHTTPHeaders: getCloudflareAccessHeaders(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure',
+    video: 'retain-on-failure'
   },
   projects: [
     {
       name: 'web',
+      // Spans both auth (`tests/auth/specs`) and landing (`tests/landing/specs`)
+      // — `@web @auth` and `@web @landing` both flow through this project.
+      // Marketplace specs aren't tagged @web (they use @marketplace), but
+      // `testIgnore` keeps them off the scan path so a top-level marketplace
+      // import error wouldn't trip discovery.
+      testDir: './tests',
+      testIgnore: ['**/marketplace/**'],
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'] }
     },
     {
       name: 'cross',
+      testDir: './tests/auth/specs',
       grep: /@cross/,
       workers: 1,
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'] }
     },
     {
       name: 'webgpu',
+      testDir: './tests/auth/specs',
       grep: /@webgpu/,
       workers: 1,
       // Unity-driven coordinate clicks are inherently flaky (GPU contention,
@@ -74,8 +105,41 @@ export default defineConfig({
         channel: 'chrome',
         headless: false,
         viewport: { width: 1200, height: 997 },
-        launchOptions: { args: WEBGPU_ARGS },
-      },
+        launchOptions: { args: WEBGPU_ARGS }
+      }
     },
-  ],
-});
+    {
+      name: 'marketplace',
+      testDir: './tests/marketplace/specs',
+      grep: /@marketplace/,
+      grepInvert: /@on-chain/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: MARKETPLACE_BASE_URL
+      }
+    },
+    {
+      // On-chain specs share a 2-wallet pool. The wallet-pool fixture is
+      // worker-scoped; with >1 worker, both workers initialize identical
+      // pools, both pick the same seller (balance read is identical), and
+      // the second worker's tx reverts on the contract's nonce check.
+      // `workers: 1` here is the primary, invocation-agnostic defense; the
+      // npm-script flag (`test:marketplace:onchain --workers=1`) is belt-
+      // and-suspenders. `fullyParallel: false` only prevents intra-file
+      // parallelism, not worker count — keep it for clarity but it's not
+      // load-bearing once `workers: 1` is set.
+      // `retries: 0` because retrying a partially-broadcast tx hits
+      // max-per-wallet on attempt 2 — fail loudly instead.
+      name: 'marketplace-onchain',
+      testDir: './tests/marketplace/specs',
+      grep: /@on-chain/,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: MARKETPLACE_BASE_URL
+      }
+    }
+  ]
+})
