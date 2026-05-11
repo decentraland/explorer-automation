@@ -1,0 +1,105 @@
+name: Runner Validation (Windows hosted probe)
+
+# Phase 1 of the GH-hosted windows-latest feasibility experiment.
+#
+# Goal: capture the GPU / driver / .NET baseline of GitHub's vanilla
+# `windows-latest` image so we can decide whether a Phase 2 Unity launch
+# attempt is worth the engineering effort. Microsoft docs don't make a hard
+# commitment about GPU on `windows-latest`; this workflow is the single
+# source of truth.
+#
+# Parallel and independent from `runner-validation-windows.yml`, which
+# targets the self-hosted `win-gpu-t4-onboarding` GPU runner. The
+# self-hosted path is the primary bet; this is the cheap-fallback probe.
+#
+# Triggers: workflow_dispatch only. No auto-runs — we don't want to burn
+# GH-minutes on every push. Re-run manually whenever GH bumps the
+# `windows-latest` image and we want to re-baseline.
+#
+# All probe steps tolerate failure (`continue-on-error: true` where the
+# command itself may be absent) so the workflow always completes and the
+# artifacts upload step always sees the dxdiag report.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: GPU / .NET probe
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Image metadata
+        shell: pwsh
+        run: |
+          Write-Host "Runner OS:           $env:RUNNER_OS"
+          Write-Host "Runner arch:         $env:RUNNER_ARCH"
+          Write-Host "Image name:          $env:ImageOS"
+          Write-Host "Image version:       $env:ImageVersion"
+          Write-Host "Hostname:            $env:COMPUTERNAME"
+          systeminfo | Select-String "OS Name","OS Version","System Manufacturer","System Model","Total Physical Memory"
+
+      - name: Video controllers (WMI)
+        shell: pwsh
+        run: Get-WmiObject Win32_VideoController | Format-List Name, DriverVersion, VideoProcessor, AdapterRAM, Status, VideoModeDescription
+
+      - name: PnP display devices
+        shell: pwsh
+        continue-on-error: true
+        run: Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Format-List FriendlyName, InstanceId, Status
+
+      - name: dxdiag report (first 200 lines)
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "dxdiag.txt"
+          # dxdiag writes asynchronously and exits before the file lands.
+          # Poll up to 60s before giving up.
+          dxdiag /t $report
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          while (-not (Test-Path $report) -and $sw.Elapsed.TotalSeconds -lt 60) { Start-Sleep -Seconds 1 }
+          if (-not (Test-Path $report)) {
+            Write-Host "::warning::dxdiag did not produce $report within 60s"
+          } else {
+            Write-Host "=== dxdiag (first 200 lines) ==="
+            Get-Content $report -TotalCount 200
+          }
+
+      - name: nvidia-smi probe
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try { nvidia-smi } catch { Write-Host "nvidia-smi not on PATH" }
+          Get-ChildItem "C:\Program Files\NVIDIA*" -Recurse -Filter "nvidia-smi.exe" -ErrorAction SilentlyContinue | Select-Object FullName
+          Get-ChildItem "C:\Windows\System32" -Filter "nv*.dll" -ErrorAction SilentlyContinue | Select-Object Name
+
+      - name: Vulkan loader probe
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Write-Host "=== Searching for vulkan-1.dll ==="
+          Get-ChildItem "C:\Windows\System32" -Filter "vulkan-1.dll" -ErrorAction SilentlyContinue | Select-Object FullName
+          Get-ChildItem "C:\Windows\SysWOW64" -Filter "vulkan-1.dll" -ErrorAction SilentlyContinue | Select-Object FullName
+          Write-Host "=== Vulkan ICD registry ==="
+          try { Get-ItemProperty "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -ErrorAction Stop } catch { Write-Host "No Vulkan ICDs registered" }
+
+      - name: .NET baseline
+        shell: pwsh
+        run: |
+          Write-Host "=== dotnet --info ==="
+          dotnet --info
+          Write-Host "=== dotnet --list-sdks ==="
+          dotnet --list-sdks
+          Write-Host "=== dotnet --list-runtimes ==="
+          dotnet --list-runtimes
+
+      - name: Upload dxdiag artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxdiag-${{ github.run_id }}
+          path: ${{ runner.temp }}/dxdiag.txt
+          if-no-files-found: warn
