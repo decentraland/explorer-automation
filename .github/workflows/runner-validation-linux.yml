@@ -1,0 +1,469 @@
+name: Runner validation (Linux)
+
+# ============================================================================
+# Why this file exists (Spec: Runner Validation — GH-hosted GPU Gating
+# Experiment, slice #2):
+#
+# Decentraland's UI/InWorld test suite needs a GPU on the runner — the macOS
+# `macos-14` chassis (Nicolas's `visual-regression.yml`) works because Apple
+# silicon ships a GPU. Linux is the cheaper, faster, more parallelisable
+# target, but `ubuntu-latest` is headless: Explorer crashes on launch with no
+# GPU device. This workflow probes both worlds from a single chassis:
+#
+#   * gpu=false (slice #2, this slice): canary on `ubuntu-latest`. Expected
+#     outcome — Explorer crashes inside `mf explorer test`; surrounding steps
+#     stay green; cleanup releases the license; workflow exits non-zero by
+#     design (loud-failure invariant per US #20). Faithful Miha-repro.
+#
+#   * gpu=true (slice #5, future): canary on a GPU-equipped runner label
+#     (self-hosted or larger-image GH-hosted). Installs Mesa/Vulkan + Xvfb,
+#     then runs the same canary; expected to pass.
+#
+# One file, not two. The two paths share ~90 % of steps (mf install, account
+# provisioning, AltTester license, Explorer build install, canary, cleanup,
+# artifact upload). The only conditional bits are the GPU prerequisites
+# (apt-get + Xvfb), guarded on `inputs.gpu == true`. Splitting into two
+# workflows would duplicate everything else for a 30-line delta.
+#
+# Escape-hatch (acknowledged risk per spec): if the GPU runner label turns
+# out to require a non-Ubuntu base image with preinstalled NVIDIA drivers
+# (e.g., a custom AMI on a self-hosted fleet), this file splits into
+# `runner-validation-ubuntu.yml` (gpu=false, ubuntu-latest only) and
+# `runner-validation-linux-gpu.yml` (gpu=true, GPU label, custom base). The
+# split is mechanical — copy this file twice and delete the unused branch of
+# the conditional in each copy.
+#
+# Required secrets (provisioned on `decentraland/explorer-automation`):
+#   - secrets.ALTTESTER_LICENSE                       AltTester Pro license key
+#   - secrets.REPOS_READ_ONLY_TOKEN                   PAT with read on
+#                                                     decentraland/MetaForge
+#   - secrets.EXPLORER_TEAM_S3_BUCKET                 S3 bucket for reports
+#   - secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION        AWS region
+#   - secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID
+#   - secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY
+#   - vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL         Public bucket URL prefix
+#
+# `dry_run=true` lets the chassis run before all secrets land: skips both
+# `mf alttester set-license` (no license consumption) and `mf explorer test`
+# (no canary). Everything else — apt-get prereqs, AltTester binary install,
+# Explorer build download, account provisioning — still runs, so the chassis
+# itself can be debugged without burning license seats.
+# ============================================================================
+
+# NB on the ternaries: `inputs.dry_run || true` would coerce an explicit
+# `false` back to `true` (logical OR short-circuit on a boolean), so we use
+# `== false && 'false' || 'true'` to preserve an explicit-false. Same for gpu.
+run-name: "Linux | runner=${{ inputs.runner_label || 'ubuntu-latest' }} | gpu=${{ inputs.gpu == true && 'true' || 'false' }} | dry_run=${{ inputs.dry_run == false && 'false' || 'true' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: "Runner label (default ubuntu-latest; slice #5 uses a GPU label)."
+        required: false
+        type: string
+        default: ubuntu-latest
+      gpu:
+        description: "Install Mesa/Vulkan + Xvfb. Slice #2 keeps this false to repro the Miha no-GPU crash; slice #5 sets it true."
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Skip license activation + canary; run chassis only. Use to validate the workflow before secrets land."
+        required: false
+        type: boolean
+        default: true
+  pull_request:
+    branches: [feat/runner-validation]
+    paths:
+      - '.github/workflows/runner-validation-*.yml'
+      - 'scripts/runner-validation*.sh'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: runner-validation-${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  # Pinned per AC: AltTester Linux binary URL must live in env, not embedded
+  # in step shell. Vendor publishes desktop downloads at the same URL pattern
+  # as the macOS package; verified naming convention but URL itself should
+  # be re-confirmed on the first real run (see "Install runtime prereqs"
+  # step — it fails fast if the download 404s).
+  ALTTESTER_LINUX_URL: "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageLinux__2_3_1.zip"
+  # Pinned per AC: Linux Explorer build URL in env. Same pattern as the
+  # macOS pin Nicolas uses; suffix swapped to the Linux artifact name.
+  EXPLORER_LINUX_BUILD_URL: "https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_linux.zip"
+
+jobs:
+  validate:
+    name: Runner validation (Linux)
+    runs-on: ${{ inputs.runner_label || 'ubuntu-latest' }}
+    timeout-minutes: 30
+
+    env:
+      DRY_RUN: ${{ inputs.dry_run == false && 'false' || 'true' }}
+      GPU: ${{ inputs.gpu == true && 'true' || 'false' }}
+      RUNNER_LABEL: ${{ inputs.runner_label || 'ubuntu-latest' }}
+
+    steps:
+      - name: Compute identifiers
+        id: ids
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          START_EPOCH=$(date +%s)
+          S3_PATH="@dcl/${{ github.event.repository.name }}/runner-validation/${GITHUB_RUN_ID}/${SHORT_SHA}"
+          {
+            echo "short_sha=${SHORT_SHA}"
+            echo "start_epoch=${START_EPOCH}"
+            echo "s3_path=${S3_PATH}"
+            echo "report_url=${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}/${S3_PATH}/index.html"
+          } >> "$GITHUB_OUTPUT"
+
+      # Detects whether downstream `mf`-using steps can run. The dry_run AC
+      # ("verifiable BEFORE Charly's secrets land") demands the chassis stay
+      # green even with REPOS_READ_ONLY_TOKEN unset. Steps that need the
+      # token gate on `steps.secrets.outputs.has_gh_token` rather than
+      # crashing inside `gh api`.
+      - name: Detect available secrets
+        id: secrets
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GH_TOKEN:-}" ]; then
+            echo "has_gh_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::REPOS_READ_ONLY_TOKEN missing — mf install + account provisioning will be skipped."
+            echo "has_gh_token=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "${ALTTESTER_LICENSE:-}" ]; then
+            echo "has_license=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_license=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Per AC: nvidia-smi probe is diagnostic — a missing GPU is expected on
+      # `ubuntu-latest` and must NOT fail the job. Emits a workflow warning
+      # so the missing-GPU state is visible in the run summary without
+      # bringing the chassis down.
+      - name: Probe GPU availability
+        run: |
+          set -euo pipefail
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            echo "nvidia-smi: present"
+            nvidia-smi || true
+          else
+            echo "::warning::nvidia-smi: missing (expected on ubuntu-latest with gpu=false)"
+          fi
+          # vulkaninfo is informational; never fails the job.
+          if command -v vulkaninfo >/dev/null 2>&1; then
+            vulkaninfo --summary || true
+          else
+            echo "vulkaninfo: not installed (will be added by GPU prereqs step when gpu=true)"
+          fi
+
+      # GPU prerequisites: ONLY when gpu=true. Slice #2 (gpu=false) leaves
+      # Explorer to fail on no GPU device — that crash IS the canary.
+      - name: Install GPU prerequisites
+        if: ${{ env.GPU == 'true' }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mesa-vulkan-drivers \
+            libvulkan1 \
+            vulkan-tools \
+            xvfb
+
+      - name: Start Xvfb
+        if: ${{ env.GPU == 'true' }}
+        run: |
+          set -euo pipefail
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          # Give Xvfb a moment before subsequent steps try to draw.
+          sleep 2
+
+      - name: Install runtime prerequisites
+        run: |
+          set -euo pipefail
+          # .NET 10 via the official Microsoft script (no apt repo dance).
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          chmod +x /tmp/dotnet-install.sh
+          /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"
+          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet --version
+
+          # AltTester Desktop, Linux package. Vendor ships a zip wrapping
+          # the platform binary; layout (tarball vs AppImage vs raw dir) is
+          # confirmed at extract time. Pinned URL lives in $ALTTESTER_LINUX_URL.
+          curl -fsSL "$ALTTESTER_LINUX_URL" -o /tmp/alttester.zip
+          mkdir -p "$HOME/alttester"
+          unzip -q /tmp/alttester.zip -d "$HOME/alttester"
+          # Try in priority order: AppImage > tarball > raw binary tree.
+          ALTTESTER_APPIMAGE=$(find "$HOME/alttester" -maxdepth 4 -name "AltTesterDesktop*.AppImage" -type f 2>/dev/null | head -1)
+          ALTTESTER_TARBALL=$(find "$HOME/alttester" -maxdepth 4 \( -name "AltTesterDesktop*.tar.gz" -o -name "AltTesterDesktop*.tar.xz" \) -type f 2>/dev/null | head -1)
+          if [ -n "$ALTTESTER_APPIMAGE" ]; then
+            chmod +x "$ALTTESTER_APPIMAGE"
+            ALTTESTER_BIN="$ALTTESTER_APPIMAGE"
+          elif [ -n "$ALTTESTER_TARBALL" ]; then
+            tar -xf "$ALTTESTER_TARBALL" -C "$HOME/alttester"
+            ALTTESTER_BIN=$(find "$HOME/alttester" -maxdepth 5 -type f -name "AltTesterDesktop" -executable 2>/dev/null | head -1)
+          else
+            ALTTESTER_BIN=$(find "$HOME/alttester" -maxdepth 5 -type f -name "AltTesterDesktop" 2>/dev/null | head -1)
+            [ -n "$ALTTESTER_BIN" ] && chmod +x "$ALTTESTER_BIN"
+          fi
+          if [ -z "$ALTTESTER_BIN" ]; then
+            echo "::error::AltTesterDesktop binary not found after extracting $ALTTESTER_LINUX_URL"
+            ls -lR "$HOME/alttester" | head -100
+            exit 1
+          fi
+          echo "AltTesterDesktop: $ALTTESTER_BIN"
+          echo "ALTTESTER_BIN=${ALTTESTER_BIN}" >> "$GITHUB_ENV"
+
+          # Allure CLI: metaforge invokes it for the HTML report. Pre-install
+          # globally so `mf explorer test --non-interactive` doesn't prompt.
+          # (npm package `allure`, NOT `allure-commandline`.)
+          npm install -g allure
+          allure --version
+
+          gh --version
+
+      - name: Verify MetaForge access
+        if: steps.secrets.outputs.has_gh_token == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Probe via real API call so workflow fails fast if token lacks
+          # read on decentraland/MetaForge. No `gh auth login` — that would
+          # demand `read:org` which the read-only PAT doesn't carry.
+          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
+
+      - name: Install metaforge
+        if: steps.secrets.outputs.has_gh_token == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Installer prompts "Proceed? [Y/n]" — feed it `yes` for CI.
+          yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
+          # MetaForge userdata on Linux follows XDG conventions, not the
+          # macOS "Library/Application Support" tree. The installer drops
+          # `mf` under one of two candidate roots depending on the version;
+          # add both to PATH so this stays robust across mf releases.
+          MF_LINUX_BIN_XDG_CONFIG="$HOME/.config/decentraland/MetaForge/bin"
+          MF_LINUX_BIN_XDG_DATA="$HOME/.local/share/decentraland/MetaForge/bin"
+          mkdir -p "$MF_LINUX_BIN_XDG_CONFIG" "$MF_LINUX_BIN_XDG_DATA"
+          echo "$MF_LINUX_BIN_XDG_CONFIG" >> "$GITHUB_PATH"
+          echo "$MF_LINUX_BIN_XDG_DATA" >> "$GITHUB_PATH"
+          # Surface mf version so a regression in the installer is loud.
+          export PATH="$MF_LINUX_BIN_XDG_CONFIG:$MF_LINUX_BIN_XDG_DATA:$PATH"
+          mf --version || { echo "::error::mf not on PATH after installer"; exit 1; }
+
+      # License activation: gated on `!dry_run` per AC. dry_run=true MUST
+      # NOT consume a license seat, even when ALTTESTER_LICENSE is set.
+      - name: Configure AltTester license
+        if: ${{ env.DRY_RUN != 'true' && steps.secrets.outputs.has_license == 'true' }}
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          set -euo pipefail
+          mf alttester set-license "$ALTTESTER_LICENSE"
+          echo "LICENSE_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      # Pre-create the Linux Explorer userdata dir BEFORE `mf account login`,
+      # which writes the auth-token bridge into `userdata_0.json` and fails
+      # if the parent doesn't exist. Path follows XDG conventions; verified
+      # to be Linux-shaped (no "Library/Application Support" macOS-isms).
+      - name: Pre-install Explorer build
+        if: steps.secrets.outputs.has_gh_token == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/decentraland/Explorer"
+          mf explorer install "${EXPLORER_LINUX_BUILD_URL}" --non-interactive
+
+      - name: Provision metaforge test account
+        if: steps.secrets.outputs.has_gh_token == 'true'
+        run: |
+          set -euo pipefail
+          ACCOUNT="ci-validation-${GITHUB_RUN_ID}"
+          mf account create "$ACCOUNT" --env zone
+          mf account login "$ACCOUNT"
+          echo "MF_ACCOUNT=${ACCOUNT}" >> "$GITHUB_ENV"
+
+      # The canary itself. Skipped entirely on dry_run=true. On gpu=false
+      # this is EXPECTED to crash (no GPU device) — we capture the exit
+      # code, stop the server, and re-exit with the captured code so the
+      # workflow goes red by design (loud-failure invariant).
+      - name: Run canary suite
+        id: canary
+        if: ${{ env.DRY_RUN != 'true' && steps.secrets.outputs.has_gh_token == 'true' && steps.secrets.outputs.has_license == 'true' }}
+        env:
+          MF_LOG_LEVEL: info
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          set -uo pipefail
+          mf explorer server start --tests-ref "${GITHUB_REF_NAME}" || true
+          set +e
+          mf explorer test "${EXPLORER_LINUX_BUILD_URL}" \
+            --non-interactive \
+            --tests-ref "${GITHUB_REF_NAME}" \
+            --filter "Category=InWorld" \
+            --report-type SingleFile \
+            --skip-allure-open
+          TEST_EXIT=$?
+          set -e
+          mf explorer server stop --non-interactive || true
+          echo "test_exit=${TEST_EXIT}" >> "$GITHUB_OUTPUT"
+          # Re-exit with the captured code so subsequent `if: always()`
+          # steps still run while the job result reflects the canary.
+          exit "${TEST_EXIT}"
+
+      - name: Locate Allure report
+        id: report
+        if: always()
+        run: |
+          set -euo pipefail
+          # mf clones tests under either XDG_CONFIG or XDG_DATA depending
+          # on version; search both. SingleFile report writes index.html
+          # under an `allure-report` subtree.
+          REPORT=$(find \
+                     "$HOME/.config/decentraland/MetaForge" \
+                     "$HOME/.local/share/decentraland/MetaForge" \
+                     -name "index.html" -path "*allure-report*" 2>/dev/null | head -1)
+          if [ -z "$REPORT" ]; then
+            echo "::warning::Allure report not found; skipping S3 upload."
+            echo "report_path=" >> "$GITHUB_OUTPUT"
+          else
+            echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        if: always() && steps.report.outputs.report_path != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+
+      - name: Upload Allure report to S3
+        if: always() && steps.report.outputs.report_path != ''
+        env:
+          BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+          S3_PATH: ${{ steps.ids.outputs.s3_path }}
+          REPORT: ${{ steps.report.outputs.report_path }}
+        run: |
+          set -euo pipefail
+          REPORT_DIR=$(dirname "$REPORT")
+          aws s3 sync "$REPORT_DIR" "s3://$BUCKET/$S3_PATH/" \
+            --acl public-read \
+            --cache-control "public, max-age=300"
+
+      # Diagnostic log bundle per AC: Player.log + AltTester log + mf log +
+      # dotnet test stdout (the canary step's stdout is captured by GH and
+      # accessible from the run page; we additionally upload any log files
+      # mf/Explorer produced on disk so they survive even when the runner
+      # is reaped).
+      - name: Collect diagnostic logs
+        id: logs
+        if: always()
+        run: |
+          set -uo pipefail
+          STAGE="$RUNNER_TEMP/runner-validation-logs"
+          mkdir -p "$STAGE"
+          # Linux Explorer Player.log location (Unity convention):
+          # ~/.config/unity3d/<Company>/<Product>/Player.log
+          find "$HOME/.config/unity3d" -name "Player.log" -type f 2>/dev/null \
+            -exec cp --parents {} "$STAGE/" \; || true
+          # AltTester logs (vendor writes alongside the binary or under
+          # ~/.config/AltTester/Logs depending on version).
+          find "$HOME/.config/AltTester" "$HOME/alttester" \
+            -name "*.log" -type f 2>/dev/null \
+            -exec cp --parents {} "$STAGE/" \; || true
+          # MetaForge log directory (XDG-shaped on Linux, NOT macOS path).
+          find "$HOME/.config/decentraland/MetaForge" \
+               "$HOME/.local/share/decentraland/MetaForge" \
+            -name "*.log" -type f 2>/dev/null \
+            -exec cp --parents {} "$STAGE/" \; || true
+          echo "stage=${STAGE}" >> "$GITHUB_OUTPUT"
+          ls -la "$STAGE" || true
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-validation-logs-${{ steps.ids.outputs.short_sha }}
+          path: ${{ steps.logs.outputs.stage }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Allure artifact (fallback if S3 fails)
+        if: always() && steps.report.outputs.report_path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ steps.ids.outputs.short_sha }}
+          path: ${{ steps.report.outputs.report_path }}
+          retention-days: 14
+
+      # Per AC: structured summary block with runner / gpu / dry_run / exit
+      # / duration / license_seconds / artifact_url. Renders into the run's
+      # GitHub Actions UI summary.
+      - name: Write job summary
+        if: always()
+        env:
+          START_EPOCH: ${{ steps.ids.outputs.start_epoch }}
+          REPORT_URL: ${{ steps.ids.outputs.report_url }}
+          REPORT_PATH: ${{ steps.report.outputs.report_path }}
+          TEST_EXIT: ${{ steps.canary.outputs.test_exit }}
+        run: |
+          set -uo pipefail
+          NOW=$(date +%s)
+          DURATION=$(( NOW - START_EPOCH ))
+          LICENSE_SECONDS=0
+          if [ -n "${LICENSE_START_EPOCH:-}" ]; then
+            LICENSE_SECONDS=$(( NOW - LICENSE_START_EPOCH ))
+          fi
+          EXIT_CODE="${TEST_EXIT:-skipped}"
+          if [ -n "$REPORT_PATH" ]; then
+            ARTIFACT_URL="$REPORT_URL"
+          else
+            ARTIFACT_URL="(no allure report)"
+          fi
+          {
+            echo "## Runner validation summary"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| runner | \`${RUNNER_LABEL}\` |"
+            echo "| gpu | \`${GPU}\` |"
+            echo "| dry_run | \`${DRY_RUN}\` |"
+            echo "| exit | \`${EXIT_CODE}\` |"
+            echo "| duration | \`${DURATION}s\` |"
+            echo "| license_seconds | \`${LICENSE_SECONDS}s\` |"
+            echo "| artifact_url | ${ARTIFACT_URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Plain-text mirror so the same line is grep-able from the raw log.
+          echo "runner=${RUNNER_LABEL}, gpu=${GPU}, dry_run=${DRY_RUN}, exit=${EXIT_CODE}, duration=${DURATION}s, license_seconds=${LICENSE_SECONDS}s, artifact_url=${ARTIFACT_URL}"
+
+      # `if: always()` on the cleanup chain runs on success, failure, AND
+      # cancellation. The `||` chain matches Nicolas's macOS workflow: each
+      # rung is best-effort, the next runs even if the previous one errored,
+      # so a half-provisioned run still releases the license + account.
+      - name: Cleanup metaforge state
+        if: always()
+        run: |
+          mf explorer server stop --non-interactive || true
+          mf alttester deactivate --non-interactive || true
+          if [ -n "${MF_ACCOUNT:-}" ]; then
+            mf account remove "${MF_ACCOUNT}" --yes --non-interactive || true
+          fi
