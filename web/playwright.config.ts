@@ -59,11 +59,13 @@ export default defineConfig({
   ],
   use: {
     baseURL: getBaseUrl(),
-    // CF Access service-token headers, only present when CF_ACCESS_CLIENT_ID /
-    // CF_ACCESS_CLIENT_SECRET are set in .env. Required for browser navigation
-    // to the dev dapp at `decentraland.zone` or `decentraland.today` (both
-    // CF-gated origins). Non-gated hosts (auth-api / marketplace-api / .org)
-    // ignore the headers, so the broad context-level wiring is harmless.
+    // CF Access service-token headers. `getCloudflareAccessHeaders()` returns
+    // them only when both env vars are set AND the dapp host (resolved from
+    // WEB_BASE_URL / BASE_URL) is one of the CF-gated dev/staging dapps
+    // (`decentraland.zone` / `decentraland.today`). `.org` runs receive no
+    // headers — sending them broke landing/auth specs in CI because the prod
+    // origin's Cloudflare reacted to the headers and changed response shape.
+    // See env.ts for the full rule.
     extraHTTPHeaders: getCloudflareAccessHeaders(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
