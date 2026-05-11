@@ -23,7 +23,8 @@ export function optionalEnv(name: string): string | undefined {
 /**
  * Base URL of the Decentraland dapp under test (no trailing slash). Defaults
  * to production. Override with `WEB_BASE_URL` to target a different
- * environment (e.g. `https://decentraland.zone` for development).
+ * environment (e.g. `https://decentraland.zone` or `https://decentraland.today`
+ * for development / staging).
  */
 export function getBaseUrl(): string {
   const raw = optionalEnv('WEB_BASE_URL') ?? 'https://decentraland.org'
@@ -32,10 +33,11 @@ export function getBaseUrl(): string {
 
 /**
  * Cloudflare Access service-token headers, if both `CF_ACCESS_CLIENT_ID`
- * and `CF_ACCESS_CLIENT_SECRET` are set. Required for browser navigation
- * to the dev dapp host (`WEB_BASE_URL=https://decentraland.zone`), which
- * is the only `.zone` origin gated behind CF Access — the `*.api.decentraland.zone`
- * subdomains (auth-api, marketplace-api) are publicly reachable.
+ * and `CF_ACCESS_CLIENT_SECRET` are set. Required for browser navigation to
+ * the dev/staging dapp hosts — `WEB_BASE_URL=https://decentraland.zone` and
+ * `WEB_BASE_URL=https://decentraland.today` — which are the only dapp origins
+ * gated behind CF Access. The `*.api.decentraland.zone` / `.today` subdomains
+ * (auth-api, marketplace-api) are publicly reachable.
  *
  * Returns `{}` when either env var is missing — safe to spread into any
  * `headers` object. Non-gated hosts ignore these headers, so the broad

@@ -21,9 +21,10 @@ const WEBGPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--ig
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 loadDotenv({ path: path.resolve(__dirname, '../.env') })
 
-// .org is publicly reachable; .zone is gated behind Cloudflare Access (internal-only).
-// Use ?env=dev (via `withEnv()` in shared/helpers/url.ts) to switch the dapp to
-// Polygon Amoy / Sepolia while still hitting the public .org host.
+// .org is publicly reachable; .zone and .today are gated behind Cloudflare
+// Access (internal-only). Use ?env=dev (via `withEnv()` in shared/helpers/url.ts)
+// to switch the dapp to Polygon Amoy / Sepolia while still hitting the public
+// .org host.
 const BASE_URL = (process.env.BASE_URL ?? 'https://decentraland.org').replace(/\/$/, '')
 // Trailing slash is required so relative `goto('browse')` resolves under /marketplace/.
 // Without it, `goto('/browse')` would replace the path and hit the root landing page.
@@ -60,9 +61,9 @@ export default defineConfig({
     baseURL: getBaseUrl(),
     // CF Access service-token headers, only present when CF_ACCESS_CLIENT_ID /
     // CF_ACCESS_CLIENT_SECRET are set in .env. Required for browser navigation
-    // to the dev dapp at `decentraland.zone` (the only CF-gated origin). Non-
-    // gated hosts (auth-api / marketplace-api / .org) ignore the headers, so
-    // the broad context-level wiring is harmless.
+    // to the dev dapp at `decentraland.zone` or `decentraland.today` (both
+    // CF-gated origins). Non-gated hosts (auth-api / marketplace-api / .org)
+    // ignore the headers, so the broad context-level wiring is harmless.
     extraHTTPHeaders: getCloudflareAccessHeaders(),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',

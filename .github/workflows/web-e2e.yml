@@ -11,6 +11,7 @@ on:
         options:
           - org
           - zone
+          - today
       suite:
         description: "Which test suite to run"
         required: true

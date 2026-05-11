@@ -261,15 +261,15 @@ When iterating on a single test, prefer `--headed --workers=1` so the browser is
 
 Loaded from the repo-root `.env` (see `.env.example` for the full template). The env loader (`shared/helpers/env.ts`) calls `requireEnv` at **module-import time**, so any auth spec that imports an OTP helper hard-fails on collection if `IMAP_USER` (and friends) are missing — not at the test body. Run with a populated `../.env` or those specs won't even start. The on-chain marketplace spec uses `optionalEnv` at module level + a `haveOnChainConfig` guard, so it self-skips cleanly when wallets aren't configured; new specs with optional env should follow that pattern rather than `requireEnv` at top level.
 
-### Cloudflare Access (required for `.zone` targets)
+### Cloudflare Access (required for `.zone` / `.today` targets)
 
-- `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` — service-token credentials. `getCloudflareAccessHeaders()` in `shared/helpers/env.ts` returns `{ 'CF-Access-Client-Id': …, 'CF-Access-Client-Secret': … }` when both are set, `{}` otherwise. Wired into `playwright.config.ts`'s `use.extraHTTPHeaders`. **Required only when navigating the dapp at `decentraland.zone`** (the only CF-gated origin). The `*.api.decentraland.zone` subdomains (auth-api, marketplace-api) are publicly reachable and don't need the headers. The wiring is context-level (broad), so the headers also reach those API hosts when set — harmless because non-gated origins ignore them.
+- `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` — service-token credentials. `getCloudflareAccessHeaders()` in `shared/helpers/env.ts` returns `{ 'CF-Access-Client-Id': …, 'CF-Access-Client-Secret': … }` when both are set, `{}` otherwise. Wired into `playwright.config.ts`'s `use.extraHTTPHeaders`. **Required when navigating the dapp at `decentraland.zone` or `decentraland.today`** — both dapp origins are CF-gated. The `*.api.decentraland.zone` / `.today` subdomains (auth-api, marketplace-api) are publicly reachable and don't need the headers. The wiring is context-level (broad), so the headers reach every host the suite touches — harmless on non-gated origins (`.org`, public APIs) because they ignore them.
 
 ### Auth tests
 
 - `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `OTP_FROM_EMAIL` — IMAP creds for OTP retrieval.
 - `EMAIL_DOMAIN` (default `e2e.decentraland.org`) — domain used by `generateFreshEmail()` for new-user OTP signups. Each call returns `qa-<hash>@<domain>` and the catch-all routes deliveries to `IMAP_USER`'s inbox.
-- `WEB_BASE_URL` (default `https://decentraland.org`) — dapp base URL; switch to `https://decentraland.zone` to target development.
+- `WEB_BASE_URL` (default `https://decentraland.org`) — dapp base URL; switch to `https://decentraland.zone` or `https://decentraland.today` to target development / staging (both CF-gated — see CF Access section above).
 - `AUTH_SERVER_URL` (default prod) — RequestPage tests broker `dcl_personal_sign` / `eth_sendTransaction` requests through this.
 
 ### Marketplace tests
