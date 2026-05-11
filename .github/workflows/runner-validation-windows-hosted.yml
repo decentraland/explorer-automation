@@ -80,9 +80,29 @@ jobs:
       - name: nvidia-smi probe
         shell: pwsh
         continue-on-error: true
+        timeout-minutes: 1
         run: |
-          try { nvidia-smi } catch { Write-Host "nvidia-smi not on PATH" }
-          Get-ChildItem "C:\Program Files\NVIDIA*" -Recurse -Filter "nvidia-smi.exe" -ErrorAction SilentlyContinue | Select-Object FullName
+          # Guard with Get-Command so we never *execute* nvidia-smi unless it's
+          # actually on PATH. A direct `nvidia-smi` call on a vanilla
+          # windows-latest image can hang for minutes when the binary is
+          # present but no GPU device is attached — observed on run 25673652757
+          # which had to be cancelled after 5+ minutes stuck on this step.
+          $cmd = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+          if ($cmd) {
+            Write-Host "nvidia-smi at $($cmd.Source)"
+            & $cmd.Source
+          } else {
+            Write-Host "nvidia-smi not on PATH"
+          }
+          # Non-recursive: just check whether the NVIDIA install dirs exist at
+          # known locations. The previous `-Recurse` over `C:\Program Files\NVIDIA*`
+          # could enumerate gigabyte-scale driver trees.
+          foreach ($p in @(
+            "C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+            "C:\Windows\System32\nvidia-smi.exe"
+          )) {
+            if (Test-Path $p) { Write-Host "Found: $p" }
+          }
           Get-ChildItem "C:\Windows\System32" -Filter "nv*.dll" -ErrorAction SilentlyContinue | Select-Object Name
 
       - name: Vulkan loader probe
