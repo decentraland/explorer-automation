@@ -16,7 +16,7 @@ public class CoreFixture
     [Test]
     public void Default()
     {
-        Frame.WaitForStable();
+        SceneReady.WaitUntilReady();
         Snapshot.AssertMatchesBaseline("default", tolerance: 3);
     }
 }
