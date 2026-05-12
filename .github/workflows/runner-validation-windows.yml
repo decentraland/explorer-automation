@@ -136,7 +136,7 @@ jobs:
 
       - name: Compute identifiers
         id: ids
-        shell: pwsh
+        shell: powershell
         run: |
           $shortSha = $env:COMMIT_SHA.Substring(0, 7)
           $s3Path = "@dcl/decentraland-explorer-automation/runner-validation-windows/$($env:GITHUB_RUN_ID)/$shortSha"
@@ -149,7 +149,7 @@ jobs:
       # Lifted from onboarding-e2e/explorer-smoke.yaml; safe to re-run on a
       # persistent runner since it only reads device info.
       - name: GPU diagnostics
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "=== Video Controllers ==="
           Get-WmiObject Win32_VideoController | Format-List Name, DriverVersion, Status, AdapterRAM, VideoProcessor
@@ -160,7 +160,7 @@ jobs:
 
       # ── VC++ Redistributable: Unity Mono needs msvcp140.dll. Idempotent. ──
       - name: Ensure Visual C++ Redistributable
-        shell: pwsh
+        shell: powershell
         run: |
           $url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
           $installer = Join-Path $env:TEMP "vc_redist.x64.exe"
@@ -171,7 +171,7 @@ jobs:
       # ── .NET 10 SDK. dotnet-install.ps1 is idempotent and side-channel from ──
       # ── any system .NET that may already be on the image. ──
       - name: Install .NET 10 SDK
-        shell: pwsh
+        shell: powershell
         run: |
           $installDir = Join-Path $env:USERPROFILE ".dotnet"
           $script = Join-Path $env:TEMP "dotnet-install.ps1"
@@ -187,7 +187,7 @@ jobs:
       # ── rather than mount a dmg. mf alttester set-license below handles ──
       # ── activation; we never launch the GUI explicitly. ──
       - name: Install AltTester Desktop
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
           $url = "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageWindows__2_3_1.zip"
@@ -206,7 +206,7 @@ jobs:
           "ALTTESTER_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Verify MetaForge access
-        shell: pwsh
+        shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
@@ -222,7 +222,7 @@ jobs:
       # ── If install.ps1 picks a different path, the discovery step below ──
       # ── surfaces it and we adjust. ──
       - name: Install MetaForge
-        shell: pwsh
+        shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
@@ -230,7 +230,7 @@ jobs:
           iex (irm https://explorer-artifacts.decentraland.zone/tools/install.ps1)
 
       - name: Discover mf on PATH
-        shell: pwsh
+        shell: powershell
         run: |
           $candidates = @(
             "$env:LOCALAPPDATA\Decentraland\MetaForge\bin",
@@ -255,7 +255,7 @@ jobs:
           mf --version
 
       - name: Configure AltTester license
-        shell: pwsh
+        shell: powershell
         env:
           ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
         run: |
@@ -269,7 +269,7 @@ jobs:
       # ── dir, which only exists after Explorer has been installed at least ──
       # ── once. Pre-install up front so login doesn't trip on a missing path. ──
       - name: Pre-install Explorer build
-        shell: pwsh
+        shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
@@ -278,7 +278,7 @@ jobs:
           mf explorer install $env:BUILD_URL --non-interactive
 
       - name: Provision metaforge test account
-        shell: pwsh
+        shell: powershell
         run: |
           $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
           if (-not (Test-Path $userdata)) { New-Item -Path $userdata -ItemType Directory -Force | Out-Null }
@@ -289,14 +289,14 @@ jobs:
 
       # ── Clean Player.log before launch so polling sees only this run's lines. ──
       - name: Clear Explorer Player.log
-        shell: pwsh
+        shell: powershell
         run: |
           $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
           if (Test-Path $logPath) { Remove-Item $logPath -Force; Write-Host "Cleared $logPath" }
 
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
-        shell: pwsh
+        shell: powershell
         env:
           MF_LOG_LEVEL: info
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
@@ -315,13 +315,13 @@ jobs:
 
       - name: Dry-run notice
         if: env.DRY_RUN == 'true'
-        shell: pwsh
+        shell: powershell
         run: Write-Host "::notice::dry_run=true — skipped mf explorer test. Chassis steps (install, license, account) ran to verify wiring."
 
       - name: Locate Allure report
         id: report
         if: always() && env.DRY_RUN != 'true'
-        shell: pwsh
+        shell: powershell
         run: |
           $roots = @(
             (Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge"),
@@ -354,7 +354,7 @@ jobs:
       - name: Upload Allure report to S3
         id: s3
         if: always() && steps.report.outputs.report_path != ''
-        shell: pwsh
+        shell: powershell
         env:
           BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
@@ -378,7 +378,7 @@ jobs:
 
       - name: Summarize report URL
         if: always() && steps.s3.outcome == 'success'
-        shell: pwsh
+        shell: powershell
         run: |
           $url = "${{ steps.ids.outputs.report_url }}"
           "::notice::Allure report: $url" | Write-Host
@@ -389,7 +389,7 @@ jobs:
       # ── single failure here doesn't mask another. ──
       - name: Cleanup — stop MetaForge state
         if: always()
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = "Continue"
           try { mf explorer server stop --non-interactive } catch { Write-Host "server stop: $_" }
@@ -400,7 +400,7 @@ jobs:
 
       - name: Cleanup — kill Explorer / Unity / AltTester
         if: always()
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = "Continue"
           Get-Process | Where-Object { $_.ProcessName -match "Decentraland|Unity|AltTester" } |
