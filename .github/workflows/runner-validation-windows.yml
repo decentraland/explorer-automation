@@ -196,10 +196,17 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $zip
           if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
           Expand-Archive -Path $zip -DestinationPath $extractDir
+          # Unconditional listing so future structural changes in the upstream
+          # zip are visible without re-running with a tweaked diagnostic.
+          # ${extractDir}: instead of $extractDir: — Windows PowerShell 5.1
+          # parses `$var:` as a drive-scoped variable and rejects the whole
+          # script block at parse time (seen in run 25735922187).
+          Write-Host "Contents of ${extractDir}:"
+          Get-ChildItem -Path $extractDir -Recurse | Select-Object FullName
+          # Verified zip layout (2.3.1): AltTesterDesktopPackageWindows__2_3_1/
+          #   └── AltTesterDesktop__v2.3.1.exe — glob below matches.
           $exe = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
-            Write-Host "Contents of $extractDir:"
-            Get-ChildItem -Path $extractDir -Recurse | Select-Object FullName
             throw "AltTesterDesktop executable not found inside the Windows package zip"
           }
           Write-Host "AltTester Desktop located at: $($exe.FullName)"
