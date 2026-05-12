@@ -183,31 +183,15 @@ jobs:
           Start-Process -FilePath $installer -ArgumentList "/install","/quiet","/norestart" -Wait
           Write-Host "Visual C++ Redistributable install completed (exit codes 0/1638/3010 are all OK)."
 
-      # ── .NET 10 SDK. Probe first - Microsoft Data Science Win Server 2019
-      # image ships several .NET runtimes; SDK 10.x may also be present after
-      # image refreshes. Skip the ~200 MB download + install when a usable
-      # SDK is already on PATH; otherwise fall back to dotnet-install.ps1
-      # into a user-local dir (side-channel from any system .NET).
+      # .NET 10 SDK via official action. Cached on Azure CDN with built-in
+      # retry, much more reliable than dotnet-install.ps1 on this runner's
+      # slow outbound. The action no-ops fast when the SDK is already cached
+      # under %LOCALAPPDATA%\Microsoft\dotnet on the persistent runner.
       - name: Install .NET 10 SDK
-        shell: powershell
-        timeout-minutes: 10
-        run: |
-          $existing = $null
-          if (Get-Command dotnet -ErrorAction SilentlyContinue) {
-            $existing = & dotnet --list-sdks 2>$null | Where-Object { $_ -match '^10\.' } | Select-Object -First 1
-          }
-          if ($existing) {
-            Write-Host "dotnet SDK 10.x already on PATH: $existing - skipping install."
-            return
-          }
-          Write-Host "dotnet SDK 10.x not found - installing via dotnet-install.ps1."
-          $installDir = Join-Path $env:USERPROFILE ".dotnet"
-          $script = Join-Path $env:TEMP "dotnet-install.ps1"
-          Invoke-WebRequest -Uri https://dot.net/v1/dotnet-install.ps1 -OutFile $script
-          & $script -Channel 10.0 -InstallDir $installDir
-          "$installDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          $env:PATH = "$installDir;$env:PATH"
-          dotnet --version
+        uses: actions/setup-dotnet@v4
+        timeout-minutes: 15
+        with:
+          dotnet-version: '10.0.x'
 
       # ── AltTester Desktop. Windows package URL verified 2026-05-11 (200 OK, ──
       # ── ~159 MB). Structure inside the zip is the Windows-flavoured ──
