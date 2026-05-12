@@ -390,52 +390,83 @@ jobs:
           $env:PATH = "$npmPrefix;$env:PATH"
           & (Join-Path $npmPrefix "allure.cmd") --version
 
-      # TEMP narrow smoke: launch AltTester Desktop directly with the same
-      # batchmode args that MetaForge uses (see AltTesterService.cs:18) and
-      # capture stdout/stderr. We've been blind to *why* it never advertises
-      # "AltTester(R) Server is running on port 13000" - the mf wrapper
-      # swallows the output at LogDebug level by default. Once we know what
-      # the .exe prints (or doesn't), we can fix the root cause and re-enable
-      # `mf explorer test` below.
-      - name: Smoke - AltTester batchmode direct launch
+      # TEMP smoke: launch Decentraland.exe directly in *normal* (non-batch)
+      # mode without AltTester to verify the basic chassis - that the GPU /
+      # graphics stack on this runner can actually initialize a Vulkan device
+      # and start the Unity engine. We've been stuck on AltTester batchmode
+      # never advertising the ready line; before chasing that further, prove
+      # the underlying Explorer can render at all on this T4 + Server 2022
+      # image. If this smoke shows clean Vulkan init, the AltTester issue is
+      # isolated to batchmode/license. If it fails, the chassis itself is the
+      # blocker and AltTester debugging is premature.
+      #
+      # mf explorer install (above) drops the build under
+      #   %LOCALAPPDATA%\Decentraland\MetaForge\explorer\<version>\Decentraland.exe
+      # (see MetaForgeCLI/Services/ExplorerVersionService.cs:39,113).
+      - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
         if: env.DRY_RUN != 'true'
         shell: powershell
-        timeout-minutes: 3
-        env:
-          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        timeout-minutes: 5
         run: |
           $ErrorActionPreference = "Continue"
-          $exe = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
-          if (-not (Test-Path $exe)) { throw "AltTester Desktop not at $exe" }
-          if (-not $env:ALTTESTER_LICENSE) { throw "ALTTESTER_LICENSE secret missing" }
-          $outFile = Join-Path $env:TEMP "alttester-stdout.log"
-          $errFile = Join-Path $env:TEMP "alttester-stderr.log"
-          if (Test-Path $outFile) { Remove-Item $outFile -Force }
-          if (Test-Path $errFile) { Remove-Item $errFile -Force }
+          $versionsRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
+          if (-not (Test-Path $versionsRoot)) {
+            throw "Explorer versions dir not found: $versionsRoot (did 'mf explorer install' succeed?)"
+          }
+          $exe = Get-ChildItem -Path $versionsRoot -Recurse -Filter "Decentraland.exe" -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "Versions dir contents:"
+            Get-ChildItem -Path $versionsRoot -Recurse | Select-Object FullName
+            throw "Decentraland.exe not found under $versionsRoot"
+          }
+          Write-Host "Found Explorer: $($exe.FullName)"
+
+          # Clean Player.log for a fresh trace.
+          $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          if (Test-Path $logPath) { Remove-Item $logPath -Force }
+
+          # Launch in normal mode. Force a small windowed surface so the
+          # session-0/headless desktop on Server 2022 doesn't trip on
+          # fullscreen monitor enumeration. Explicitly request Vulkan via
+          # -force-vulkan; Unity Player picks Vulkan by default on this
+          # build but the flag makes the request unambiguous and surfaces
+          # a clean failure if the Vulkan ICD isn't installed.
           $arglist = @(
-            "-batchmode", "-nographics", "-termsAndConditionsAccepted",
-            "-port", "13000",
-            "-license", $env:ALTTESTER_LICENSE
+            "-force-vulkan",
+            "-screen-fullscreen", "0",
+            "-screen-width", "1280",
+            "-screen-height", "720"
           )
-          Write-Host "Launching: $exe $($arglist -join ' ' -replace [regex]::Escape($env:ALTTESTER_LICENSE), '<LICENSE>')"
-          $proc = Start-Process -FilePath $exe -ArgumentList $arglist `
-            -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
-            -NoNewWindow -PassThru
-          Write-Host "Started PID $($proc.Id). Sleeping 60s to let it boot or fail..."
-          Start-Sleep -Seconds 60
-          Write-Host "--- stdout ---"
-          if (Test-Path $outFile) { Get-Content $outFile } else { Write-Host "(no stdout file)" }
-          Write-Host "--- stderr ---"
-          if (Test-Path $errFile) { Get-Content $errFile } else { Write-Host "(no stderr file)" }
+          Write-Host "Launching: $($exe.FullName) $($arglist -join ' ')"
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList $arglist -PassThru
+          Write-Host "Started PID $($proc.Id). Sleeping 45s to let Unity boot..."
+          Start-Sleep -Seconds 45
+
           Write-Host "--- proc state ---"
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
           if ($live) {
             Write-Host "Still running. HasExited=$($live.HasExited)"
           } else {
-            Write-Host "Process is gone. ExitCode=$($proc.ExitCode)"
+            Write-Host "Process exited early. ExitCode=$($proc.ExitCode)"
           }
-          # Cleanup so the next attempt has a clean port.
-          if ($live) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+
+          Write-Host "--- Player.log path ---"
+          Write-Host $logPath
+          if (-not (Test-Path $logPath)) {
+            Write-Host "::warning::Player.log was never created - Unity may have failed before logging init."
+          } else {
+            Write-Host "--- Player.log (full) ---"
+            Get-Content $logPath
+            Write-Host "--- Player.log filtered: Vulkan / GfxDevice / Renderer / engine / ERROR ---"
+            Select-String -Path $logPath -Pattern "Vulkan|GfxDevice|Renderer:|Initialize engine|GPU|Direct3D|OpenGL|ERROR|Failed|Exception" -SimpleMatch:$false |
+              ForEach-Object { Write-Host $_.Line }
+          }
+
+          if ($live) {
+            Write-Host "Killing Explorer PID $($proc.Id)"
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Run InWorld suite
         if: false  # TEMP: re-enable once AltTester smoke above shows a successful ready line.
