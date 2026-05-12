@@ -262,14 +262,7 @@ jobs:
             Write-Error "Missing REPOS_READ_ONLY_TOKEN secret (PAT with read access to decentraland/MetaForge)"
             exit 1
           }
-          $headers = @{
-            Authorization = "Bearer $env:GH_TOKEN"
-            Accept        = "application/vnd.github+json"
-            "User-Agent"  = "explorer-automation-runner-validation"
-          }
-          $resp = Invoke-RestMethod -UseBasicParsing -Headers $headers `
-            -Uri "https://api.github.com/repos/decentraland/MetaForge/releases/latest"
-          Write-Host "Latest MetaForge release: $($resp.tag_name)"
+          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
 
       # ── MetaForge installer. install.ps1 verified to exist (200 OK, ──
       # ── 2026-05-11). Drops `mf` into $LOCALAPPDATA\Decentraland\MetaForge\bin ──
@@ -348,6 +341,21 @@ jobs:
         run: |
           $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
           if (Test-Path $logPath) { Remove-Item $logPath -Force; Write-Host "Cleared $logPath" }
+
+      # mf explorer test invokes the `allure` CLI to build the report. The
+      # partner image ships Node.js but not the global allure package; pre-
+      # install it to avoid the interactive prompt that aborts under
+      # --non-interactive. Mirrors Pravus's macOS chassis.
+      - name: Install allure CLI
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            Write-Error "npm is not on PATH - partner image lacks Node.js; add an install step."
+            exit 1
+          }
+          npm install -g allure --no-fund --no-audit --loglevel=error
+          allure --version
 
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
