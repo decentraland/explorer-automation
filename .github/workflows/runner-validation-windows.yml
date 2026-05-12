@@ -469,7 +469,7 @@ jobs:
       - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
         if: env.DRY_RUN != 'true'
         shell: powershell
-        timeout-minutes: 12
+        timeout-minutes: 7
         run: |
           $ErrorActionPreference = "Continue"
           $versionsRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
@@ -535,8 +535,8 @@ jobs:
           )
           Write-Host "Launching: $($exe.FullName) $($arglist -join ' ')"
           $proc = Start-Process -FilePath $exe.FullName -ArgumentList $arglist -PassThru
-          Write-Host "Started PID $($proc.Id). Sleeping 600s (10 min) to let Unity boot through splash/auth/realm..."
-          Start-Sleep -Seconds 600
+          Write-Host "Started PID $($proc.Id). Sleeping 300s (5 min) to let Unity boot through splash/auth/realm..."
+          Start-Sleep -Seconds 300
 
           Write-Host "--- proc state ---"
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
