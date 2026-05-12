@@ -158,15 +158,30 @@ jobs:
           Write-Host "=== PCI Devices (Display) ==="
           Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Format-List FriendlyName, InstanceId, Status
 
-      # ── VC++ Redistributable: Unity Mono needs msvcp140.dll. Idempotent. ──
+      # ── VC++ Redistributable: Unity Player .exe links MSVC runtime
+      # (msvcp140.dll). Probe registry first — Microsoft Data Science
+      # Windows Server 2019 image (win-gpu-t4-onboarding's partner image)
+      # ships VC++ as a transitive dep of Anaconda/CUDA/VS Build Tools.
+      # In run 25735922187 the blind installer call hung ~25 minutes on the
+      # already-installed runner; the probe short-circuits that. The install
+      # fallback still runs on images that don't ship it (e.g. vanilla
+      # GH-hosted windows-latest if we ever target it).
       - name: Ensure Visual C++ Redistributable
         shell: powershell
+        timeout-minutes: 5
         run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+          $info = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+          if ($info -and $info.Installed -eq 1) {
+            Write-Host "VC++ Redistributable already installed (version $($info.Version), bld $($info.Bld)); skipping."
+            return
+          }
+          Write-Host "VC++ Redistributable not detected at $key — installing."
           $url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
           $installer = Join-Path $env:TEMP "vc_redist.x64.exe"
           Invoke-WebRequest -Uri $url -OutFile $installer
           Start-Process -FilePath $installer -ArgumentList "/install","/quiet","/norestart" -Wait
-          Write-Host "Visual C++ Redistributable install attempted (exit codes 0/1638/3010 are all OK)."
+          Write-Host "Visual C++ Redistributable install completed (exit codes 0/1638/3010 are all OK)."
 
       # ── .NET 10 SDK. dotnet-install.ps1 is idempotent and side-channel from ──
       # ── any system .NET that may already be on the image. ──
