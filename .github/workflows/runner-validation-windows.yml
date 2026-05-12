@@ -676,6 +676,14 @@ jobs:
       # ── Cleanup is mandatory on a persistent self-hosted runner. Every step ──
       # ── runs unconditionally (`always()` + per-step error swallow) so a ──
       # ── single failure here doesn't mask another. ──
+      #
+      # `mf alttester deactivate` invokes AltTesterDesktop.exe in batchmode
+      # (a Unity Player build). On this runner's TCC-mode T4 (no Vulkan / D3D
+      # / OpenGL ICD) Unity init hangs indefinitely and the call never
+      # returns. Gate on the actual driver model: WDDM = call it; TCC = skip
+      # with a warning. Self-healing - once Charly switches the driver to
+      # WDDM / Gaming / GRID, this runs again automatically. Step-level
+      # timeout below is the safety net in case nvidia-smi lies.
       - name: Cleanup - stop MetaForge state
         if: always()
         timeout-minutes: 3
@@ -683,7 +691,19 @@ jobs:
         run: |
           $ErrorActionPreference = "Continue"
           try { mf explorer server stop --non-interactive } catch { Write-Host "server stop: $_" }
-          try { mf alttester deactivate --non-interactive } catch { Write-Host "alttester deactivate: $_" }
+
+          $driverModel = $null
+          try {
+            $driverModel = (nvidia-smi --query-gpu=driver_model.current --format=csv,noheader 2>$null | Select-Object -First 1).Trim()
+          } catch { }
+
+          if ($driverModel -eq "WDDM") {
+            Write-Host "GPU driver model = WDDM; running mf alttester deactivate."
+            try { mf alttester deactivate --non-interactive } catch { Write-Host "alttester deactivate: $_" }
+          } else {
+            Write-Host "::warning::Skipping mf alttester deactivate - GPU driver model='$driverModel' (need WDDM). License slot stays bound to this persistent runner; revisit once GPU is fixed."
+          }
+
           if ($env:MF_ACCOUNT) {
             try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
           }
