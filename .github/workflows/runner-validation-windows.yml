@@ -422,16 +422,23 @@ jobs:
           $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
           if (Test-Path $logPath) { Remove-Item $logPath -Force; Write-Host "Cleared $logPath" }
 
-      # mf explorer test invokes the `allure` CLI to build the report. The
-      # partner image ships Node.js but not the global allure package; pre-
-      # install it to avoid the interactive prompt that aborts under
-      # --non-interactive. Mirrors Pravus's macOS chassis.
+      # `mf explorer test` invokes the `allure` CLI to build the report. The
+      # current partner image (Base Image for Windows 11 Desktop, run on
+      # win-gpu-t4-onboarding-new-image) does NOT ship Node.js (unlike the
+      # earlier Data Science Server 2022 image which did). Install Node via
+      # the standard action first, then `npm install -g allure` to avoid
+      # the interactive prompt that aborts under --non-interactive.
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install allure CLI
         shell: powershell
         timeout-minutes: 5
         run: |
           if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            Write-Error "npm is not on PATH - partner image lacks Node.js; add an install step."
+            Write-Error "npm is not on PATH after setup-node - investigate."
             exit 1
           }
           npm install -g allure --no-fund --no-audit --loglevel=error
