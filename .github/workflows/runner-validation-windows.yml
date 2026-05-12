@@ -22,7 +22,7 @@ name: Runner Validation (Windows)
 #
 # Required secrets (per Slack thread 2026-05-08, Charly provisioned):
 #   - ALTTESTER_LICENSE                        AltTester Pro license key
-#   - REPOS_READ_ONLY_TOKEN                    PAT — read on decentraland/MetaForge
+#   - REPOS_READ_ONLY_TOKEN                    PAT - read on decentraland/MetaForge
 #   - DEV_EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
 #   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
 #   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
@@ -34,7 +34,7 @@ name: Runner Validation (Windows)
 # Runner access prerequisite:
 #   The `win-gpu-t4-onboarding` runner tag must be granted to
 #   decentraland/explorer-automation. As of 2026-05-11 the tag is registered
-#   on decentraland/onboarding-e2e — confirmation pending from Charly.
+#   on decentraland/onboarding-e2e - confirmation pending from Charly.
 
 on:
   workflow_dispatch:
@@ -50,7 +50,7 @@ on:
         required: false
         default: 'Name=TestOpenPlacesWithShortcut'
       dry_run:
-        description: 'Skip mf explorer test invocation (chassis validation only — useful before runner access is granted).'
+        description: 'Skip mf explorer test invocation (chassis validation only - useful before runner access is granted).'
         type: boolean
         required: false
         default: false
@@ -159,7 +159,7 @@ jobs:
           Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Format-List FriendlyName, InstanceId, Status
 
       # ── VC++ Redistributable: Unity Player .exe links MSVC runtime
-      # (msvcp140.dll). Probe registry first — Microsoft Data Science
+      # (msvcp140.dll). Probe registry first - Microsoft Data Science
       # Windows Server 2019 image (win-gpu-t4-onboarding's partner image)
       # ships VC++ as a transitive dep of Anaconda/CUDA/VS Build Tools.
       # In run 25735922187 the blind installer call hung ~25 minutes on the
@@ -176,14 +176,14 @@ jobs:
             Write-Host "VC++ Redistributable already installed (version $($info.Version), bld $($info.Bld)); skipping."
             return
           }
-          Write-Host "VC++ Redistributable not detected at $key — installing."
+          Write-Host "VC++ Redistributable not detected at $key - installing."
           $url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
           $installer = Join-Path $env:TEMP "vc_redist.x64.exe"
           Invoke-WebRequest -Uri $url -OutFile $installer
           Start-Process -FilePath $installer -ArgumentList "/install","/quiet","/norestart" -Wait
           Write-Host "Visual C++ Redistributable install completed (exit codes 0/1638/3010 are all OK)."
 
-      # ── .NET 10 SDK. Probe first — Microsoft Data Science Win Server 2019
+      # ── .NET 10 SDK. Probe first - Microsoft Data Science Win Server 2019
       # image ships several .NET runtimes; SDK 10.x may also be present after
       # image refreshes. Skip the ~200 MB download + install when a usable
       # SDK is already on PATH; otherwise fall back to dotnet-install.ps1
@@ -197,10 +197,10 @@ jobs:
             $existing = & dotnet --list-sdks 2>$null | Where-Object { $_ -match '^10\.' } | Select-Object -First 1
           }
           if ($existing) {
-            Write-Host "dotnet SDK 10.x already on PATH: $existing — skipping install."
+            Write-Host "dotnet SDK 10.x already on PATH: $existing - skipping install."
             return
           }
-          Write-Host "dotnet SDK 10.x not found — installing via dotnet-install.ps1."
+          Write-Host "dotnet SDK 10.x not found - installing via dotnet-install.ps1."
           $installDir = Join-Path $env:USERPROFILE ".dotnet"
           $script = Join-Path $env:TEMP "dotnet-install.ps1"
           Invoke-WebRequest -Uri https://dot.net/v1/dotnet-install.ps1 -OutFile $script
@@ -226,13 +226,13 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath $extractDir
           # Unconditional listing so future structural changes in the upstream
           # zip are visible without re-running with a tweaked diagnostic.
-          # ${extractDir}: instead of $extractDir: — Windows PowerShell 5.1
+          # ${extractDir}: instead of $extractDir: - Windows PowerShell 5.1
           # parses `$var:` as a drive-scoped variable and rejects the whole
           # script block at parse time (seen in run 25735922187).
           Write-Host "Contents of ${extractDir}:"
           Get-ChildItem -Path $extractDir -Recurse | Select-Object FullName
           # Verified zip layout (2.3.1): AltTesterDesktopPackageWindows__2_3_1/
-          #   └── AltTesterDesktop__v2.3.1.exe — glob below matches.
+          #   └── AltTesterDesktop__v2.3.1.exe - glob below matches.
           $exe = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
             throw "AltTesterDesktop executable not found inside the Windows package zip"
@@ -351,7 +351,7 @@ jobs:
       - name: Dry-run notice
         if: env.DRY_RUN == 'true'
         shell: powershell
-        run: Write-Host "::notice::dry_run=true — skipped mf explorer test. Chassis steps (install, license, account) ran to verify wiring."
+        run: Write-Host "::notice::dry_run=true - skipped mf explorer test. Chassis steps (install, license, account) ran to verify wiring."
 
       - name: Locate Allure report
         id: report
@@ -422,7 +422,7 @@ jobs:
       # ── Cleanup is mandatory on a persistent self-hosted runner. Every step ──
       # ── runs unconditionally (`always()` + per-step error swallow) so a ──
       # ── single failure here doesn't mask another. ──
-      - name: Cleanup — stop MetaForge state
+      - name: Cleanup - stop MetaForge state
         if: always()
         shell: powershell
         run: |
@@ -433,7 +433,7 @@ jobs:
             try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
           }
 
-      - name: Cleanup — kill Explorer / Unity / AltTester
+      - name: Cleanup - kill Explorer / Unity / AltTester
         if: always()
         shell: powershell
         run: |
