@@ -189,7 +189,7 @@ jobs:
       # under %LOCALAPPDATA%\Microsoft\dotnet on the persistent runner.
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v4
-        timeout-minutes: 15
+        timeout-minutes: 25
         with:
           dotnet-version: '10.0.x'
 
@@ -487,6 +487,7 @@ jobs:
       # ── single failure here doesn't mask another. ──
       - name: Cleanup - stop MetaForge state
         if: always()
+        timeout-minutes: 3
         shell: powershell
         run: |
           $ErrorActionPreference = "Continue"
@@ -498,6 +499,7 @@ jobs:
 
       - name: Cleanup - kill Explorer / Unity / AltTester
         if: always()
+        timeout-minutes: 2
         shell: powershell
         run: |
           $ErrorActionPreference = "Continue"
