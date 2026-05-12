@@ -118,7 +118,7 @@ jobs:
   run:
     name: Runner validation (InWorld smoke)
     needs: resolve
-    runs-on: ["win-gpu-t4-onboarding"]
+    runs-on: ["win-gpu-t4-onboarding-new-image"]
     timeout-minutes: 45
 
     env:
@@ -194,6 +194,25 @@ jobs:
           }
           Write-Host "=== PCI Devices (Display) ==="
           Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Format-List FriendlyName, InstanceId, Status
+          Write-Host "=== dxdiag (display section) ==="
+          # Charly's checklist asked for dxdiag confirming the T4 (not
+          # Microsoft Basic Render Driver) as the display device.
+          $dxOut = Join-Path $env:TEMP "dxdiag.txt"
+          if (Test-Path $dxOut) { Remove-Item $dxOut -Force }
+          Start-Process -FilePath dxdiag -ArgumentList "/t",$dxOut -Wait -ErrorAction SilentlyContinue
+          if (Test-Path $dxOut) {
+            $lines = Get-Content $dxOut
+            $idx = ($lines | Select-String -Pattern "Display Devices" | Select-Object -First 1).LineNumber
+            if ($idx) {
+              # Print Display Devices section through next major header
+              $slice = $lines[($idx - 1)..([Math]::Min($idx + 40, $lines.Count - 1))]
+              $slice | ForEach-Object { Write-Host $_ }
+            } else {
+              Write-Host "(no 'Display Devices' header found in dxdiag output)"
+            }
+          } else {
+            Write-Host "(dxdiag did not produce output)"
+          }
 
       # ── VC++ Redistributable: Unity Player .exe links MSVC runtime
       # (msvcp140.dll). Probe registry first - Microsoft Data Science
@@ -443,7 +462,7 @@ jobs:
       - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
         if: env.DRY_RUN != 'true'
         shell: powershell
-        timeout-minutes: 5
+        timeout-minutes: 12
         run: |
           $ErrorActionPreference = "Continue"
           $versionsRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
@@ -458,27 +477,59 @@ jobs:
             throw "Decentraland.exe not found under $versionsRoot"
           }
           Write-Host "Found Explorer: $($exe.FullName)"
+          $buildDir = Split-Path -Parent $exe.FullName
 
           # Clean Player.log for a fresh trace.
           $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
           if (Test-Path $logPath) { Remove-Item $logPath -Force }
 
+          # Explorer's default ReportCategory filter silences info logs for
+          # ~120 categories incl. STARTUP, AUTHENTICATION, SCENE_LOADING,
+          # ENGINE, FEATURE_FLAGS, ASSETS_PROVISION. Without these on, the
+          # log goes silent right after the device-info banner and we have
+          # no way to tell where the splash/auth/realm flow is stuck.
+          # `--use-log-matrix <json>` (built-in CI flag) lets us re-enable
+          # them. `override: false` merges over the default matrix so we
+          # *add* visibility without silencing anything else.
+          $logCategories = @(
+            "STARTUP", "AUTHENTICATION", "SCENE_LOADING", "ENGINE",
+            "FEATURE_FLAGS", "ASSETS_PROVISION", "LANDSCAPE",
+            "REALM_DATA_DIRTY_RESET_SYSTEM", "MULTIPLAYER",
+            "COMMS_SCENE_HANDLER", "COMMS_API", "AUTHENTICATION",
+            "CRDT", "SCENE_FACTORY", "GENERIC_WEB_REQUEST"
+          ) | Sort-Object -Unique
+          $severities = @("Log", "Warning", "Error", "Exception")
+          $entries = @()
+          foreach ($cat in $logCategories) {
+            foreach ($sev in $severities) {
+              $entries += [ordered]@{ category = $cat; severity = $sev }
+            }
+          }
+          $matrix = [ordered]@{
+            override = $false
+            debugLogMatrix = $entries
+            sentryMatrix = @()
+          }
+          $matrixPath = Join-Path $buildDir "ci-log-matrix.json"
+          $matrix | ConvertTo-Json -Depth 5 | Set-Content -Path $matrixPath -Encoding utf8
+          Write-Host "Wrote log matrix to $matrixPath"
+
           # Previous run with -force-vulkan produced:
           #   Forcing GfxDevice: Vulkan
           #   InitializeEngineGraphics failed
-          # Now drop the Vulkan force so Unity picks its default chain
+          # Drop the Vulkan force so Unity picks its default chain
           # (D3D12 -> D3D11 -> Vulkan). If any of the three works, the
-          # chassis is viable and we can revisit Vulkan-only later. The
-          # GPU diagnostics step above tells us *why* Vulkan failed.
+          # chassis is viable.
           $arglist = @(
+            "--use-log-matrix", $matrixPath,
             "-screen-fullscreen", "0",
             "-screen-width", "1280",
             "-screen-height", "720"
           )
           Write-Host "Launching: $($exe.FullName) $($arglist -join ' ')"
           $proc = Start-Process -FilePath $exe.FullName -ArgumentList $arglist -PassThru
-          Write-Host "Started PID $($proc.Id). Sleeping 45s to let Unity boot..."
-          Start-Sleep -Seconds 45
+          Write-Host "Started PID $($proc.Id). Sleeping 600s (10 min) to let Unity boot through splash/auth/realm..."
+          Start-Sleep -Seconds 600
 
           Write-Host "--- proc state ---"
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
