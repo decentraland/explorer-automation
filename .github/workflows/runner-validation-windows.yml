@@ -366,6 +366,12 @@ jobs:
           $env:PATH = "$npmPrefix;$env:PATH"
           & (Join-Path $npmPrefix "allure.cmd") --version
 
+      # `mf explorer server start` spins up a visual-regression host (sdk-
+       # commands serving `scenes/packages/_host` as a local realm) and is
+      # ONLY consumed by Category=Visual runs - `mf explorer test` itself
+      # gates `visualHost` resolution on `IsVisualRun(filter)`. AltTester is
+      # started by `mf explorer test` regardless of category. Skip the visual
+      # host here; we'll re-introduce it when we add Visual suite support.
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
         shell: powershell
@@ -374,16 +380,12 @@ jobs:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           $ErrorActionPreference = "Continue"
-          mf explorer server start
-          $testExit = 0
           mf explorer test $env:BUILD_URL `
             --non-interactive `
             --filter "$env:TEST_FILTER Category=InWorld" `
             --report-type SingleFile `
             --skip-allure-open
-          $testExit = $LASTEXITCODE
-          mf explorer server stop --non-interactive
-          exit $testExit
+          exit $LASTEXITCODE
 
       - name: Dry-run notice
         if: env.DRY_RUN == 'true'
