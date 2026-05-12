@@ -224,6 +224,35 @@ jobs:
           Write-Host "AltTester Desktop located at: $($exe.FullName)"
           "ALTTESTER_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # GitHub CLI is not on the partner image. MetaForge's install.ps1
+      # requires `gh` (release list/download against the private repo) and
+      # falls back to `winget install GitHub.cli` which is unreliable on
+      # Windows Server SKUs. Side-load the official release zip into a
+      # user-local dir and prepend to PATH; `gh` then picks up GH_TOKEN
+      # from the env without interactive login.
+      - name: Install GitHub CLI
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          if (Get-Command gh -ErrorAction SilentlyContinue) {
+            Write-Host "gh CLI already on PATH: $(gh --version | Select-Object -First 1) - skipping install."
+            return
+          }
+          $version = "2.63.0"
+          $zip = Join-Path $env:TEMP "gh_cli.zip"
+          $dest = Join-Path $env:USERPROFILE "gh-cli"
+          $url = "https://github.com/cli/cli/releases/download/v$version/gh_${version}_windows_amd64.zip"
+          Write-Host "Downloading gh CLI $version from $url"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $dest
+          $bin = Get-ChildItem -Path $dest -Recurse -Filter "gh.exe" | Select-Object -First 1
+          if (-not $bin) { throw "gh.exe not found in extracted gh CLI release zip" }
+          $binDir = Split-Path -Parent $bin.FullName
+          "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$binDir;$env:PATH"
+          & "$($bin.FullName)" --version
+
       - name: Verify MetaForge access
         shell: powershell
         env:
@@ -233,7 +262,14 @@ jobs:
             Write-Error "Missing REPOS_READ_ONLY_TOKEN secret (PAT with read access to decentraland/MetaForge)"
             exit 1
           }
-          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = "application/vnd.github+json"
+            "User-Agent"  = "explorer-automation-runner-validation"
+          }
+          $resp = Invoke-RestMethod -UseBasicParsing -Headers $headers `
+            -Uri "https://api.github.com/repos/decentraland/MetaForge/releases/latest"
+          Write-Host "Latest MetaForge release: $($resp.tag_name)"
 
       # ── MetaForge installer. install.ps1 verified to exist (200 OK, ──
       # ── 2026-05-11). Drops `mf` into $LOCALAPPDATA\Decentraland\MetaForge\bin ──
