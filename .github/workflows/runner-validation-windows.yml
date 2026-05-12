@@ -232,15 +232,36 @@ jobs:
       # from the env without interactive login.
       - name: Install GitHub CLI
         shell: powershell
-        timeout-minutes: 5
+        timeout-minutes: 15
         run: |
+          $version = "2.63.0"
+          $dest = Join-Path $env:USERPROFILE "gh-cli"
+
+          # 1. Already on PATH for this job? Skip.
           if (Get-Command gh -ErrorAction SilentlyContinue) {
             Write-Host "gh CLI already on PATH: $(gh --version | Select-Object -First 1) - skipping install."
             return
           }
-          $version = "2.63.0"
+
+          # 2. Side-loaded by a prior job on this persistent runner? Reuse.
+          # GITHUB_PATH is job-scoped (lost between jobs), but $USERPROFILE
+          # files survive. Probe before downloading 36 MB again on a slow
+          # outbound link.
+          $cached = $null
+          if (Test-Path $dest) {
+            $cached = Get-ChildItem -Path $dest -Recurse -Filter "gh.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($cached) {
+            $binDir = Split-Path -Parent $cached.FullName
+            Write-Host "gh CLI cached on disk: $($cached.FullName) - reusing."
+            "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$binDir;$env:PATH"
+            & $cached.FullName --version
+            return
+          }
+
+          # 3. Cold install: download the release zip and extract.
           $zip = Join-Path $env:TEMP "gh_cli.zip"
-          $dest = Join-Path $env:USERPROFILE "gh-cli"
           $url = "https://github.com/cli/cli/releases/download/v$version/gh_${version}_windows_amd64.zip"
           Write-Host "Downloading gh CLI $version from $url"
           Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
@@ -251,7 +272,7 @@ jobs:
           $binDir = Split-Path -Parent $bin.FullName
           "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           $env:PATH = "$binDir;$env:PATH"
-          & "$($bin.FullName)" --version
+          & $bin.FullName --version
 
       - name: Verify MetaForge access
         shell: powershell
@@ -418,7 +439,7 @@ jobs:
           }
 
       - name: Configure AWS credentials
-        if: always() && steps.report.outputs.report_path != ''
+        if: false  # TEMP: disabled while stabilizing InWorld run. Re-enable once test is green.
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
@@ -427,7 +448,7 @@ jobs:
 
       - name: Upload Allure report to S3
         id: s3
-        if: always() && steps.report.outputs.report_path != ''
+        if: false  # TEMP: disabled while stabilizing InWorld run.
         shell: powershell
         env:
           BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
@@ -438,7 +459,7 @@ jobs:
           aws s3 sync "$reportDir" "s3://$env:BUCKET/$env:S3_PATH/" --acl public-read --cache-control "public, max-age=300"
 
       - name: Upload logs and report (artifact fallback)
-        if: always()
+        if: false  # TEMP: disabled while stabilizing InWorld run.
         uses: actions/upload-artifact@v4
         with:
           name: runner-validation-windows-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
@@ -451,7 +472,7 @@ jobs:
             ~/AppData/Roaming/DecentralandLauncherLight/output.log
 
       - name: Summarize report URL
-        if: always() && steps.s3.outcome == 'success'
+        if: false  # TEMP: disabled while stabilizing InWorld run.
         shell: powershell
         run: |
           $url = "${{ steps.ids.outputs.report_url }}"
