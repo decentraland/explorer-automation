@@ -246,8 +246,11 @@ npm run test:marketplace            # off-chain then on-chain (sequential)
 npm run test:marketplace:offchain   # parallel: browse, account, connect-wallet
 npm run test:marketplace:onchain    # serial (--workers=1): buy-and-sell
 
+# Auth on-chain (RequestPage → real Polygon Amoy broadcast; --workers=1)
+npm run test:auth:onchain      # mana-donation + nft-gift
+
 # Everything
-npm run test:all               # all 5 projects
+npm run test:all               # all 6 projects
 
 # Tooling
 npm run typecheck

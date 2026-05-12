@@ -84,6 +84,11 @@ export default defineConfig({
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,
+      // Exclude broadcast specs (`@on-chain`) — they share the funded wallet
+      // pool with `marketplace-onchain` and need `--workers=1` to avoid nonce
+      // races. Auth on-chain specs (`mana-donation`, `nft-gift`) run under
+      // the dedicated `auth-onchain` project below.
+      grepInvert: /@on-chain/,
       use: { ...devices['Desktop Chrome'] }
     },
     {
@@ -143,6 +148,21 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         baseURL: MARKETPLACE_BASE_URL
       }
+    },
+    {
+      // Auth-site on-chain specs (`mana-donation`, `nft-gift`) — they drive
+      // the auth dapp (`/auth/requests/<id>`), not the marketplace dapp, so
+      // they need the dapp-root baseURL rather than MARKETPLACE_BASE_URL.
+      // Same wallet-pool serialization story as `marketplace-onchain`:
+      // workers: 1, retries: 0. The two on-chain projects must NOT run
+      // concurrently — invoking them in sequence is fine.
+      name: 'auth-onchain',
+      testDir: './tests/auth/specs',
+      grep: /@on-chain/,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      use: { ...devices['Desktop Chrome'] }
     }
   ]
 })

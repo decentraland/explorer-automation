@@ -43,4 +43,27 @@ export class AuthPage {
       await this.page.waitForTimeout(50)
     }
   }
+
+  /**
+   * Inline error shown after the dapp rejects a wrong OTP code. Rendered as
+   * plain styled text (no `role="alert"`), so match the wording directly.
+   * Exact text observed on prod: "Failed to verify the code. Please check
+   * and try again."
+   */
+  otpErrorMessage(): import('@playwright/test').Locator {
+    return this.page.getByText(/failed to verify the code/i)
+  }
+
+  /**
+   * "Resend Code" affordance on the OTP screen. Rendered as a styled link
+   * (not a button or anchor) and gated by a ~60-90s countdown — during the
+   * countdown it reads "Resend Code (1:13)" and is unclickable. Once the
+   * timer expires the label flips to plain "Resend Code". Match the exact
+   * post-countdown label so the wait naturally blocks until it's enabled.
+   */
+  async clickResendOtp(timeoutMs = 120_000): Promise<void> {
+    const link = this.page.getByText(/^resend code$/i)
+    await link.waitFor({ state: 'visible', timeout: timeoutMs })
+    await link.click()
+  }
 }

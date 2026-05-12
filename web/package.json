@@ -12,6 +12,7 @@
     "test:marketplace": "npm run test:marketplace:offchain && npm run test:marketplace:onchain",
     "test:marketplace:offchain": "playwright test --project=marketplace",
     "test:marketplace:onchain": "playwright test --project=marketplace-onchain --workers=1",
+    "test:auth:onchain": "playwright test --project=auth-onchain --workers=1",
     "test:all": "playwright test",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts",
