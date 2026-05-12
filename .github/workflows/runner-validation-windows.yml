@@ -147,14 +147,51 @@ jobs:
 
       # ── GPU diagnostics (never fails; surfaces hardware state in logs) ──
       # Lifted from onboarding-e2e/explorer-smoke.yaml; safe to re-run on a
-      # persistent runner since it only reads device info.
+      # persistent runner since it only reads device info. Extended with
+      # driver-model + Vulkan ICD probes because the previous Vulkan smoke
+      # showed `InitializeEngineGraphics failed` on this image, and the
+      # leading theory is that the T4 ships in TCC (compute-only) mode with
+      # no Vulkan ICD exposed.
       - name: GPU diagnostics
         shell: powershell
         run: |
+          $ErrorActionPreference = "Continue"
           Write-Host "=== Video Controllers ==="
           Get-WmiObject Win32_VideoController | Format-List Name, DriverVersion, Status, AdapterRAM, VideoProcessor
-          Write-Host "=== nvidia-smi ==="
+          Write-Host "=== nvidia-smi (basic) ==="
           try { nvidia-smi } catch { Write-Host "nvidia-smi not on PATH" }
+          Write-Host "=== nvidia-smi driver model (TCC vs WDDM) ==="
+          # TCC = Tesla Compute Cluster (compute-only, no DX/Vulkan ICD).
+          # WDDM = Windows Display Driver Model (graphics-capable).
+          # For Unity / AltTester to render we need WDDM. Switch is
+          # `nvidia-smi -dm 0` (WDDM) / `-dm 1` (TCC) on supported SKUs.
+          try { nvidia-smi --query-gpu=name,driver_model.current,driver_model.pending --format=csv } catch { Write-Host "driver_model query failed: $_" }
+          Write-Host "=== Vulkan ICDs in registry ==="
+          # Unity Vulkan loader reads these registry keys. Empty = no ICD
+          # installed and Vulkan WILL fail to init regardless of GPU state.
+          $icdPaths = @(
+            "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers",
+            "HKLM:\SOFTWARE\WOW6432Node\Khronos\Vulkan\Drivers"
+          )
+          foreach ($p in $icdPaths) {
+            Write-Host "--- $p ---"
+            if (Test-Path $p) {
+              Get-ItemProperty -Path $p | Format-List
+            } else {
+              Write-Host "(missing)"
+            }
+          }
+          Write-Host "=== nvoglv64.dll / vulkan-1.dll on disk ==="
+          $sys = "$env:SystemRoot\System32"
+          foreach ($dll in @("nvoglv64.dll", "vulkan-1.dll", "nvcuda.dll", "nvapi64.dll")) {
+            $path = Join-Path $sys $dll
+            if (Test-Path $path) {
+              $v = (Get-Item $path).VersionInfo.FileVersion
+              Write-Host "$dll : present (version $v)"
+            } else {
+              Write-Host "$dll : MISSING"
+            }
+          }
           Write-Host "=== PCI Devices (Display) ==="
           Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Format-List FriendlyName, InstanceId, Status
 
@@ -426,14 +463,14 @@ jobs:
           $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
           if (Test-Path $logPath) { Remove-Item $logPath -Force }
 
-          # Launch in normal mode. Force a small windowed surface so the
-          # session-0/headless desktop on Server 2022 doesn't trip on
-          # fullscreen monitor enumeration. Explicitly request Vulkan via
-          # -force-vulkan; Unity Player picks Vulkan by default on this
-          # build but the flag makes the request unambiguous and surfaces
-          # a clean failure if the Vulkan ICD isn't installed.
+          # Previous run with -force-vulkan produced:
+          #   Forcing GfxDevice: Vulkan
+          #   InitializeEngineGraphics failed
+          # Now drop the Vulkan force so Unity picks its default chain
+          # (D3D12 -> D3D11 -> Vulkan). If any of the three works, the
+          # chassis is viable and we can revisit Vulkan-only later. The
+          # GPU diagnostics step above tells us *why* Vulkan failed.
           $arglist = @(
-            "-force-vulkan",
             "-screen-fullscreen", "0",
             "-screen-width", "1280",
             "-screen-height", "720"
