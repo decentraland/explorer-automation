@@ -505,6 +505,89 @@ jobs:
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
 
+      # AltTester Desktop is itself a Unity app, so its stdout is empty even
+      # when it runs fine - it writes everything to a *Player.log* inside
+      # %USERPROFILE%\AppData\LocalLow\<Company>\<Product>\. MetaForge's
+      # AltTesterService watches stdout for "AltTester(R) Server is running
+      # on port 13000" - which is why it always times out on Windows: the
+      # line is never on stdout, only in Player.log. This smoke launches the
+      # exe with -batchmode + -logFile <path> to *force* Unity to redirect
+      # its log to a file we control, then grep for the ready line.
+      - name: Smoke - AltTester batchmode + Player.log capture
+        if: env.DRY_RUN != 'true'
+        shell: powershell
+        timeout-minutes: 3
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          $ErrorActionPreference = "Continue"
+          $exe = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
+          if (-not (Test-Path $exe)) { throw "AltTester Desktop not at $exe" }
+          if (-not $env:ALTTESTER_LICENSE) { throw "ALTTESTER_LICENSE secret missing" }
+
+          # Pre-clean any prior AltTester Player.log under LocalLow so we
+          # don't read stale lines. Walk LocalLow and remove every Player.log
+          # under a directory whose name mentions AltTester.
+          $lowRoot = Join-Path $env:USERPROFILE "AppData\LocalLow"
+          if (Test-Path $lowRoot) {
+            Get-ChildItem -Path $lowRoot -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "AltTester|Altom" } |
+              ForEach-Object {
+                Write-Host "Pre-clean: removing $($_.FullName)"
+                Remove-Item -Force -Path $_.FullName -ErrorAction SilentlyContinue
+              }
+          }
+
+          $logFile = Join-Path $env:TEMP "alttester-unity.log"
+          if (Test-Path $logFile) { Remove-Item $logFile -Force }
+
+          # `-logFile <path>` forces Unity Player to write its log to that
+          # path instead of (or in addition to) the default LocalLow location.
+          # We still also grab the LocalLow log after the fact as a fallback
+          # in case the build ignores -logFile.
+          $arglist = @(
+            "-batchmode", "-nographics", "-termsAndConditionsAccepted",
+            "-port", "13000",
+            "-license", $env:ALTTESTER_LICENSE,
+            "-logFile", $logFile
+          )
+          $masked = ($arglist -join ' ') -replace [regex]::Escape($env:ALTTESTER_LICENSE), '<LICENSE>'
+          Write-Host "Launching: $exe $masked"
+          $proc = Start-Process -FilePath $exe -ArgumentList $arglist -NoNewWindow -PassThru
+          Write-Host "Started PID $($proc.Id). Sleeping 60s..."
+          Start-Sleep -Seconds 60
+
+          Write-Host "--- proc state ---"
+          $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+          if ($live) {
+            Write-Host "Still running. HasExited=$($live.HasExited)"
+          } else {
+            Write-Host "Process is gone. ExitCode=$($proc.ExitCode)"
+          }
+
+          Write-Host "--- -logFile target ($logFile) ---"
+          if (Test-Path $logFile) {
+            Get-Content $logFile
+          } else {
+            Write-Host "(empty / not created - build may ignore -logFile)"
+          }
+
+          Write-Host "--- LocalLow Player.log scan ---"
+          if (Test-Path $lowRoot) {
+            $found = Get-ChildItem -Path $lowRoot -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "AltTester|Altom" }
+            if (-not $found) {
+              Write-Host "(no AltTester Player.log under $lowRoot)"
+            } else {
+              foreach ($f in $found) {
+                Write-Host "=== $($f.FullName) ==="
+                Get-Content $f.FullName
+              }
+            }
+          }
+
+          if ($live) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+
       - name: Run InWorld suite
         if: false  # TEMP: re-enable once AltTester smoke above shows a successful ready line.
         shell: powershell
