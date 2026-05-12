@@ -390,17 +390,57 @@ jobs:
           $env:PATH = "$npmPrefix;$env:PATH"
           & (Join-Path $npmPrefix "allure.cmd") --version
 
-      # `mf explorer server start` spins up a visual-regression host (sdk-
-       # commands serving `scenes/packages/_host` as a local realm) and is
-      # ONLY consumed by Category=Visual runs - `mf explorer test` itself
-      # gates `visualHost` resolution on `IsVisualRun(filter)`. AltTester is
-      # started by `mf explorer test` regardless of category. Skip the visual
-      # host here; we'll re-introduce it when we add Visual suite support.
-      - name: Run InWorld suite
+      # TEMP narrow smoke: launch AltTester Desktop directly with the same
+      # batchmode args that MetaForge uses (see AltTesterService.cs:18) and
+      # capture stdout/stderr. We've been blind to *why* it never advertises
+      # "AltTester(R) Server is running on port 13000" - the mf wrapper
+      # swallows the output at LogDebug level by default. Once we know what
+      # the .exe prints (or doesn't), we can fix the root cause and re-enable
+      # `mf explorer test` below.
+      - name: Smoke - AltTester batchmode direct launch
         if: env.DRY_RUN != 'true'
         shell: powershell
+        timeout-minutes: 3
         env:
-          MF_LOG_LEVEL: debug  # TEMP: surface AltTester stdout/stderr while diagnosing ready-timeout.
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          $ErrorActionPreference = "Continue"
+          $exe = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
+          if (-not (Test-Path $exe)) { throw "AltTester Desktop not at $exe" }
+          if (-not $env:ALTTESTER_LICENSE) { throw "ALTTESTER_LICENSE secret missing" }
+          $outFile = Join-Path $env:TEMP "alttester-stdout.log"
+          $errFile = Join-Path $env:TEMP "alttester-stderr.log"
+          if (Test-Path $outFile) { Remove-Item $outFile -Force }
+          if (Test-Path $errFile) { Remove-Item $errFile -Force }
+          $arglist = @(
+            "-batchmode", "-nographics", "-termsAndConditionsAccepted",
+            "-port", "13000",
+            "-license", $env:ALTTESTER_LICENSE
+          )
+          Write-Host "Launching: $exe $($arglist -join ' ' -replace [regex]::Escape($env:ALTTESTER_LICENSE), '<LICENSE>')"
+          $proc = Start-Process -FilePath $exe -ArgumentList $arglist `
+            -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
+            -NoNewWindow -PassThru
+          Write-Host "Started PID $($proc.Id). Sleeping 60s to let it boot or fail..."
+          Start-Sleep -Seconds 60
+          Write-Host "--- stdout ---"
+          if (Test-Path $outFile) { Get-Content $outFile } else { Write-Host "(no stdout file)" }
+          Write-Host "--- stderr ---"
+          if (Test-Path $errFile) { Get-Content $errFile } else { Write-Host "(no stderr file)" }
+          Write-Host "--- proc state ---"
+          $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+          if ($live) {
+            Write-Host "Still running. HasExited=$($live.HasExited)"
+          } else {
+            Write-Host "Process is gone. ExitCode=$($proc.ExitCode)"
+          }
+          # Cleanup so the next attempt has a clean port.
+          if ($live) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+
+      - name: Run InWorld suite
+        if: false  # TEMP: re-enable once AltTester smoke above shows a successful ready line.
+        shell: powershell
+        env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           $ErrorActionPreference = "Continue"
