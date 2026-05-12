@@ -400,7 +400,7 @@ jobs:
         if: env.DRY_RUN != 'true'
         shell: powershell
         env:
-          MF_LOG_LEVEL: info
+          MF_LOG_LEVEL: debug  # TEMP: surface AltTester stdout/stderr while diagnosing ready-timeout.
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           $ErrorActionPreference = "Continue"
@@ -462,7 +462,7 @@ jobs:
           aws s3 sync "$reportDir" "s3://$env:BUCKET/$env:S3_PATH/" --acl public-read --cache-control "public, max-age=300"
 
       - name: Upload logs and report (artifact fallback)
-        if: false  # TEMP: disabled while stabilizing InWorld run.
+        if: always()  # Re-enabled to diagnose AltTester ready-timeout. S3 upload stays off.
         uses: actions/upload-artifact@v4
         with:
           name: runner-validation-windows-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
