@@ -194,6 +194,15 @@ jobs:
           }
           Write-Host "=== PCI Devices (Display) ==="
           Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Format-List FriendlyName, InstanceId, Status
+          Write-Host "=== PnP devices with NVIDIA vendor ID (VEN_10DE), any class ==="
+          # Per Charly: a driverless GPU is filed under Other / Unknown, not
+          # Display - so the `-Class Display` filter above misses it. This
+          # probe matches by PCI vendor ID instead and tells us whether the
+          # T4 is even mapped to the VM regardless of driver state.
+          Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like '*VEN_10DE*' } |
+            Select-Object Status, Problem, Class, FriendlyName, InstanceId |
+            Format-List
           Write-Host "=== dxdiag (display section) ==="
           # Charly's checklist asked for dxdiag confirming the T4 (not
           # Microsoft Basic Render Driver) as the display device.
@@ -527,11 +536,16 @@ jobs:
           # Drop the Vulkan force so Unity picks its default chain
           # (D3D12 -> D3D11 -> Vulkan). If any of the three works, the
           # chassis is viable.
+          # Order matters: Decentraland's custom `--use-log-matrix` parser
+          # picks the *next* arg after the flag, but it seems to skip past
+          # Unity built-in `-screen-*` flags and end up grabbing the last
+          # positional (e.g. "720" from `-screen-height 720`). Putting our
+          # flag at the very end keeps the next-token unambiguous.
           $arglist = @(
-            "--use-log-matrix", $matrixPath,
             "-screen-fullscreen", "0",
             "-screen-width", "1280",
-            "-screen-height", "720"
+            "-screen-height", "720",
+            "--use-log-matrix", $matrixPath
           )
           Write-Host "Launching: $($exe.FullName) $($arglist -join ' ')"
           $proc = Start-Process -FilePath $exe.FullName -ArgumentList $arglist -PassThru
