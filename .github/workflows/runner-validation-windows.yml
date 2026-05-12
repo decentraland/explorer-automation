@@ -193,36 +193,39 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # ── AltTester Desktop. Windows package URL verified 2026-05-11 (200 OK, ──
-      # ── ~159 MB). Structure inside the zip is the Windows-flavoured ──
-      # ── equivalent of the macOS .dmg-in-zip pattern; we find the .exe ──
-      # ── rather than mount a dmg. mf alttester set-license below handles ──
-      # ── activation; we never launch the GUI explicitly. ──
+      # AltTester Desktop. MetaForge hardcodes the lookup path in
+      # PathHelpers.GetAlttesterExecutablePath() -> C:\Program Files\
+      # AltTesterDesktop\AltTesterDesktop.exe (no env/config override).
+      # The upstream zip ships a single side-loadable .exe named
+      # `AltTesterDesktop__v<ver>.exe`; copy it to the expected location
+      # under `C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe`.
+      # Probe first so we don't re-download ~159 MB on every job.
       - name: Install AltTester Desktop
         shell: powershell
+        timeout-minutes: 15
         run: |
           $ErrorActionPreference = "Stop"
+          $target = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
+          if (Test-Path $target) {
+            Write-Host "AltTester Desktop already installed at $target - skipping download."
+            return
+          }
           $url = "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageWindows__2_3_1.zip"
           $zip = Join-Path $env:TEMP "alttester.zip"
           $extractDir = Join-Path $env:TEMP "alttester"
-          Invoke-WebRequest -Uri $url -OutFile $zip
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
           if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
           Expand-Archive -Path $zip -DestinationPath $extractDir
-          # Unconditional listing so future structural changes in the upstream
-          # zip are visible without re-running with a tweaked diagnostic.
-          # ${extractDir}: instead of $extractDir: - Windows PowerShell 5.1
-          # parses `$var:` as a drive-scoped variable and rejects the whole
-          # script block at parse time (seen in run 25735922187).
-          Write-Host "Contents of ${extractDir}:"
-          Get-ChildItem -Path $extractDir -Recurse | Select-Object FullName
           # Verified zip layout (2.3.1): AltTesterDesktopPackageWindows__2_3_1/
-          #   └── AltTesterDesktop__v2.3.1.exe - glob below matches.
+          #   AltTesterDesktop__v2.3.1.exe - glob below matches future patches.
           $exe = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
             throw "AltTesterDesktop executable not found inside the Windows package zip"
           }
-          Write-Host "AltTester Desktop located at: $($exe.FullName)"
-          "ALTTESTER_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $targetDir = Split-Path -Parent $target
+          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir | Out-Null }
+          Copy-Item -Path $exe.FullName -Destination $target -Force
+          Write-Host "AltTester Desktop installed at $target (source: $($exe.FullName))"
 
       # GitHub CLI is not on the partner image. MetaForge's install.ps1
       # requires `gh` (release list/download against the private repo) and
