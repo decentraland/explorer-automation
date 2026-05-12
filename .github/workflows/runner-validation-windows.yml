@@ -223,6 +223,67 @@ jobs:
             Write-Host "(dxdiag did not produce output)"
           }
 
+      - name: Install NVIDIA driver (PoC)
+        shell: powershell
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Idempotent: persistent runner means driver survives across runs once bound.
+          $bound = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like '*VEN_10DE*' -and $_.Status -eq 'OK' }
+          if ($bound) {
+            Write-Host "NVIDIA device already bound; skipping install."
+            try { nvidia-smi } catch { Write-Host "(nvidia-smi not on PATH for this shell yet)" }
+            return
+          }
+
+          # Azure-redistributed GRID vGPU18 (572.83) for NCasT4_v3 on Win10/11/Server 2022.
+          # Source: https://learn.microsoft.com/en-us/azure/virtual-machines/windows/n-series-driver-setup
+          $url = "https://download.microsoft.com/download/5ccc0984-e1b5-494d-8211-43b19ece6b9b/572.83_grid_win10_win11_server2022_dch_64bit_international_azure_swl.exe"
+          $installer = Join-Path $env:TEMP "nvidia-grid-572.83.exe"
+
+          Write-Host "Downloading GRID 572.83 from $url"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $installer
+
+          Write-Host "Installing silently"
+          $proc = Start-Process -FilePath $installer -ArgumentList "-s","-clean","-noreboot","-noeula" -Wait -PassThru
+          Write-Host "Installer exit code: $($proc.ExitCode)"   # 0 = ok, 1 = reboot requested
+
+          # Previous attempt used Restart-Computer -Force, which appears to be
+          # silently dropped by GitHub's runner sandbox - the install completed
+          # but the device stayed in CM_PROB_FAILED_INSTALL across runs and the
+          # job hung instead of dying cleanly.
+          #
+          # Alternative: force PnP to re-evaluate the failed device. The driver
+          # is in the driver store after install; we just need Windows to retry
+          # binding it without a full OS reboot. Two-stage attempt:
+          #   1) pnputil /scan-devices  - lightweight, broadcasts WM_DEVICECHANGE
+          #   2) Disable/Enable on the specific VEN_10DE node - more invasive
+          #      reset of the device's PnP state if (1) wasn't enough.
+          Write-Host "Triggering PnP rescan to bind freshly-installed driver"
+          pnputil /scan-devices
+          Start-Sleep -Seconds 15
+
+          $stillFailed = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like '*VEN_10DE*' -and $_.Status -ne 'OK' }
+          if ($stillFailed) {
+            Write-Host "Device still not bound after scan-devices; toggling disable/enable on the NVIDIA PnP node(s)"
+            foreach ($dev in $stillFailed) {
+              Write-Host "  Disable+Enable: $($dev.InstanceId)"
+              Disable-PnpDevice -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
+              Start-Sleep -Seconds 3
+              Enable-PnpDevice  -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
+            }
+            Start-Sleep -Seconds 10
+          }
+
+          # Refresh process PATH so nvidia-smi resolves in subsequent steps
+          # without restarting the shell.
+          $machinePath = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
+          $userPath    = [System.Environment]::GetEnvironmentVariable("PATH","User")
+          $env:PATH = "$machinePath;$userPath"
+
       # ── VC++ Redistributable: Unity Player .exe links MSVC runtime
       # (msvcp140.dll). Probe registry first - Microsoft Data Science
       # Windows Server 2019 image (win-gpu-t4-onboarding's partner image)
