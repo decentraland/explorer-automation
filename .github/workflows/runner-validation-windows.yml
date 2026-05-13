@@ -60,10 +60,15 @@ on:
         required: false
         default: false
 
-  push:
-    branches: [feat/runner-validation]
-    paths:
-      - '.github/workflows/runner-validation-windows.yml'
+  # Disabled to avoid double-triggering during diag iterations. Pushing a
+  # workflow change competes with the manual `workflow_dispatch` run we use to
+  # set the `diagnose_alttester=true` input (concurrency group serializes the
+  # two, blocking the dispatched run for 10+ min on the auto-triggered one).
+  # Re-enable before merging to main if you want push-on-YAML-change feedback.
+  # push:
+  #   branches: [feat/runner-validation]
+  #   paths:
+  #     - '.github/workflows/runner-validation-windows.yml'
 
 # Serialize runs on the shared self-hosted runner. We don't cancel in-flight
 # runs because the runner is persistent: an interrupted test can leave
@@ -327,36 +332,81 @@ jobs:
       # AltTester Desktop. MetaForge hardcodes the lookup path in
       # PathHelpers.GetAlttesterExecutablePath() -> C:\Program Files\
       # AltTesterDesktop\AltTesterDesktop.exe (no env/config override).
-      # The upstream zip ships a single side-loadable .exe named
-      # `AltTesterDesktop__v<ver>.exe`; copy it to the expected location
-      # under `C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe`.
-      # Probe first so we don't re-download ~159 MB on every job.
+      #
+      # Root cause discovered 2026-05-13 (run 25804210670, dump analysis):
+      # `AltTesterDesktop__v<ver>.exe` inside the upstream zip is NOT the
+      # Unity binary - it is an Inno Setup 6.1.0 installer (~122 MB, x86)
+      # that EXTRACTS the real Unity layout to its target dir. Previous
+      # workflow renamed the installer to AltTesterDesktop.exe and tried to
+      # launch it with `-batchmode -nographics -port -license` flags; the
+      # installer ignored the Unity flags and sat waiting for GUI input,
+      # which is exactly the 90s "AltTester did not become ready" hang we
+      # chased for days. The real Unity binary after a proper install is
+      # ~666 KB / x64 and ships alongside UnityPlayer.dll +
+      # AltTesterDesktop_Data\ + MonoBleedingEdge\.
+      #
+      # Correct invocation: run the installer with Inno Setup silent flags
+      # to actually install. Re-install also blows away any stale renamed-
+      # installer leftover on the persistent runner.
       - name: Install AltTester Desktop
         shell: powershell
         timeout-minutes: 15
         run: |
           $ErrorActionPreference = "Stop"
-          $target = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
-          if (Test-Path $target) {
-            Write-Host "AltTester Desktop already installed at $target - skipping download."
-            return
+          $installDir = "C:\Program Files\AltTesterDesktop"
+          $target = Join-Path $installDir "AltTesterDesktop.exe"
+          # Detect prior healthy install: real Unity binary is small (<5 MB)
+          # and shipped with UnityPlayer.dll. The bogus renamed-installer
+          # state has a 100+ MB AltTesterDesktop.exe and no UnityPlayer.dll.
+          $needsInstall = $true
+          if ((Test-Path $target) -and (Test-Path (Join-Path $installDir "UnityPlayer.dll"))) {
+            $sizeMb = (Get-Item $target).Length / 1MB
+            if ($sizeMb -lt 5) {
+              Write-Host ("AltTester Desktop already installed at {0} (size {1:N1} MB) - skipping." -f $target, $sizeMb)
+              $needsInstall = $false
+            } else {
+              Write-Host ("Stale AltTesterDesktop.exe at $target is {0:N1} MB (looks like renamed Inno installer). Will reinstall." -f $sizeMb)
+            }
           }
-          $url = "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageWindows__2_3_1.zip"
-          $zip = Join-Path $env:TEMP "alttester.zip"
-          $extractDir = Join-Path $env:TEMP "alttester"
-          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
-          if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
-          Expand-Archive -Path $zip -DestinationPath $extractDir
-          # Verified zip layout (2.3.1): AltTesterDesktopPackageWindows__2_3_1/
-          #   AltTesterDesktop__v2.3.1.exe - glob below matches future patches.
-          $exe = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) {
-            throw "AltTesterDesktop executable not found inside the Windows package zip"
+          if ($needsInstall) {
+            # Clean any prior (broken) deployment so the installer has a clean slate.
+            if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue }
+            $url = "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageWindows__2_3_1.zip"
+            $zip = Join-Path $env:RUNNER_TEMP "alttester.zip"
+            $extractDir = Join-Path $env:RUNNER_TEMP "alttester-installer"
+            Write-Host "Downloading $url"
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+            if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+            Expand-Archive -Path $zip -DestinationPath $extractDir
+            $installer = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $installer) { throw "AltTester installer not found inside the Windows package zip" }
+            Write-Host "Running Inno Setup installer silently: $($installer.FullName)"
+            # /VERYSILENT - no UI; /SUPPRESSMSGBOXES - skip Yes/No dialogs;
+            # /DIR - install location; /NORESTART - never reboot.
+            $proc = Start-Process -FilePath $installer.FullName `
+              -ArgumentList @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=`"$installDir`"") `
+              -Wait -PassThru
+            if ($proc.ExitCode -ne 0) {
+              throw "AltTester installer exited with code $($proc.ExitCode)"
+            }
           }
-          $targetDir = Split-Path -Parent $target
-          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir | Out-Null }
-          Copy-Item -Path $exe.FullName -Destination $target -Force
-          Write-Host "AltTester Desktop installed at $target (source: $($exe.FullName))"
+          # Post-install verification: must have small x64 .exe and UnityPlayer.dll.
+          if (-not (Test-Path $target)) { throw "Install completed but $target is missing" }
+          if (-not (Test-Path (Join-Path $installDir "UnityPlayer.dll"))) {
+            throw "Install completed but UnityPlayer.dll is missing under $installDir"
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($target)
+          $peOff = [BitConverter]::ToInt32($bytes, 60)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOff + 4)
+          $machineName = switch ($machine) { 0x014c {"x86"} 0x8664 {"x64"} 0xAA64 {"ARM64"} default { ("0x{0:X}" -f $machine) } }
+          $sz = (Get-Item $target).Length
+          Write-Host ("Verified AltTesterDesktop.exe: {0} bytes, machine={1}" -f $sz, $machineName)
+          if ($machine -ne 0x8664) {
+            throw "AltTesterDesktop.exe is not x64 after install (machine=$machineName). Refusing to proceed."
+          }
+          if ($sz -gt 5MB) {
+            throw "AltTesterDesktop.exe is unexpectedly large ($sz bytes); installer probably didn't run."
+          }
 
       # GitHub CLI is not on the partner image. MetaForge's install.ps1
       # requires `gh` (release list/download against the private repo) and
