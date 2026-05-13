@@ -104,3 +104,16 @@ export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POL
   }
   throw new Error(`Polling for request ${requestId} timed out after ${timeoutMs}ms`)
 }
+
+/**
+ * Extracts the tx hash from an `eth_sendTransaction` outcome, throwing if
+ * the wallet returned an error rather than a signature. Helper exists so
+ * on-chain specs don't need a local `if (!result) throw` (which Playwright's
+ * `no-conditional-in-test` rule flags) and so the error formatting stays
+ * consistent across specs.
+ */
+export function requireTxHash(outcome: RequestOutcome): `0x${string}` {
+  const hash = outcome.result
+  if (!hash) throw new Error(`expected tx hash from auth outcome (got error: ${JSON.stringify(outcome.error)})`)
+  return hash as `0x${string}`
+}

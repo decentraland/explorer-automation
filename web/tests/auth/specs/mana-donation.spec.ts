@@ -5,7 +5,6 @@ import {
   http,
   parseEther,
   parseEventLogs,
-  type Hex,
   type TransactionReceipt
 } from 'viem'
 import { polygonAmoy } from 'viem/chains'
@@ -15,7 +14,7 @@ import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/h
 import { setupBroadcastWallet } from '../../../shared/helpers/broadcast-wallet.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
 import { installAutoWalletMockInitScript } from '../helpers/wallet.js'
-import { createAuthRequest, pollAuthOutcome, type RequestOutcome } from '../helpers/auth-server.js'
+import { createAuthRequest, pollAuthOutcome, requireTxHash } from '../helpers/auth-server.js'
 import { buildAuthChain } from '../../../shared/helpers/identity.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
 import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
@@ -114,20 +113,12 @@ function assertManaTransferInReceipt(
 
 const { expect } = test
 
-/**
- * Extracts the tx hash from an auth-api outcome, throwing if the wallet
- * returned an error rather than a signature. Helper keeps the null check
- * out of the test body (Playwright lint flags conditionals in tests).
- */
-function requireTxHash(outcome: RequestOutcome): Hex {
-  const hash = outcome.result
-  if (!hash) throw new Error(`expected tx hash from auth outcome (got error: ${JSON.stringify(outcome.error)})`)
-  return hash as Hex
-}
-
 const haveOnChainConfig = (): boolean =>
   Boolean(
-    optionalEnv('WALLET_A_PRIVATE_KEY') && optionalEnv('WALLET_B_PRIVATE_KEY') && optionalEnv('POLYGON_AMOY_RPC_URL')
+    optionalEnv('WALLET_A_PRIVATE_KEY') &&
+      optionalEnv('WALLET_B_PRIVATE_KEY') &&
+      optionalEnv('POLYGON_AMOY_RPC_URL') &&
+      optionalEnv('SEPOLIA_RPC_URL')
   )
 
 test.describe('@web @auth @on-chain MANA donation round-trip (RequestPage)', () => {
