@@ -21,8 +21,9 @@ public static class SceneReady
 
     public static void WaitUntilReady(
         int timeoutMs = 60_000,
-        int pollIntervalMs = 250,
-        int notReadyWindowMs = 10_000)
+        int sceneReadyPollIntervalMs = 250,
+        int notReadyWindowMs = 10_000,
+        int extraMsOnReady = 5000)
     {
         AllureApi.Step($"Wait for scene to cycle through not-ready → ready (timeout {timeoutMs}ms)", () =>
         {
@@ -30,6 +31,7 @@ public static class SceneReady
             var notReadyDeadline = startedAt.AddMilliseconds(notReadyWindowMs);
             var totalDeadline = startedAt.AddMilliseconds(timeoutMs);
 
+            // Make sure previous scene is unloaded first
             bool sawNotReady = false;
             while (DateTime.UtcNow < notReadyDeadline)
             {
@@ -38,7 +40,7 @@ public static class SceneReady
                     sawNotReady = true;
                     break;
                 }
-                Thread.Sleep(pollIntervalMs);
+                Thread.Sleep(sceneReadyPollIntervalMs);
             }
 
             if (!sawNotReady)
@@ -46,14 +48,17 @@ public static class SceneReady
                     $"SceneReady: never observed not-ready within {notReadyWindowMs}ms; " +
                     "reload may have been a no-op, proceeding to ready-check.");
 
+            // Check new scene is finally loaded
             while (DateTime.UtcNow < totalDeadline)
             {
                 if (IsReady())
                 {
+                    ViewContainer.Instance.LoadingScreen.WaitForGone();
+                    Thread.Sleep(extraMsOnReady);
                     Reporter.Log($"Scene ready: {GetStatusJson()}");
                     return;
                 }
-                Thread.Sleep(pollIntervalMs);
+                Thread.Sleep(sceneReadyPollIntervalMs);
             }
 
             throw new AssertionException(
