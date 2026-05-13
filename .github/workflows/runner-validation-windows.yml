@@ -811,12 +811,17 @@ jobs:
       # ── single failure here doesn't mask another. ──
       #
       # `mf alttester deactivate` invokes AltTesterDesktop.exe in batchmode
-      # (a Unity Player build). On this runner's TCC-mode T4 (no Vulkan / D3D
-      # / OpenGL ICD) Unity init hangs indefinitely and the call never
-      # returns. Gate on the actual driver model: WDDM = call it; TCC = skip
-      # with a warning. Self-healing - once Charly switches the driver to
-      # WDDM / Gaming / GRID, this runs again automatically. Step-level
-      # timeout below is the safety net in case nvidia-smi lies.
+      # (a Unity Player build). Empirically it hangs on this runner even
+      # with the GRID 572.83 WDDM driver installed - probably because
+      # AltTester Desktop is built on an older Unity LTS whose batchmode
+      # `-nographics` path doesn't tolerate the headless desktop session.
+      # Two-layer guard so a hang here never starves `mf account remove`
+      # below (which would leave an orphan test account on every run):
+      #   1) Skip outright when nvidia-smi reports anything other than
+      #      WDDM - no point even trying without graphics.
+      #   2) When attempting, wrap in a 60s background job timeout. If it
+      #      completes, the license slot is freed; if it hangs we kill any
+      #      lingering AltTesterDesktop.exe and continue.
       - name: Cleanup - stop MetaForge state
         if: always()
         timeout-minutes: 3
@@ -831,8 +836,17 @@ jobs:
           } catch { }
 
           if ($driverModel -eq "WDDM") {
-            Write-Host "GPU driver model = WDDM; running mf alttester deactivate."
-            try { mf alttester deactivate --non-interactive } catch { Write-Host "alttester deactivate: $_" }
+            Write-Host "GPU driver model = WDDM; attempting mf alttester deactivate (60s hard timeout)..."
+            $job = Start-Job -ScriptBlock { mf alttester deactivate --non-interactive 2>&1 }
+            if (Wait-Job $job -Timeout 60) {
+              Receive-Job $job | ForEach-Object { Write-Host $_ }
+              Write-Host "alttester deactivate completed."
+            } else {
+              Write-Host "::warning::alttester deactivate timed out (>60s) - AltTesterDesktop.exe likely wedged in Unity init. Killing it and continuing so account remove can run."
+              Stop-Job $job -ErrorAction SilentlyContinue
+              Get-Process AltTesterDesktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
           } else {
             Write-Host "::warning::Skipping mf alttester deactivate - GPU driver model='$driverModel' (need WDDM). License slot stays bound to this persistent runner; revisit once GPU is fixed."
           }
