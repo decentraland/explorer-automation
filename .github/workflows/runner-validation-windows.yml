@@ -60,15 +60,10 @@ on:
         required: false
         default: false
 
-  # Disabled to avoid double-triggering during diag iterations. Pushing a
-  # workflow change competes with the manual `workflow_dispatch` run we use to
-  # set the `diagnose_alttester=true` input (concurrency group serializes the
-  # two, blocking the dispatched run for 10+ min on the auto-triggered one).
-  # Re-enable before merging to main if you want push-on-YAML-change feedback.
-  # push:
-  #   branches: [feat/runner-validation]
-  #   paths:
-  #     - '.github/workflows/runner-validation-windows.yml'
+  push:
+    branches: [feat/runner-validation]
+    paths:
+      - '.github/workflows/runner-validation-windows.yml'
 
 # Serialize runs on the shared self-hosted runner. We don't cancel in-flight
 # runs because the runner is persistent: an interrupted test can leave
