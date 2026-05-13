@@ -537,7 +537,7 @@ jobs:
       #   %LOCALAPPDATA%\Decentraland\MetaForge\explorer\<version>\Decentraland.exe
       # (see MetaForgeCLI/Services/ExplorerVersionService.cs:39,113).
       - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
-        if: env.DRY_RUN != 'true'
+        if: false  # Confirmed graphics chassis: D3D11 on NVIDIA Tesla T4 renders, log-matrix override applied. Re-enable only to debug a future regression.
         shell: powershell
         timeout-minutes: 7
         run: |
@@ -647,7 +647,7 @@ jobs:
       # exe with -batchmode + -logFile <path> to *force* Unity to redirect
       # its log to a file we control, then grep for the ready line.
       - name: Smoke - AltTester batchmode + Player.log capture
-        if: env.DRY_RUN != 'true'
+        if: false  # Confirmed AltTester Desktop batchmode hangs in Unity init even on WDDM/T4 (no -logFile output, no Player.log). Same hang the cleanup step guards against. Re-enable to re-diagnose if behavior changes.
         shell: powershell
         timeout-minutes: 3
         env:
@@ -721,8 +721,16 @@ jobs:
 
           if ($live) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
 
+      # AltTester Desktop smoke proved -batchmode -nographics hangs in Unity init
+      # on this runner even with WDDM/T4 working. `mf explorer test` invokes
+      # AltTesterService.StartServerAsync with the same flag set
+      # (MetaForgeCLI/Services/AltTesterService.cs:18) and waits for the ready
+      # line "AltTester(R) Server is running on port 13000". First-run
+      # expectation: hang on ready timeout. Cap step at 20 min so the cleanup
+      # step still gets to run.
       - name: Run InWorld suite
-        if: false  # TEMP: re-enable once AltTester smoke above shows a successful ready line.
+        if: env.DRY_RUN != 'true'
+        timeout-minutes: 20
         shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
