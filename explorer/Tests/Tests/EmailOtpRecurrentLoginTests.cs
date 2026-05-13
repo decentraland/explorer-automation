@@ -6,7 +6,7 @@ namespace ExplorerAutomation.Tests.Tests;
 [Ignore("Auth suite temporarily disabled")]
 public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
 {
-    // Precondition: the account at EXPLORER_IMAP_USER (no plus-alias) must already exist —
+    // Precondition: the account at IMAP_USER (no plus-alias) must already exist —
     // i.e. it has previously completed the new-user setup screen at least once. If the
     // account is fresh, this test will fail because the WelcomeNewAccountScreen will appear
     // instead of going straight in-world.
@@ -17,9 +17,10 @@ public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
         var email = OtpMailbox.GetBaseEmail();
         Reporter.Log($"Recurrent-user email: {email}");
 
-        // Step 1 — submit email. No shuffle: this test must use the actual base account
-        // for the recurrent flow to be meaningful.
-        SubmitEmailWithRateLimitFallback(email);
+        // Step 1 — submit the registered email. No retry on a different email: the
+        // recurrent flow MUST use the actual base account, so a different fresh address
+        // would just sign up a new account.
+        SubmitEmailWithRetry(() => email, maxAttempts: 1);
 
         // Step 2 — fetch OTP from inbox and submit
         var code = OtpMailbox.WaitForOtp(email);

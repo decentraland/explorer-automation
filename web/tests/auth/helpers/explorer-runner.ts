@@ -1,15 +1,15 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawn, type ChildProcess } from 'node:child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const EXPLORER_TESTS_DIR = path.join(REPO_ROOT, 'explorer', 'Tests');
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(__dirname, '../../../..')
+const EXPLORER_TESTS_DIR = path.join(REPO_ROOT, 'explorer', 'Tests')
 
 export interface RunExplorerOptions {
-  alttester?: boolean;
+  alttester?: boolean
   /** Wipe the launcher cache before launch (forces logged-out state). */
-  clear?: boolean;
+  clear?: boolean
 }
 
 /**
@@ -22,17 +22,17 @@ export interface RunExplorerOptions {
  * binary, but we keep the reference for symmetry.
  */
 export function runExplorer(options: RunExplorerOptions = {}): ChildProcess {
-  const args = ['explorer', 'run'];
-  if (options.clear) args.push('--clear');
-  args.push('--');
-  if (options.alttester) args.push('--alttester');
+  const args = ['explorer', 'run']
+  if (options.clear) args.push('--clear')
+  args.push('--')
+  if (options.alttester) args.push('--alttester')
 
   const child = spawn('metaforge', args, {
     cwd: REPO_ROOT,
     stdio: 'inherit',
-    detached: false,
-  });
-  return child;
+    detached: false
+  })
+  return child
 }
 
 /**
@@ -50,14 +50,14 @@ export function verifyExplorerInWorld(): Promise<void> {
         '--filter',
         'Name=TestExplorerIsInWorldFromTokenBridge',
         '--logger',
-        'console;verbosity=normal',
+        'console;verbosity=normal'
       ],
-      { stdio: 'inherit' },
-    );
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`dotnet test exited with code ${code}`));
-    });
-  });
+      { stdio: 'inherit' }
+    )
+    child.on('error', reject)
+    child.on('exit', code => {
+      if (code === 0) resolve()
+      else reject(new Error(`dotnet test exited with code ${code}`))
+    })
+  })
 }

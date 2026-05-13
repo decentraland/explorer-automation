@@ -1,6 +1,6 @@
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs/promises';
+import os from 'node:os'
+import path from 'node:path'
+import fs from 'node:fs/promises'
 
 /**
  * Returns the OS-specific path to `auth-token-bridge.txt` — the integration
@@ -18,36 +18,36 @@ export function getTokenBridgePath(): string {
         'Library',
         'Application Support',
         'DecentralandLauncherLight',
-        'auth-token-bridge.txt',
-      );
+        'auth-token-bridge.txt'
+      )
     case 'win32':
       return path.join(
         process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming'),
         'DecentralandLauncherLight',
-        'auth-token-bridge.txt',
-      );
+        'auth-token-bridge.txt'
+      )
     case 'linux':
       return path.join(
         process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config'),
         'DecentralandLauncherLight',
-        'auth-token-bridge.txt',
-      );
+        'auth-token-bridge.txt'
+      )
     default:
-      throw new Error(`Unsupported platform for token bridge: ${process.platform}`);
+      throw new Error(`Unsupported platform for token bridge: ${process.platform}`)
   }
 }
 
 export async function tokenBridgeExists(): Promise<boolean> {
   try {
-    await fs.access(getTokenBridgePath());
-    return true;
+    await fs.access(getTokenBridgePath())
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
 export async function readTokenBridge(): Promise<string> {
-  return fs.readFile(getTokenBridgePath(), 'utf8');
+  return fs.readFile(getTokenBridgePath(), 'utf8')
 }
 
 /**
@@ -55,16 +55,14 @@ export async function readTokenBridge(): Promise<string> {
  * Throws if the timeout elapses without the file appearing.
  */
 export async function waitForTokenBridge(timeoutMs = 30_000, pollIntervalMs = 500): Promise<string> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (await tokenBridgeExists()) {
-      return readTokenBridge();
+      return readTokenBridge()
     }
-    await sleep(pollIntervalMs);
+    await sleep(pollIntervalMs)
   }
-  throw new Error(
-    `Token bridge file did not appear at ${getTokenBridgePath()} within ${timeoutMs / 1000}s`,
-  );
+  throw new Error(`Token bridge file did not appear at ${getTokenBridgePath()} within ${timeoutMs / 1000}s`)
 }
 
 /**
@@ -74,12 +72,12 @@ export async function waitForTokenBridge(timeoutMs = 30_000, pollIntervalMs = 50
  */
 export async function removeTokenBridge(): Promise<void> {
   try {
-    await fs.unlink(getTokenBridgePath());
+    await fs.unlink(getTokenBridgePath())
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
   }
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
