@@ -732,9 +732,55 @@ jobs:
               ForEach-Object { Write-Host $_.Line }
           }
 
+          # ProcDump full memory dump of the live Explorer process. Run 25814521744
+          # showed Player.log goes silent immediately after "Applying log matrix
+          # override" even with STARTUP/AUTHENTICATION/SCENE_LOADING re-enabled,
+          # while the process stays alive (HasExited=False) - so the hang is in
+          # Decentraland's own bootstrap code, between Unity engine init and the
+          # first Decentraland-side log entry. The dump captures the managed +
+          # native call stack of the main thread so we can WinDbg it offline
+          # and tell exactly which call is blocking.
           if ($live) {
+            Write-Host "--- ProcDump live Explorer ($($proc.Id)) ---"
+            $diagDir = Join-Path $env:RUNNER_TEMP "explorer-diag"
+            New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
+
+            $tools = Join-Path $env:USERPROFILE "sysinternals"
+            New-Item -ItemType Directory -Path $tools -Force | Out-Null
+            $procdump = Get-ChildItem -Path $tools -Recurse -File -Filter "procdump64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $procdump) {
+              Write-Host "Downloading Procdump.zip..."
+              $z = Join-Path $env:RUNNER_TEMP "Procdump.zip"
+              Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile $z -UseBasicParsing
+              Expand-Archive -Path $z -DestinationPath $tools -Force
+              $procdump = Get-ChildItem -Path $tools -Recurse -File -Filter "procdump64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if (-not $procdump) {
+              Write-Host "::warning::procdump64.exe not resolved after download; skipping dump."
+            } else {
+              Write-Host "procdump: $($procdump.FullName)"
+
+              # Loaded modules snapshot - cheap and survives even if -ma fails.
+              try {
+                Get-Process -Id $proc.Id -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Modules |
+                  Select-Object ModuleName, FileName, FileVersion, Company |
+                  Format-Table -AutoSize | Out-String | Set-Content -Path (Join-Path $diagDir "explorer-modules.txt")
+                Write-Host "Modules snapshot -> $diagDir\explorer-modules.txt"
+              } catch { "modules: $_" | Set-Content -Path (Join-Path $diagDir "explorer-modules.txt") }
+
+              # Full memory dump (-ma). Unity Explorer is ~28GB RAM allotted, the dump
+              # will be 1-3 GB. Captures managed heap + native modules so WinDbg can
+              # walk every thread's stack. Artifact upload tolerates large files.
+              $dumpFile = Join-Path $diagDir "explorer.dmp"
+              Write-Host "Running procdump -ma $($proc.Id) -> $dumpFile"
+              & $procdump.FullName -accepteula -ma $proc.Id $dumpFile 2>&1 | Tee-Object -FilePath (Join-Path $diagDir "procdump-output.txt") | Write-Host
+            }
+
+            Copy-Item $logPath (Join-Path $diagDir "Player.log") -Force -ErrorAction SilentlyContinue
             Write-Host "Killing Explorer PID $($proc.Id)"
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+            Get-ChildItem $diagDir -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String | Write-Host
           }
 
       # AltTester Desktop is itself a Unity app, so its stdout is empty even
@@ -1156,6 +1202,18 @@ jobs:
           name: alttester-diag-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
           if-no-files-found: warn
           path: ${{ runner.temp }}/alttester-diag/**
+
+      # Mirrors the AltTester diag artifact pattern: explorer-diag lives outside
+      # workspace under ${{ runner.temp }}, so upload-artifact@v4 needs a step
+      # with that directory as its root. Contains the live-Explorer memory dump
+      # captured by the Vulkan smoke when diagnose_explorer=true.
+      - name: Upload Explorer diag artifact
+        if: always() && inputs.diagnose_explorer == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: explorer-diag-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/explorer-diag/**
 
       - name: Summarize report URL
         if: false  # TEMP: disabled while stabilizing InWorld run.
