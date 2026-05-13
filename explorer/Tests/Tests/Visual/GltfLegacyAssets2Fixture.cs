@@ -3,14 +3,14 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [TestFixture]
 [AllureNUnit]
 [AllureSuite("Visual")]
-[AllureSubSuite("gltf2")]
+[AllureSubSuite("gltf-legacy-assets-2")]
 [Category("Visual")]
-public class Gltf2Fixture
+public class GltfLegacyAssets2Fixture
 {
     [OneTimeSetUp]
     public void LoadScene()
     {
-        VisualHost.Load("gltf2");
+        VisualHost.Load("gltf-legacy-assets-2");
     }
 
     [Test]

@@ -2,7 +2,7 @@
   "ecs7": true,
   "runtimeVersion": "7",
   "display": {
-    "title": "gltf3",
+    "title": "gltf-legacy-assets-2",
     "description": "Visual-regression scene"
   },
   "owner": "",
