@@ -37,15 +37,17 @@ import { setupVisualTest } from './visual-test-setup'
  *  Col  X   Light type  Color        Intensity  Range   InnerAngle  OuterAngle  Mask?
  *  ─────────────────────────────────────────────────────────────────────────────────
  *   0   2   point       white        16000      auto    —           —           no
- *   1   5   spot        red          8000       4 m     10°         20°  NARROW  no
- *   2   8   spot        green        8000       8 m     10°         50°  WIDE    no
+ *   1   5   spot        red          8000       4 m     25°         50°  TILTED  no
+ *   2   8   spot        green        8000       8 m     30°         60°  TILTED  no
  *   3  11   spot        blue         20000      4 m     15°         30°          no
  *   4  14   spot        yellow       6000       4 m     30°         50°          YES (light-mask)
  *
  * Axes covered per column (capitals = primary axis for that column):
  *   col 0: LIGHT TYPE (point vs spot)
- *   col 1: NARROW APERTURE (outerAngle=20°), short range (4 m), red color
- *   col 2: WIDE APERTURE  (outerAngle=50°), long range (8 m), green color
+ *   col 1+2: CONE OVERLAP — two spots tilted toward each other with wide enough
+ *           apertures that their cones partially overlap on the booth surfaces.
+ *           Red aims at (6.0, 0, 7.5); green aims at (7.0, 0, 7.5); the cones
+ *           cross in the gap and spill onto each other's booth (additive blend).
  *   col 3: HIGH INTENSITY (20000 cd), blue color
  *   col 4: MASK TEXTURE (shadowMaskTexture), yellow
  *
@@ -87,35 +89,57 @@ export function main() {
   })
   makeLabel(3, 'point · white\n16000 cd', 'point · white · 16000 cd · range=2.5 m')
 
-  // col 1 — spot · red · narrow (outerAngle=20°) · short range (4 m)
+  // col 1 — spot · red · tilted toward col 2, wide enough to partially overlap
+  // with col 2's cone. Position unchanged; only rotation + aperture change.
   makeBooth({
     x: 5,
-    label: 'spot · red · narrow 20°',
+    label: 'spot · red · overlap',
     wallColor: Color4.create(0.9, 0.88, 0.88, 1),
   })
-  LightSource.create(makeLightEntity(5, 2.5, 7.5, Quaternion.fromEulerDegrees(90, 0, 0)), {
-    color: Color3.create(1, 0.1, 0.1),
-    intensity: 8000,
-    range: 4,
-    shadow: true,
-    type: LightSource.Type.Spot({ innerAngle: 10, outerAngle: 20 }),
-  })
-  makeLabel(5, 'spot · red\nnarrow 20°', 'spot · red · outerAngle=20° · range=4 m · 8000 cd')
+  LightSource.create(
+    // Aim from (5, 2.5, 7.5) toward (6, 0, 7.5) — tilts ~22° off straight-down
+    // in the +X direction so the cone reaches into col 2's booth.
+    makeLightEntity(
+      5,
+      2.5,
+      7.5,
+      Quaternion.fromToRotation(Vector3.Forward(), Vector3.create(1, -2.5, 0)),
+    ),
+    {
+      color: Color3.create(1, 0.1, 0.1),
+      intensity: 8000,
+      range: 4,
+      shadow: true,
+      type: LightSource.Type.Spot({ innerAngle: 25, outerAngle: 50 }),
+    },
+  )
+  makeLabel(5, 'spot · red\ntilt +X · 50°', 'spot · red · tilted +X · outerAngle=50° · range=4 m · 8000 cd')
 
-  // col 2 — spot · green · wide (outerAngle=50°) · long range (8 m)
+  // col 2 — spot · green · tilted toward col 1, wide aperture so its cone
+  // partially overlaps col 1's cone. Position unchanged.
   makeBooth({
     x: 8,
-    label: 'spot · green · wide 50°',
+    label: 'spot · green · overlap',
     wallColor: Color4.create(0.88, 0.9, 0.88, 1),
   })
-  LightSource.create(makeLightEntity(8, 2.5, 7.5, Quaternion.fromEulerDegrees(90, 0, 0)), {
-    color: Color3.create(0.1, 1, 0.2),
-    intensity: 8000,
-    range: 8,
-    shadow: true,
-    type: LightSource.Type.Spot({ innerAngle: 10, outerAngle: 50 }),
-  })
-  makeLabel(8, 'spot · green\nwide 50°', 'spot · green · outerAngle=50° · range=8 m · 8000 cd')
+  LightSource.create(
+    // Aim from (8, 2.5, 7.5) toward (7, 0, 7.5) — tilts ~22° off straight-down
+    // in the −X direction so the cone reaches into col 1's booth.
+    makeLightEntity(
+      8,
+      2.5,
+      7.5,
+      Quaternion.fromToRotation(Vector3.Forward(), Vector3.create(-1, -2.5, 0)),
+    ),
+    {
+      color: Color3.create(0.1, 1, 0.2),
+      intensity: 8000,
+      range: 8,
+      shadow: true,
+      type: LightSource.Type.Spot({ innerAngle: 30, outerAngle: 60 }),
+    },
+  )
+  makeLabel(8, 'spot · green\ntilt −X · 60°', 'spot · green · tilted −X · outerAngle=60° · range=8 m · 8000 cd')
 
   // col 3 — spot · blue · high intensity (20000 cd)
   makeBooth({
