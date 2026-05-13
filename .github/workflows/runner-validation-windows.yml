@@ -59,6 +59,11 @@ on:
         type: boolean
         required: false
         default: false
+      diagnose_explorer:
+        description: 'Run Explorer Vulkan smoke (no AltTester, with --use-log-matrix to re-enable STARTUP/AUTHENTICATION/SCENE_LOADING categories) instead of the InWorld suite. Default Decentraland ReportCategory filter silences those categories, so a normal mf-explorer-test Player.log goes blank after the device-info banner regardless of whether auth/realm hangs - this smoke gives us visibility into the splash/auth/realm flow on the runner.'
+        type: boolean
+        required: false
+        default: false
 
   push:
     branches: [feat/runner-validation]
@@ -631,7 +636,7 @@ jobs:
       #   %LOCALAPPDATA%\Decentraland\MetaForge\explorer\<version>\Decentraland.exe
       # (see MetaForgeCLI/Services/ExplorerVersionService.cs:39,113).
       - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
-        if: false  # Confirmed graphics chassis: D3D11 on NVIDIA Tesla T4 renders, log-matrix override applied. Re-enable only to debug a future regression.
+        if: inputs.diagnose_explorer == true  # Gated on dispatch input. Re-enabled 2026-05-13 to see where the inworld run gets stuck: mf-explorer-test Player.log goes blank after the env-dump because STARTUP/AUTHENTICATION/SCENE_LOADING are silenced by the default ReportCategory; this smoke launches Explorer directly with --use-log-matrix to make those categories visible.
         shell: powershell
         timeout-minutes: 7
         run: |
@@ -1020,7 +1025,7 @@ jobs:
       # expectation: hang on ready timeout. Cap step at 20 min so the cleanup
       # step still gets to run.
       - name: Run InWorld suite
-        if: env.DRY_RUN != 'true' && inputs.diagnose_alttester != true
+        if: env.DRY_RUN != 'true' && inputs.diagnose_alttester != true && inputs.diagnose_explorer != true
         timeout-minutes: 20
         shell: powershell
         env:
@@ -1033,6 +1038,48 @@ jobs:
             --report-type SingleFile `
             --skip-allure-open
           exit $LASTEXITCODE
+
+      # Run 25809769581 timed out at "Wait for connection: 0%" with no signal
+      # in Player.log past the env-dump banner (default Decentraland ReportCategory
+      # silences STARTUP/AUTHENTICATION/SCENE_LOADING). This step dumps every
+      # relevant log into job stdout so the symptom is visible directly in the
+      # GitHub Actions UI without downloading an artifact.
+      - name: Diag - dump Explorer / AltTester logs on InWorld failure
+        if: failure() && env.DRY_RUN != 'true' && inputs.diagnose_alttester != true && inputs.diagnose_explorer != true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          Write-Host "=== Live processes (Decentraland / AltTester / Unity) ==="
+          Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match "Decentraland|AltTester|Unity" } |
+            Select-Object Id, Name, StartTime, CPU, WorkingSet64 |
+            Format-Table -AutoSize | Out-String | Write-Host
+
+          $explorerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          Write-Host "=== Explorer Player.log ($explorerLog) ==="
+          if (Test-Path $explorerLog) {
+            Write-Host "(size: $((Get-Item $explorerLog).Length) bytes)"
+            Get-Content $explorerLog | ForEach-Object { Write-Host $_ }
+          } else {
+            Write-Host "(not found)"
+          }
+
+          $lowRoot = Join-Path $env:USERPROFILE "AppData\LocalLow"
+          Write-Host "=== AltTester Player.log scan under $lowRoot ==="
+          $altLogs = Get-ChildItem -Path $lowRoot -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "AltTester|Altom" }
+          if (-not $altLogs) {
+            Write-Host "(no AltTester Player.log)"
+          } else {
+            foreach ($f in $altLogs) {
+              Write-Host "--- $($f.FullName) (size: $($f.Length) bytes) ---"
+              Get-Content $f.FullName | ForEach-Object { Write-Host $_ }
+            }
+          }
+
+          $portCheck = Test-NetConnection -ComputerName "127.0.0.1" -Port 13000 -InformationLevel Detailed -WarningAction SilentlyContinue
+          Write-Host "=== AltTester port 13000 listener state ==="
+          Write-Host ($portCheck | Out-String)
 
       - name: Dry-run notice
         if: env.DRY_RUN == 'true'
