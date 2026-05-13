@@ -803,23 +803,36 @@ jobs:
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           Write-Host "Diag dir: $diagDir"
 
-          # 1. Sysinternals tools (ProcDump64 + Procmon64). Both Microsoft-signed.
+          # 1. Sysinternals tools. ProcDump and Procmon ship in SEPARATE zips
+          # (the prior attempt used PSTools.zip which has PsExec but not ProcDump).
+          # Both are Microsoft-signed. Find files via Get-ChildItem after extract
+          # so we're resilient to filename casing and any future zip layout change.
           $tools = Join-Path $env:USERPROFILE "sysinternals"
           New-Item -ItemType Directory -Path $tools -Force | Out-Null
-          $procdump = Join-Path $tools "procdump64.exe"
-          $procmon  = Join-Path $tools "Procmon64.exe"
-          if (-not (Test-Path $procdump)) {
-            Write-Host "Downloading PSTools.zip..."
-            $z = Join-Path $env:RUNNER_TEMP "PSTools.zip"
-            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/PSTools.zip" -OutFile $z -UseBasicParsing
-            Expand-Archive -Path $z -DestinationPath $tools -Force
+          function Resolve-Tool($dir, $name) {
+            $hit = Get-ChildItem -Path $dir -Recurse -File -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $hit.FullName } else { return $null }
           }
-          if (-not (Test-Path $procmon)) {
+          $procdump = Resolve-Tool $tools "procdump64.exe"
+          $procmon  = Resolve-Tool $tools "Procmon64.exe"
+          if (-not $procdump) {
+            Write-Host "Downloading Procdump.zip..."
+            $z = Join-Path $env:RUNNER_TEMP "Procdump.zip"
+            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile $z -UseBasicParsing
+            Expand-Archive -Path $z -DestinationPath $tools -Force
+            $procdump = Resolve-Tool $tools "procdump64.exe"
+          }
+          if (-not $procmon) {
             Write-Host "Downloading ProcessMonitor.zip..."
             $z = Join-Path $env:RUNNER_TEMP "ProcessMonitor.zip"
             Invoke-WebRequest -Uri "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile $z -UseBasicParsing
             Expand-Archive -Path $z -DestinationPath $tools -Force
+            $procmon = Resolve-Tool $tools "Procmon64.exe"
           }
+          if (-not $procdump) { throw "procdump64.exe not found under $tools after download" }
+          if (-not $procmon)  { throw "Procmon64.exe not found under $tools after download" }
+          Write-Host "procdump: $procdump"
+          Write-Host "procmon:  $procmon"
 
           # 2. Environment snapshot.
           Write-Host "=== whoami / session ==="
@@ -1038,7 +1051,19 @@ jobs:
             ~/AppData/Local/Decentraland/MetaForge/**/allure-report/**
             ~/AppData/Local/Decentraland/MetaForge/**/allure-results/**
             ~/AppData/Roaming/DecentralandLauncherLight/output.log
-            ${{ runner.temp }}/alttester-diag/**
+
+      # Separate artifact step for the AltTester diagnostic dir: upload-artifact@v4
+      # requires all paths in one step to share a workspace-relative root, and the
+      # diag dir lives outside workspace under ${{ runner.temp }} (so it gets
+      # cleaned automatically between jobs). Splitting it out lets v4 use the diag
+      # dir itself as the rootDirectory.
+      - name: Upload AltTester diag artifact
+        if: always() && inputs.diagnose_alttester == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: alttester-diag-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/alttester-diag/**
 
       - name: Summarize report URL
         if: false  # TEMP: disabled while stabilizing InWorld run.
