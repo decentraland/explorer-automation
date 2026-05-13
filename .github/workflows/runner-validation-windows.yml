@@ -54,6 +54,11 @@ on:
         type: boolean
         required: false
         default: false
+      diagnose_alttester:
+        description: 'Run AltTester loader-hang diagnostic (Procmon + ProcDump capture) instead of the InWorld suite. Local probes proved -batchmode -nographics works on Windows 11 in user session AND under LocalSystem session 0 (both ready in 5-11s); this step captures a full memory dump of the hung AltTester on the runner to find the real root cause.'
+        type: boolean
+        required: false
+        default: false
 
   push:
     branches: [feat/runner-validation]
@@ -765,6 +770,190 @@ jobs:
 
           if ($live) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
 
+      # ── AltTester loader-hang diagnostic. ──
+      # Local probes (2026-05-13) ruled out the obvious causes: the exact same
+      # arglist `-batchmode -nographics -termsAndConditionsAccepted -port <p>
+      # -license <k> -logFile <path>` starts AltTester Desktop in ~5-11s
+      #   - in a user-mode interactive Windows 11 session (10.0.26200), AND
+      #   - under LocalSystem in session 0 via PsExec64 -s (no interactive desktop)
+      # producing a 5KB Unity log and an open WS server on the requested port.
+      # So the hang on this runner is NOT in the flag set, NOT in Window
+      # Station / session 0, NOT in GPU (since -nographics gives NullGfxDevice).
+      # It is something specific to the partner Win11 Desktop image - most
+      # likely Defender / EDR blocking a DLL load, an outbound proxy choking
+      # license activation, or a VC++ / loader callback specific to this AMI.
+      #
+      # This step captures the evidence needed to RCA it:
+      #   - Defender state + force-exclude AltTester install dir
+      #   - DLL signatures + VC runtime versions inside the AltTester install
+      #   - Outbound reachability to alttester.com (license server)
+      #   - Procmon trace of all file/registry/network calls during launch
+      #   - ProcDump full memory dump of the hung process at t=90s
+      #   - Loaded modules snapshot of the hung process
+      # All uploaded as artifacts for offline analysis (WinDbg / Procmon GUI).
+      - name: Diag - AltTester loader hang capture
+        if: inputs.diagnose_alttester == true
+        shell: powershell
+        timeout-minutes: 10
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          $ErrorActionPreference = "Continue"
+          $diagDir = Join-Path $env:RUNNER_TEMP "alttester-diag"
+          New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
+          Write-Host "Diag dir: $diagDir"
+
+          # 1. Sysinternals tools (ProcDump64 + Procmon64). Both Microsoft-signed.
+          $tools = Join-Path $env:USERPROFILE "sysinternals"
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          $procdump = Join-Path $tools "procdump64.exe"
+          $procmon  = Join-Path $tools "Procmon64.exe"
+          if (-not (Test-Path $procdump)) {
+            Write-Host "Downloading PSTools.zip..."
+            $z = Join-Path $env:RUNNER_TEMP "PSTools.zip"
+            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/PSTools.zip" -OutFile $z -UseBasicParsing
+            Expand-Archive -Path $z -DestinationPath $tools -Force
+          }
+          if (-not (Test-Path $procmon)) {
+            Write-Host "Downloading ProcessMonitor.zip..."
+            $z = Join-Path $env:RUNNER_TEMP "ProcessMonitor.zip"
+            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile $z -UseBasicParsing
+            Expand-Archive -Path $z -DestinationPath $tools -Force
+          }
+
+          # 2. Environment snapshot.
+          Write-Host "=== whoami / session ==="
+          whoami | Tee-Object -FilePath "$diagDir\whoami.txt"
+          ([System.Diagnostics.Process]::GetCurrentProcess()).SessionId | Out-File "$diagDir\sessionid.txt"
+          query session 2>&1 | Out-File "$diagDir\query-session.txt"
+
+          Write-Host "=== Defender state ==="
+          try { Get-MpComputerStatus | Format-List | Out-File "$diagDir\defender-status.txt" } catch { "Get-MpComputerStatus failed: $_" | Out-File "$diagDir\defender-status.txt" }
+          try { Get-MpPreference | Format-List | Out-File "$diagDir\defender-prefs.txt" } catch {}
+          try { Get-MpThreatDetection 2>$null | Format-List | Out-File "$diagDir\defender-threats.txt" } catch {}
+
+          Write-Host "=== Force-exclude AltTester from Defender ==="
+          try {
+            Add-MpPreference -ExclusionPath "C:\Program Files\AltTesterDesktop" -ErrorAction Stop
+            Add-MpPreference -ExclusionProcess "AltTesterDesktop.exe" -ErrorAction Stop
+            "Exclusions added" | Out-File "$diagDir\defender-exclusion.txt"
+          } catch {
+            "Add-MpPreference failed: $_" | Out-File "$diagDir\defender-exclusion.txt"
+          }
+
+          Write-Host "=== AltTester install signatures ==="
+          Get-ChildItem -Path "C:\Program Files\AltTesterDesktop" -Include *.exe,*.dll -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $sig = Get-AuthenticodeSignature $_.FullName
+              [PSCustomObject]@{
+                Path   = $_.FullName
+                Status = $sig.Status
+                Signer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { '<unsigned>' }
+              }
+            } | Format-List | Out-File "$diagDir\at-signatures.txt"
+
+          Write-Host "=== VC runtime DLLs ==="
+          $vcrt = @("vcruntime140.dll","vcruntime140_1.dll","msvcp140.dll","ucrtbase.dll")
+          foreach ($d in $vcrt) {
+            $p = Join-Path "$env:SystemRoot\System32" $d
+            if (Test-Path $p) {
+              "${d}: $((Get-Item $p).VersionInfo.FileVersion)" | Out-File "$diagDir\vcrt.txt" -Append
+            } else {
+              "${d}: MISSING" | Out-File "$diagDir\vcrt.txt" -Append
+            }
+          }
+
+          Write-Host "=== Outbound to alttester.com ==="
+          try { Test-NetConnection alttester.com -Port 443 -InformationLevel Detailed 2>&1 | Out-File "$diagDir\netconn-alttester.txt" } catch { "TNC failed: $_" | Out-File "$diagDir\netconn-alttester.txt" }
+          try {
+            $r = Invoke-WebRequest -Uri "https://alttester.com/" -UseBasicParsing -TimeoutSec 15
+            "Status=$($r.StatusCode) Len=$($r.RawContentLength)" | Out-File "$diagDir\http-alttester.txt"
+          } catch { "HTTP alttester.com failed: $_" | Out-File "$diagDir\http-alttester.txt" }
+
+          # 3. Start Procmon capture (no UI). Captures everything; we'll filter offline.
+          $pml = Join-Path $diagDir "alttester.pml"
+          Write-Host "=== Starting Procmon -> $pml ==="
+          Start-Process -FilePath $procmon -ArgumentList @("/AcceptEula","/Quiet","/Minimized","/Backingfile",$pml) -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+
+          # 4. Launch AltTester with the standard MetaForge arglist.
+          $exe = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
+          $logFile = Join-Path $diagDir "alttester-unity.log"
+          $arglist = @(
+            "-batchmode", "-nographics", "-termsAndConditionsAccepted",
+            "-port", "13000",
+            "-license", $env:ALTTESTER_LICENSE,
+            "-logFile", $logFile
+          )
+          $masked = ($arglist -join ' ') -replace [regex]::Escape($env:ALTTESTER_LICENSE), '<LICENSE>'
+          Write-Host "=== Launching AltTester: $exe $masked ==="
+          $atProc = Start-Process -FilePath $exe -ArgumentList $arglist -PassThru -WindowStyle Hidden
+          Write-Host "AT PID=$($atProc.Id)"
+
+          # 5. Poll TCP 13000 for ready, up to 90s.
+          $ready = $false
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline) {
+            try {
+              $t = New-Object System.Net.Sockets.TcpClient
+              $iar = $t.BeginConnect("127.0.0.1", 13000, $null, $null)
+              if ($iar.AsyncWaitHandle.WaitOne(500, $false)) { $t.EndConnect($iar); if ($t.Connected) { $ready = $true; break } }
+            } catch { } finally { try { $t.Close() } catch {} }
+            $alive = Get-Process -Id $atProc.Id -ErrorAction SilentlyContinue
+            if (-not $alive) { Write-Host "AT exited early ExitCode=$($atProc.ExitCode)"; break }
+            Start-Sleep -Milliseconds 500
+          }
+          $elapsed = [int]((Get-Date) - $atProc.StartTime).TotalSeconds
+          "ready=$ready elapsed=${elapsed}s pid=$($atProc.Id)" | Tee-Object -FilePath "$diagDir\summary.txt"
+
+          # 6. Loaded modules of the (possibly hung) process - snapshot before dump.
+          try {
+            Get-Process -Id $atProc.Id -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Modules |
+              Select-Object ModuleName, FileName, FileVersion, Company |
+              Format-Table -AutoSize | Out-File "$diagDir\at-modules.txt"
+          } catch { "modules: $_" | Out-File "$diagDir\at-modules.txt" }
+
+          # 7. ProcDump full memory dump - only meaningful if hang reproduced.
+          if (-not $ready) {
+            $alive = Get-Process -Id $atProc.Id -ErrorAction SilentlyContinue
+            if ($alive) {
+              Write-Host "=== ProcDump (-ma full) on hung AltTester ==="
+              $dumpFile = Join-Path $diagDir "alttester.dmp"
+              & $procdump -accepteula -ma $atProc.Id $dumpFile 2>&1 | Out-File "$diagDir\procdump-output.txt"
+            } else {
+              "AT process exited; no dump." | Out-File "$diagDir\procdump-output.txt"
+            }
+          } else {
+            "AT ready in ${elapsed}s; no hang to dump." | Out-File "$diagDir\procdump-output.txt"
+          }
+
+          # 8. Copy Player.log fallbacks (both user and system profile LocalLow).
+          foreach ($r in @("$env:USERPROFILE\AppData\LocalLow","C:\Windows\System32\config\systemprofile\AppData\LocalLow")) {
+            if (-not (Test-Path $r)) { continue }
+            Get-ChildItem -Path $r -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "AltTester|Altom" } |
+              ForEach-Object {
+                $name = "player-$([System.IO.Path]::GetFileName($_.Directory.FullName))-" + ([System.IO.Path]::GetFileNameWithoutExtension($r)) + ".log"
+                Copy-Item $_.FullName (Join-Path $diagDir $name) -Force
+              }
+          }
+
+          # 9. Stop Procmon (flush backing file).
+          Write-Host "=== Stopping Procmon ==="
+          & $procmon /Terminate 2>&1 | Out-File "$diagDir\procmon-terminate.txt"
+          Start-Sleep -Seconds 5
+
+          # 10. Kill AltTester if still alive.
+          Get-Process AltTesterDesktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          # 11. List artifacts so the job log shows what we captured.
+          Write-Host "=== Diag artifacts ==="
+          Get-ChildItem $diagDir -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String | Write-Host
+
+          # 12. Remove Defender exclusions we added.
+          try { Remove-MpPreference -ExclusionPath "C:\Program Files\AltTesterDesktop" -ErrorAction SilentlyContinue } catch {}
+          try { Remove-MpPreference -ExclusionProcess "AltTesterDesktop.exe" -ErrorAction SilentlyContinue } catch {}
+
       # AltTester Desktop smoke proved -batchmode -nographics hangs in Unity init
       # on this runner even with WDDM/T4 working. `mf explorer test` invokes
       # AltTesterService.StartServerAsync with the same flag set
@@ -773,7 +962,7 @@ jobs:
       # expectation: hang on ready timeout. Cap step at 20 min so the cleanup
       # step still gets to run.
       - name: Run InWorld suite
-        if: env.DRY_RUN != 'true'
+        if: env.DRY_RUN != 'true' && inputs.diagnose_alttester != true
         timeout-minutes: 20
         shell: powershell
         env:
@@ -849,6 +1038,7 @@ jobs:
             ~/AppData/Local/Decentraland/MetaForge/**/allure-report/**
             ~/AppData/Local/Decentraland/MetaForge/**/allure-results/**
             ~/AppData/Roaming/DecentralandLauncherLight/output.log
+            ${{ runner.temp }}/alttester-diag/**
 
       - name: Summarize report URL
         if: false  # TEMP: disabled while stabilizing InWorld run.
