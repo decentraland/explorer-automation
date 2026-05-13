@@ -82,7 +82,17 @@ test('@web @auth logout clears the SSO identity from localStorage', async ({ pag
 
   await navbar.clickLogout()
 
-  // The dapp's logout handler clears the SSO blob. Allow a tick for the
-  // synchronous teardown to flush.
-  await expect.poll(async () => page.evaluate(k => localStorage.getItem(k), ssoKey), { timeout: 10_000 }).toBeNull()
+  // The dapp's logout handler clears the SSO blob AND triggers a navigation.
+  // If page.evaluate fires while that nav is in flight, the page's execution
+  // context is destroyed mid-eval and Playwright throws. Catch that race and
+  // return a sentinel so expect.poll keeps retrying until the new context is
+  // ready, at which point the localStorage read returns null and we pass.
+  const readSsoBlob = async (): Promise<string | null> => {
+    try {
+      return await page.evaluate(k => localStorage.getItem(k), ssoKey)
+    } catch {
+      return 'navigating'
+    }
+  }
+  await expect.poll(readSsoBlob, { timeout: 15_000 }).toBeNull()
 })
