@@ -1,8 +1,8 @@
 {
-  "name": "@dcl-vrt/gltf3",
+  "name": "@dcl-vrt/gltf-legacy-assets-2",
   "version": "0.0.0",
   "private": true,
-  "description": "Visual-regression scene: gltf3",
+  "description": "Visual-regression scene: gltf-legacy-assets-2",
   "scripts": {
     "build": "sdk-commands build --skip-install",
     "start": "sdk-commands start"
