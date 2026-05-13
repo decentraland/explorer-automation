@@ -56,7 +56,7 @@ jobs:
     with:
       mode: record
       pr_number: '2'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22055-1facf02/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22177-eab85fe/Decentraland_macos.zip'
       tests_ref: feat/snapshots-comparison
       # commit_sha + branch_label are cosmetic; let the reusable fall back
       # to its run-id default for the bootstrap run.
@@ -69,6 +69,6 @@ jobs:
     with:
       mode: test
       pr_number: '2'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22055-1facf02/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22177-eab85fe/Decentraland_macos.zip'
       tests_ref: feat/snapshots-comparison
     secrets: inherit
