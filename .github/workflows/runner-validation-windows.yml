@@ -43,7 +43,12 @@ on:
         description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest non-prerelease unity-explorer release.'
         type: string
         required: false
-        default: ''
+        # Pinned to unity-explorer PR #8736 (head: feat/nearby-voice-chat/handle-scene-banned-users,
+        # commit b0a0714) - that build ships the [BOOT NN] breadcrumbs in
+        # MainSceneLoader.InitializeFlowAsync + Bootstraper.cs and has the full
+        # log matrix enabled at source (every category at every severity).
+        # Revert to '' to fall back to "latest non-prerelease unity-explorer release".
+        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/nearby-voice-chat/handle-scene-banned-users/pr-22235-b0a0714/Decentraland_windows64.zip'
       test_filter:
         description: 'NUnit --filter expression. Default targets a single InWorld smoke test.'
         type: string
@@ -104,26 +109,42 @@ jobs:
             exit 0
           fi
 
-          RELEASE_JSON=$(gh api \
-            "repos/decentraland/unity-explorer/releases?per_page=20" \
-            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
+          # ── Pinned to unity-explorer PR #8736 ──────────────────────────────
+          # Temporary override while validating runner chassis. PR #8736
+          # (head: feat/nearby-voice-chat/handle-scene-banned-users, commit
+          # b0a0714) ships [BOOT NN] breadcrumbs in MainSceneLoader.InitializeFlowAsync
+          # + Bootstraper.cs and has the full log matrix enabled (every category
+          # at every severity). To revert: delete this block and uncomment the
+          # "latest release" lookup below.
+          # TODO: confirm the URL below once the Windows64 build on PR #8736
+          # finishes (was IN_PROGRESS at last check). Bot comment template is:
+          #   | Download Windows S3 | https://explorer-artifacts.decentraland.org/.../Decentraland_windows64.zip |
+          PINNED_BUILD_URL="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/nearby-voice-chat/handle-scene-banned-users/pr-22235-b0a0714/Decentraland_windows64.zip"
+          echo "::notice::Using pinned unity-explorer PR #8736 build: ${PINNED_BUILD_URL}"
+          echo "build_url=${PINNED_BUILD_URL}" >> "$GITHUB_OUTPUT"
+          exit 0
 
-          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-            echo "::error::No published unity-explorer release found and no build_url override given."
-            exit 1
-          fi
-
-          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-          BUILD_URL=$(echo "$RELEASE_JSON" \
-            | jq -r '.assets[] | select(.name == "Decentraland_windows64.zip") | .browser_download_url')
-
-          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
-            echo "::error::Release ${RELEASE_TAG} has no Decentraland_windows64.zip asset attached."
-            exit 1
-          fi
-
-          echo "::notice::Using unity-explorer release ${RELEASE_TAG}."
-          echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+          # ── Original "latest release" resolution (disabled, kept for revert) ──
+          # RELEASE_JSON=$(gh api \
+          #   "repos/decentraland/unity-explorer/releases?per_page=20" \
+          #   --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
+          #
+          # if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+          #   echo "::error::No published unity-explorer release found and no build_url override given."
+          #   exit 1
+          # fi
+          #
+          # RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          # BUILD_URL=$(echo "$RELEASE_JSON" \
+          #   | jq -r '.assets[] | select(.name == "Decentraland_windows64.zip") | .browser_download_url')
+          #
+          # if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+          #   echo "::error::Release ${RELEASE_TAG} has no Decentraland_windows64.zip asset attached."
+          #   exit 1
+          # fi
+          #
+          # echo "::notice::Using unity-explorer release ${RELEASE_TAG}."
+          # echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
 
   run:
     name: Runner validation (InWorld smoke)
@@ -635,8 +656,12 @@ jobs:
       # mf explorer install (above) drops the build under
       #   %LOCALAPPDATA%\Decentraland\MetaForge\explorer\<version>\Decentraland.exe
       # (see MetaForgeCLI/Services/ExplorerVersionService.cs:39,113).
+      # Disabled while testing against unity-explorer PR #8736 - that build
+      # already has every category enabled at every severity in source, so the
+      # runtime --use-log-matrix override is redundant. To re-enable: restore
+      # the original `if: inputs.diagnose_explorer == true` condition below.
       - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
-        if: inputs.diagnose_explorer == true  # Gated on dispatch input. Re-enabled 2026-05-13 to see where the inworld run gets stuck: mf-explorer-test Player.log goes blank after the env-dump because STARTUP/AUTHENTICATION/SCENE_LOADING are silenced by the default ReportCategory; this smoke launches Explorer directly with --use-log-matrix to make those categories visible.
+        if: false  # was: inputs.diagnose_explorer == true  # Gated on dispatch input. Re-enabled 2026-05-13 to see where the inworld run gets stuck: mf-explorer-test Player.log goes blank after the env-dump because STARTUP/AUTHENTICATION/SCENE_LOADING are silenced by the default ReportCategory; this smoke launches Explorer directly with --use-log-matrix to make those categories visible.
         shell: powershell
         timeout-minutes: 7
         run: |
