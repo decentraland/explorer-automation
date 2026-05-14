@@ -340,6 +340,16 @@ jobs:
 
             <sub>${{ inputs.mode == 'record' && 'Triggered via `/generate-baselines`' || 'Triggered via `/visual-tests`' }} · this comment is updated on every run.</sub>
 
+      # Upload the Explorer's Player.log so callers can download and print it
+      - name: Upload Explorer Player.log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-log-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
+          path: /Users/runner/Library/Logs/Decentraland/Explorer/Player.log
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Cleanup metaforge state
         if: always()
         run: |
