@@ -1130,11 +1130,20 @@ jobs:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           $ErrorActionPreference = "Continue"
+          # --skip-auth-screen: forwards `--skip-auth-screen true` to Decentraland.exe so
+          # RealUserInAppInitializationFlow.cs:114-120 short-circuits the auth modal when
+          # identityCache.Identity is already populated. `mf account login` (above)
+          # writes the identity into Explorer PlayerPrefs (userdata_0.json keys
+          # `Web3Authentication.Identity` + `.Identity.zone`), so the cache fills on
+          # startup. Without this flag Explorer parks on AuthenticationScreenShowing
+          # forever (CI has no human to click "Sign In"). See run 25865710425 for the
+          # pre-flag breadcrumb trail.
           mf explorer test $env:BUILD_URL `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
             --report-type SingleFile `
-            --skip-allure-open
+            --skip-allure-open `
+            --skip-auth-screen
           exit $LASTEXITCODE
 
       # Run 25809769581 timed out at "Wait for connection: 0%" with no signal
