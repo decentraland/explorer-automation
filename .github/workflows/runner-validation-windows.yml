@@ -1131,7 +1131,7 @@ jobs:
           $ErrorActionPreference = "Continue"
           mf explorer test $env:BUILD_URL `
             --non-interactive `
-            --filter "$env:TEST_FILTER Category=InWorld" `
+            --filter "$env:TEST_FILTER" `
             --report-type SingleFile `
             --skip-allure-open
           exit $LASTEXITCODE
