@@ -596,14 +596,23 @@ jobs:
           Write-Host "Installing Explorer from $env:BUILD_URL"
           mf explorer install $env:BUILD_URL --non-interactive
 
+      # Env MUST match the env that `mf explorer test` passes to Decentraland.exe
+      # via --dclenv (default: org). When `account create` deploys the profile
+      # into one catalyst and Explorer queries another, ProfileFetchingAuthState
+      # finds no profile and the auth FSM lands in LoginSelectionAuthState
+      # (new-user flow, no JumpIntoWorldButton) instead of
+      # LobbyForExistingAccountAuthState (cached-account flow, what BaseTest.cs
+      # expects). Run 25865710425 hit exactly that: account/profile in zone,
+      # Explorer started --dclenv org → wrong auth state → test clicked an
+      # inactive sibling JumpIntoWorldButton and timed out on MainMenu.WaitFor.
       - name: Provision metaforge test account
         shell: powershell
         run: |
           $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
           if (-not (Test-Path $userdata)) { New-Item -Path $userdata -ItemType Directory -Force | Out-Null }
           $account = "ci-inworld-$env:GITHUB_RUN_ID"
-          mf account create $account --env zone
-          mf account login $account
+          mf account create $account --env org
+          mf account login $account --env org
           "MF_ACCOUNT=$account" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       # ── Clean Player.log before launch so polling sees only this run's lines. ──
@@ -1130,20 +1139,11 @@ jobs:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           $ErrorActionPreference = "Continue"
-          # --skip-auth-screen: forwards `--skip-auth-screen true` to Decentraland.exe so
-          # RealUserInAppInitializationFlow.cs:114-120 short-circuits the auth modal when
-          # identityCache.Identity is already populated. `mf account login` (above)
-          # writes the identity into Explorer PlayerPrefs (userdata_0.json keys
-          # `Web3Authentication.Identity` + `.Identity.zone`), so the cache fills on
-          # startup. Without this flag Explorer parks on AuthenticationScreenShowing
-          # forever (CI has no human to click "Sign In"). See run 25865710425 for the
-          # pre-flag breadcrumb trail.
           mf explorer test $env:BUILD_URL `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
             --report-type SingleFile `
-            --skip-allure-open `
-            --skip-auth-screen
+            --skip-allure-open
           exit $LASTEXITCODE
 
       # Run 25809769581 timed out at "Wait for connection: 0%" with no signal
