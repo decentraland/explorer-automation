@@ -43,19 +43,20 @@ on:
         description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest non-prerelease unity-explorer release.'
         type: string
         required: false
-        # Pinned to unity-explorer PR #8736 (head: feat/nearby-voice-chat/handle-scene-banned-users,
-        # build commit 207d87d) - that build ships the [BOOT NN] breadcrumbs in
-        # MainSceneLoader.InitializeFlowAsync + Bootstraper.cs, has the full
-        # log matrix enabled at source (every category at every severity), AND
-        # the TEMP-gut that bypasses MinimumSpecsScreen modal so the T4 runner
-        # (4 vCPU - fails MinimumSpecsGuard) doesn't hang awaiting a human click.
-        # Revert to '' to fall back to "latest non-prerelease unity-explorer release".
-        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/nearby-voice-chat/handle-scene-banned-users/pr-22251-207d87d/Decentraland_windows64.zip'
+        # Pinned to unity-explorer PR #8778 (head: temp/automation-instrumented-build,
+        # build commit 207d87d) - same SHA as the original PR #8736 pin but on a
+        # dedicated automation branch instead of the feat/nearby-voice-chat piggyback.
+        # That build ships the [BOOT NN] breadcrumbs in MainSceneLoader.InitializeFlowAsync
+        # + Bootstraper.cs, has the full log matrix enabled at source (every category
+        # at every severity), AND the TEMP-gut that bypasses MinimumSpecsScreen modal
+        # so the T4 runner (4 vCPU - fails MinimumSpecsGuard) doesn't hang awaiting
+        # a human click. Revert to '' to fall back to "latest non-prerelease release".
+        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip'
       test_filter:
-        description: 'NUnit --filter expression. Default targets a single InWorld smoke test.'
+        description: 'NUnit --filter expression. Default runs the full InWorld category (~17 tests).'
         type: string
         required: false
-        default: 'Name=TestOpenPlacesWithShortcut'
+        default: 'Category=InWorld'
       dry_run:
         description: 'Skip mf explorer test invocation (chassis validation only - useful before runner access is granted).'
         type: boolean
@@ -111,17 +112,20 @@ jobs:
             exit 0
           fi
 
-          # ── Pinned to unity-explorer PR #8736 ──────────────────────────────
-          # Temporary override while validating runner chassis. PR #8736
-          # (head: feat/nearby-voice-chat/handle-scene-banned-users, build
-          # commit 207d87d) ships [BOOT NN] breadcrumbs in MainSceneLoader.InitializeFlowAsync
-          # + Bootstraper.cs, has the full log matrix enabled (every category
-          # at every severity), AND the TEMP-gut that bypasses MinimumSpecsScreen
-          # modal so the T4 runner (4 vCPU - fails MinimumSpecsGuard) doesn't
-          # hang on a screen awaiting a human click. To revert: delete this
-          # block and uncomment the "latest release" lookup below.
-          PINNED_BUILD_URL="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/nearby-voice-chat/handle-scene-banned-users/pr-22251-207d87d/Decentraland_windows64.zip"
-          echo "::notice::Using pinned unity-explorer PR #8736 build: ${PINNED_BUILD_URL}"
+          # ── Pinned to unity-explorer PR #8778 ──────────────────────────────
+          # Temporary override while validating runner chassis. PR #8778
+          # (head: temp/automation-instrumented-build, build commit 207d87d)
+          # is the dedicated automation-instrumented build — same SHA as the
+          # original PR #8736 pin but on a clean branch instead of the
+          # feat/nearby-voice-chat piggyback. Ships [BOOT NN] breadcrumbs in
+          # MainSceneLoader.InitializeFlowAsync + Bootstraper.cs, has the full
+          # log matrix enabled (every category at every severity), AND the
+          # TEMP-gut that bypasses MinimumSpecsScreen modal so the T4 runner
+          # (4 vCPU - fails MinimumSpecsGuard) doesn't hang on a screen awaiting
+          # a human click. To revert: delete this block and uncomment the
+          # "latest release" lookup below.
+          PINNED_BUILD_URL="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip"
+          echo "::notice::Using pinned unity-explorer PR #8778 build: ${PINNED_BUILD_URL}"
           echo "build_url=${PINNED_BUILD_URL}" >> "$GITHUB_OUTPUT"
           exit 0
 
@@ -151,11 +155,11 @@ jobs:
     name: Runner validation (InWorld smoke)
     needs: resolve
     runs-on: ["win-gpu-t4-onboarding-new-image"]
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'Name=TestOpenPlacesWithShortcut' }}
+      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
@@ -666,7 +670,7 @@ jobs:
       # mf explorer install (above) drops the build under
       #   %LOCALAPPDATA%\Decentraland\MetaForge\explorer\<version>\Decentraland.exe
       # (see MetaForgeCLI/Services/ExplorerVersionService.cs:39,113).
-      # Disabled while testing against unity-explorer PR #8736 - that build
+      # Disabled while testing against unity-explorer PR #8778 - that build
       # already has every category enabled at every severity in source, so the
       # runtime --use-log-matrix override is redundant. To re-enable: restore
       # the original `if: inputs.diagnose_explorer == true` condition below.
@@ -1133,7 +1137,7 @@ jobs:
       # step still gets to run.
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true' && inputs.diagnose_alttester != true && inputs.diagnose_explorer != true
-        timeout-minutes: 20
+        timeout-minutes: 40
         shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
@@ -1146,11 +1150,10 @@ jobs:
             --skip-allure-open
           exit $LASTEXITCODE
 
-      # Run 25809769581 timed out at "Wait for connection: 0%" with no signal
-      # in Player.log past the env-dump banner (default Decentraland ReportCategory
-      # silences STARTUP/AUTHENTICATION/SCENE_LOADING). This step dumps every
-      # relevant log into job stdout so the symptom is visible directly in the
-      # GitHub Actions UI without downloading an artifact.
+      # Failure-only heavy diag: process snapshot, AltTester Player.log scan,
+      # port 13000 state. The Explorer Player.log itself is dumped by the
+      # always-on "Print Explorer Player.log" step below — no need to repeat
+      # it here.
       - name: Diag - dump Explorer / AltTester logs on InWorld failure
         if: failure() && env.DRY_RUN != 'true' && inputs.diagnose_alttester != true && inputs.diagnose_explorer != true
         shell: powershell
@@ -1161,15 +1164,6 @@ jobs:
             Where-Object { $_.Name -match "Decentraland|AltTester|Unity" } |
             Select-Object Id, Name, StartTime, CPU, WorkingSet64 |
             Format-Table -AutoSize | Out-String | Write-Host
-
-          $explorerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
-          Write-Host "=== Explorer Player.log ($explorerLog) ==="
-          if (Test-Path $explorerLog) {
-            Write-Host "(size: $((Get-Item $explorerLog).Length) bytes)"
-            Get-Content $explorerLog | ForEach-Object { Write-Host $_ }
-          } else {
-            Write-Host "(not found)"
-          }
 
           $lowRoot = Join-Path $env:USERPROFILE "AppData\LocalLow"
           Write-Host "=== AltTester Player.log scan under $lowRoot ==="
@@ -1187,6 +1181,26 @@ jobs:
           $portCheck = Test-NetConnection -ComputerName "127.0.0.1" -Port 13000 -InformationLevel Detailed -WarningAction SilentlyContinue
           Write-Host "=== AltTester port 13000 listener state ==="
           Write-Host ($portCheck | Out-String)
+
+      # Mirror Nicolas's _temp-bootstrap-visual-suite pattern: always surface
+      # Player.log in the Actions UI inside a collapsible group so reviewers
+      # don't have to download the artifact to read it. Runs on both success
+      # and failure paths; the heavier failure-only diag step above adds
+      # process snapshot + AltTester scan + port check on top of this.
+      - name: Print Explorer Player.log
+        if: always() && env.DRY_RUN != 'true'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $explorerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          Write-Host "::group::Explorer Player.log"
+          if (Test-Path $explorerLog) {
+            Write-Host "(path: $explorerLog, size: $((Get-Item $explorerLog).Length) bytes)"
+            Get-Content $explorerLog | ForEach-Object { Write-Host $_ }
+          } else {
+            Write-Host "(not found at $explorerLog)"
+          }
+          Write-Host "::endgroup::"
 
       - name: Dry-run notice
         if: env.DRY_RUN == 'true'
