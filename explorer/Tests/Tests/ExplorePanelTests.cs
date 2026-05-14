@@ -57,13 +57,13 @@ public class ExplorePanelTests : BaseTest
 
     // Opening the Gallery section makes the Explorer touch ~/Downloads (Camera Reel storage,
     // see unity-explorer ReelCommonActions.cs), which on macOS triggers the system
-    // "wants to access your Downloads folder" TCC dialog. The dialog steals focus and
-    // breaks AltTester input. We use Assert.Ignore so the test shows up as "skipped" with
-    // a visible reason in the Allure report.
+    // "wants to access your Downloads folder" TCC dialog that steals focus and breaks
+    // AltTester input. Windows has no equivalent TCC prompt, so the test can run there.
     [Test]
     public void TestOpenGalleryFromSidebar()
     {
-        Assert.Ignore("can't access user device");
+        if (OperatingSystem.IsMacOS())
+            Assert.Ignore("macOS TCC dialog for ~/Downloads steals focus");
 
         Views.MainMenu.GalleryButton.Click();
 
