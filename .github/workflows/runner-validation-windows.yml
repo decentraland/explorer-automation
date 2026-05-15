@@ -77,6 +77,7 @@ on:
     branches: [feat/runner-validation]
     paths:
       - '.github/workflows/runner-validation-windows.yml'
+      - 'explorer/Tests/**'
 
 # Serialize runs on the shared self-hosted runner. We don't cancel in-flight
 # runs because the runner is persistent: an interrupted test can leave
