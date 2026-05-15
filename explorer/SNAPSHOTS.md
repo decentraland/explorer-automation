@@ -96,7 +96,7 @@ Resolution order: per-call `mode:` argument → `SNAPSHOT_MODE` env var → defa
 | Mode | When to use | How to trigger |
 |---|---|---|
 | `Compare` (default) | CI / regular runs | env var unset |
-| `Record` | Refresh after an intentional UI change — overwrites baseline, passes | `SNAPSHOT_MODE=record dotnet test --filter ...` |
+| `Record` | Refresh after an intentional UI change — overwrites baseline (skips write if within 1% of the existing one), passes | `SNAPSHOT_MODE=record dotnet test --filter ...` |
 | `MissingOnly` | Bootstrap a newly added snapshot — saves baseline if missing, compares otherwise | `SNAPSHOT_MODE=missingonly dotnet test --filter ...` |
 
 Per-call override:
@@ -138,6 +138,7 @@ Each snapshot wraps its work in an `AllureApi.Step("Snapshot: <name>")`. Attachm
 | Match | `<name>.actual.png` |
 | Mismatch | `<name>.actual.png`, `<name>.baseline.png`, `<name>.diff.png` |
 | Recorded / bootstrapped | `<name>.recorded.png` |
+| Record skipped (within 1% of existing baseline) | `<name>.actual.png` |
 | Missing baseline (Compare mode) | `<name>.actual.png` (then `Assert.Fail`) |
 
 The diff PNG paints mismatched pixels solid red over a 50%-faded copy of the actual frame so differences pop against the original context.

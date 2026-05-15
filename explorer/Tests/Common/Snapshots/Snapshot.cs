@@ -19,6 +19,11 @@ public static class Snapshot
 {
     private const string ENV_VAR = "SNAPSHOT_MODE";
 
+    // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
+    // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
+    // runs from churning visually-identical files (and the surrounding commit/PR diff).
+    private const double RECORD_SKIP_TOLERANCE_PERCENT = 1.0;
+
     public static void AssertMatchesBaseline(
         string name = "default",
         double tolerance = 0.5,
@@ -35,9 +40,14 @@ public static class Snapshot
             using var actualBmp = CaptureAndClip(clip, options);
             var actualPng = ScreenshotCapture.EncodePng(actualBmp);
 
-            // Record mode: overwrite, attach, pass.
+            // Record mode: skip the write if the new frame is within tolerance of the existing
+            // baseline (avoids churn), otherwise overwrite. Always attaches, always passes.
             if (resolvedMode == SnapshotMode.Record)
             {
+                if (BaselineStore.Exists(baselinePath)
+                    && TryDiscardUnchangedRecording(baselinePath, actualBmp, actualPng, name, options))
+                    return;
+
                 BaselineStore.Write(baselinePath, actualPng);
                 Reporter.AttachPng($"{name}.recorded", actualPng);
                 Reporter.Log($"Snapshot recorded: {baselinePath}");
@@ -127,6 +137,53 @@ public static class Snapshot
         finally
         {
             bmp.Dispose();
+        }
+    }
+
+    private static bool TryDiscardUnchangedRecording(
+        string baselinePath,
+        SKBitmap actualBmp,
+        byte[] actualPng,
+        string name,
+        SnapshotOptions options)
+    {
+        SKBitmap existingBmp;
+        try
+        {
+            var existingPng = BaselineStore.Read(baselinePath);
+            existingBmp = SKBitmap.Decode(existingPng);
+        }
+        catch (Exception ex)
+        {
+            Reporter.Log($"Snapshot record: failed to read existing baseline for diff check ({ex.Message}). Overwriting.");
+            return false;
+        }
+
+        if (existingBmp == null) return false;
+
+        using (existingBmp)
+        {
+            // Resolution change is itself a meaningful update — let the overwrite happen.
+            if (existingBmp.Width != actualBmp.Width || existingBmp.Height != actualBmp.Height)
+                return false;
+
+            var diff = ImageDiff.Compare(
+                baseline: existingBmp,
+                actual: actualBmp,
+                perChannelTolerance: options.PerChannelTolerance,
+                maxDifferingPixelPercent: RECORD_SKIP_TOLERANCE_PERCENT);
+
+            using (diff.DiffBitmap)
+            {
+                if (!diff.Success) return false;
+
+                Reporter.AttachPng($"{name}.actual", actualPng);
+                Reporter.Log(
+                    $"Snapshot record skipped (within tolerance): {name} " +
+                    $"({diff.MismatchPercent:F3}% <= {RECORD_SKIP_TOLERANCE_PERCENT:F3}%, " +
+                    $"{diff.DifferingPixels}/{diff.TotalPixels} pixels). Baseline left unchanged.");
+                return true;
+            }
         }
     }
 
