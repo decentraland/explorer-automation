@@ -178,8 +178,9 @@ export function main() {
   // override the material to carry a texture from assets/Images.
   // Cubes are pushed to the x-edges so they don't occlude the central robots
   // from the camera's POV.
-  const cubeZ = 5
-  const cubeY = 1.5
+  const cubeZ = 12
+  const cubeY = 6
+  const cubeLabelY = cubeY + 1.5
 
   // C1 — lava texture (opaque JPG, full UV).
   {
@@ -199,7 +200,7 @@ export function main() {
         },
       ],
     })
-    attachLabel('lava texture', 2.5, cubeZ)
+    attachLabel('lava texture', 2.5, cubeZ, cubeLabelY + 1)
     attachHint(e, 'Texture override · lava-texture.jpg via GltfNodeModifiers')
   }
 
@@ -221,7 +222,7 @@ export function main() {
         },
       ],
     })
-    attachLabel('smoke texture', 13.5, cubeZ)
+    attachLabel('smoke texture', 13.5, cubeZ, cubeLabelY + 1)
     attachHint(e, 'Texture override · smoke-puff.png (alpha-blend) via GltfNodeModifiers')
   }
 
@@ -258,8 +259,8 @@ export function main() {
   // Aim is biased toward the back row's vertical mid-line and slightly past
   // scene center on z so the robots dominate the frame.
   setupVisualTest({
-    lookAtPos: Vector3.create(8, 2, 9),
-    cameraPos: Vector3.create(8, 5, -3),
+    lookAtPos: Vector3.create(8, 4, 9),
+    cameraPos: Vector3.create(8, 5, 2),
   })
 }
 
@@ -292,16 +293,16 @@ function pbr(pbr: NonNullable<Parameters<typeof Material.setPbrMaterial>[1]>) {
 }
 
 // Floating caption above each subject so the rendered scene is self-documenting.
-function attachLabel(text: string, x: number, z: number) {
+function attachLabel(text: string, x: number, z: number, y: number = 3.4) {
   const label = engine.addEntity()
   Transform.create(label, {
-    position: Vector3.create(x, 3.4, z)
+    position: Vector3.create(x, y, z)
   })
   TextShape.create(label, {
     text,
     fontSize: 3,
-    textColor: Color4.White(),
-    outlineColor: Color4.Black(),
+    textColor: Color4.Black(),
+    outlineColor: Color4.White(),
     outlineWidth: 0.15,
     textAlign: TextAlignMode.TAM_MIDDLE_CENTER,
   })

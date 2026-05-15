@@ -124,10 +124,6 @@ export function main() {
 
   GltfContainer.create(table, { src: 'assets/sdk7-models/WoodRoundTable_01.glb' })
 
-  Animator.create(robot)
-
-
-
   // ── lighting ─────────────────────────────────────────────────────────────
   // Two point lights spread over the wider 32m × 16m scene, one over each
   // depth band so panels and foreground are evenly lit.
@@ -158,7 +154,7 @@ export function main() {
   // treehouse at x=29) inside the HFOV. Aim raised to y=5 so the lifted
   // SampleScene_03 (y=8+) and the y=2 foreground accents both fit vertically.
   setupVisualTest({
-    lookAtPos: Vector3.create(16, 5, 6),
-    cameraPos: Vector3.create(16, 7, 30),
+    lookAtPos: Vector3.create(12, 4, 6),
+    cameraPos: Vector3.create(12, 5, 25),
   })
 }

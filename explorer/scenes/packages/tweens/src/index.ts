@@ -75,10 +75,10 @@ function attachHint(entity: Entity, text: string): void {
 // ── helper: place a TextShape label below a column ──────────────────────────
 function makeLabel(x: number, text: string): void {
   const e = engine.addEntity()
-  Transform.create(e, { position: Vector3.create(x, 0.35, LABEL_Z) })
+  Transform.create(e, { position: Vector3.create(x, 1.0, LABEL_Z) })
   TextShape.create(e, {
     text,
-    fontSize: 0.9,
+    fontSize: 2.5,
     textColor: Color4.create(0.95, 0.95, 0.95, 1),
     textWrapping: false,
   })
@@ -90,7 +90,7 @@ function makeLabel(x: number, text: string): void {
 function makeBox(
   pos: Vector3,
   color: Color4,
-  scale: Vector3 = Vector3.create(0.6, 0.6, 0.6),
+  scale: Vector3 = Vector3.create(0.85, 0.85, 0.85),
 ): Entity {
   const e = engine.addEntity()
   Transform.create(e, { position: pos, scale })
@@ -268,7 +268,7 @@ export function main() {
     const rotBox = engine.addEntity()
     Transform.create(rotBox, {
       position: Vector3.create(10, 1.5, Z_SUBJECT),
-      scale: Vector3.create(0.3, 1.5, 0.6),
+      scale: Vector3.create(0.45, 2.1, 0.85),
       rotation: Quaternion.Identity(),
     })
     MeshRenderer.setBox(rotBox)
@@ -294,13 +294,13 @@ export function main() {
   // A magenta box starts very small (0.2 uniform) and scales up to 1.6.
   // The contrast (tiny→large) is impossible to miss.
   //
-  // Start scale: (0.2, 0.2, 0.2)
-  // End scale:   (1.6, 1.6, 1.6)
+  // Start scale: (0.3, 0.3, 0.3)
+  // End scale:   (2.2, 2.2, 2.2)
   {
     const scaleBox = engine.addEntity()
     Transform.create(scaleBox, {
       position: Vector3.create(14, 1, Z_SUBJECT),
-      scale: Vector3.create(0.2, 0.2, 0.2),
+      scale: Vector3.create(0.3, 0.3, 0.3),
     })
     MeshRenderer.setBox(scaleBox)
     MeshCollider.setBox(scaleBox)
@@ -309,16 +309,16 @@ export function main() {
       roughness: 0.8,
       metallic: 0,
     })
-    attachHint(scaleBox, 'Col 3: scale tween — should be scale 1.6 (large box)')
+    attachHint(scaleBox, 'Col 3: scale tween — should be scale 2.2 (large box)')
 
     Tween.setScale(
       scaleBox,
-      Vector3.create(0.2, 0.2, 0.2),
-      Vector3.create(1.6, 1.6, 1.6),
+      Vector3.create(0.3, 0.3, 0.3),
+      Vector3.create(2.2, 2.2, 2.2),
       TWEEN_DURATION,
     )
 
-    makeLabel(14, 'scale tween\n(0.2→1.6)')
+    makeLabel(14, 'scale tween\n(0.3→2.2)')
   }
 
   // ── Col 4 — Parent tween affecting child ──────────────────────────────────
@@ -340,7 +340,7 @@ export function main() {
     Transform.create(child, {
       parent,
       position: Vector3.create(0, 1.5, 0),
-      scale: Vector3.create(0.4, 0.4, 0.4),
+      scale: Vector3.create(0.55, 0.55, 0.55),
     })
     MeshRenderer.setBox(child)
     MeshCollider.setBox(child)
@@ -384,7 +384,7 @@ export function main() {
 
     Transform.create(matBox, {
       position: matStartPos,
-      scale: Vector3.create(1.0, 1.0, 1.0),
+      scale: Vector3.create(1.4, 1.4, 1.4),
     })
     MeshRenderer.setPlane(matBox)
     MeshCollider.setPlane(matBox)
@@ -437,7 +437,7 @@ export function main() {
   Transform.create(titleE, { position: Vector3.create(12, 7.5, Z_SUBJECT) })
   TextShape.create(titleE, {
     text: 'Tween · test matrix',
-    fontSize: 2.5,
+    fontSize: 5,
     textColor: Color4.create(1, 1, 1, 1),
     textWrapping: false,
   })
@@ -450,7 +450,7 @@ export function main() {
   // of the layout.
   setupVisualTest({
     lookAtPos: Vector3.create(12, 3, Z_SUBJECT),
-    cameraPos: Vector3.create(12, 4, -6),
+    cameraPos: Vector3.create(12, 4, -5.5),
     hideAreaCenter: Vector3.create(12, 4, 8),
     hideAreaSize: Vector3.create(30, 16, 20),
   })

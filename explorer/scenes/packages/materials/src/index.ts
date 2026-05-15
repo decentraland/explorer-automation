@@ -703,8 +703,8 @@ export function main() {
   // without crowding. lookAt sits between layers 2 and 3 so vertical framing
   // is balanced.
   setupVisualTest({
-    lookAtPos: Vector3.create(8, 4.5, 8),
-    cameraPos: Vector3.create(8, 6.5, -5),
+    lookAtPos: Vector3.create(8, 4, 8),
+    cameraPos: Vector3.create(8, 4.5, -3.5),
   })
 }
 

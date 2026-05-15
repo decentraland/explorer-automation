@@ -422,7 +422,7 @@ export function main() {
   Transform.create(occludedText, { position: Vector3.create(11, topRow, zRow) })
   TextShape.create(occludedText, {
     text: 'OCCLUDED',
-    fontSize: 2,
+    fontSize: 6,
     textColor: Color4.create(1, 0.3, 0.3, 1),
   })
   MeshCollider.setPlane(occludedText)
@@ -450,8 +450,8 @@ export function main() {
   // ── camera ───────────────────────────────────────────────────────────────
   // Pulled back to z=−2 and up to y=4.5 so the y=0.6..8.6 stack frames cleanly.
   setupVisualTest({
-    lookAtPos: Vector3.create(8, 4.5, 8),
-    cameraPos: Vector3.create(8, 4.5, -2),
+    lookAtPos: Vector3.create(8, 5, 8),
+    cameraPos: Vector3.create(8, 5, 0),
   })
 }
 

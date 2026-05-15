@@ -14,6 +14,14 @@ import {
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { setupVisualTest } from './visual-test-setup'
 
+
+
+/// NOTE: IMPORTANT KNOWN ISSUE: CURRENTLY THE ENGINE ONLY SHOWS 4 LIGHTS MAX, WHEN A BUG IS FIXED WE SHOULD SEE ALL 5 LIGHTS AT THE SAME TIME
+
+
+
+
+
 /**
  * lights — dynamic LightSource property matrix.
  *
@@ -234,16 +242,16 @@ interface BoothOpts {
 /**
  * Build a "light booth": a back wall and a floor patch that acts as a
  * projection surface. The wall sits at z=8, the floor patch between z=5..8.
- * Width is 2.4 m so booths don't overlap (columns are 3 m apart).
+ * Width is 3 m so adjacent booths share an edge (columns are 3 m apart).
  */
 function makeBooth(opts: BoothOpts): void {
   const { x, wallColor } = opts
 
-  // Back wall: 2.4 m wide, 5 m tall, at z=8
+  // Back wall: 3 m wide, 5 m tall, at z=8
   const wall = engine.addEntity()
   Transform.create(wall, {
     position: Vector3.create(x, 2.5, 8),
-    scale: Vector3.create(2.4, 5, 0.05),
+    scale: Vector3.create(3, 5, 0.05),
   })
   MeshRenderer.setBox(wall)
   MeshCollider.setBox(wall)
@@ -256,11 +264,11 @@ function makeBooth(opts: BoothOpts): void {
   })
   attachHint(wall, `Back wall · ${opts.label}`)
 
-  // Floor patch: 2.4 m wide, 3 m deep (z 5→8), sits flush with ground
+  // Floor patch: 3 m wide, 3 m deep (z 5→8), sits flush with ground
   const floor = engine.addEntity()
   Transform.create(floor, {
     position: Vector3.create(x, 0.03, 6.5),
-    scale: Vector3.create(2.4, 0.02, 3),
+    scale: Vector3.create(3, 0.02, 3),
   })
   MeshRenderer.setBox(floor)
   MeshCollider.setBox(floor)

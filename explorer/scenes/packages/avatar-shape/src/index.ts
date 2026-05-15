@@ -195,7 +195,7 @@ export function main() {
   // feet inside the bottom of the shot.
   setupVisualTest({
     lookAtPos: Vector3.create(7.5, 1.2, 12),
-    cameraPos: Vector3.create(7.5, 2.5, 2),
+    cameraPos: Vector3.create(7.5, 2, 5.5),
   })
 }
 
