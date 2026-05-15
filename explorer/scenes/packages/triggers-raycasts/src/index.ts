@@ -103,13 +103,13 @@ const INDICATOR_Z = 8.5 // indicators sit in front of the test geometry
 const INDICATOR_SCALE = 1.4 // was 0.9 — chunky cubes legible at distance
 const BALL_SCALE = 0.7 //      was 0.45
 const TARGET_SCALE = 0.55 //   was 0.35
-const LABEL_FONT_SIZE = 1.4 // was 1.0
+const LABEL_FONT_SIZE = 2.2 // was 1.4
 const LABEL_BOTTOM_Y = 4.6 // bottom-row labels float above bottom geometry,
 const LABEL_TOP_Y = 10.0 //   top-row labels float above top geometry,
 const LABEL_Z = 7 //          both rows of labels sit against the skybox.
-const TITLE_FONT_SIZE = 3.0 // was 2.2
+const TITLE_FONT_SIZE = 4.5 // was 3.0
 const TITLE_Y = 13.2 //       title sits above the top-row labels
-const ROW_LABEL_FONT_SIZE = 1.5 // was 1.1
+const ROW_LABEL_FONT_SIZE = 2.4 // was 1.5
 const HINT_MAX_DISTANCE = 100 // generous so the locked virtual camera can hover everything
 
 const COLOR_BLACK = Color4.create(0, 0, 0, 1) // text colour — high contrast against any skybox
@@ -143,7 +143,7 @@ function attachHint(entity: Entity, text: string): void {
         maxDistance: HINT_MAX_DISTANCE,
       },
     },
-    () => {},
+    () => { },
   )
 }
 
@@ -842,8 +842,8 @@ export function main() {
   // back to z=−6 so the increased vertical extent + the column spread
   // (x=3..28) both fit inside the default ~60° VirtualCamera FOV.
   setupVisualTest({
-    lookAtPos: Vector3.create(15.5, 7, ROW_Z),
-    cameraPos: Vector3.create(15.5, 7, -6),
+    lookAtPos: Vector3.create(15.5, 6, ROW_Z),
+    cameraPos: Vector3.create(15.5, 6, -6),
     // 2-parcel scene — widen the AvatarModifierArea to cover x=0..32, z=0..16.
     hideAreaCenter: Vector3.create(16, 8, 8),
     hideAreaSize: Vector3.create(32, 16, 16),

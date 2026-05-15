@@ -14,6 +14,6 @@ export function main() {
 
   setupVisualTest({
     lookAtPos: Vector3.create(8, 8, 8),
-    cameraPos: Vector3.create(8, 8, -1.5),
+    cameraPos: Vector3.create(8, 8, 0),
   })
 }

@@ -29,8 +29,8 @@ export function main() {
   // treehouse at x=29) inside the HFOV. Aim raised to y=5 so the lifted
   // SampleScene_03 (y=8+) and the y=2 foreground accents both fit vertically.
   setupVisualTest({
-    lookAtPos: Vector3.create(14.5, 7, 6),
-    cameraPos: Vector3.create(14.5, 8, -9),
+    lookAtPos: Vector3.create(15, 7, 6),
+    cameraPos: Vector3.create(15, 7.5, -7.5),
   })
 
 
