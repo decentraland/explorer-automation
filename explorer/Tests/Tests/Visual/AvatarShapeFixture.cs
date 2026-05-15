@@ -22,7 +22,7 @@ public class AvatarShapeFixture
         // designed as near-stationary podium poses — so a few seconds is enough
         // for the rig to settle into a visually stable region of the curve
         // before Frame.WaitForStable starts sampling.
-        Thread.Sleep(2000);
+        Thread.Sleep(3000);
 
         Frame.WaitForStable();
         Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
