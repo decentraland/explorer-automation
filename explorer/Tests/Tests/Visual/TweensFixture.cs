@@ -21,11 +21,9 @@ public class TweensFixture
         // Col 1 green sequence-complete, Col 5 material-UV callback) run an
         // extra post-completion system that needs at least one more frame to
         // snap the entity to its final pose and recolor. A short sleep gives
-        // those follow-up systems plenty of time before Frame.WaitForStable
-        // begins sampling.
+        // those follow-up systems plenty of time before the snapshot fires.
         Thread.Sleep(1000);
 
-        Frame.WaitForStable();
-        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }

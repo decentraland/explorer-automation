@@ -17,7 +17,6 @@ public class MaterialsFixture
     [Test]
     public void Default()
     {
-        SceneReady.WaitUntilReady();
         Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }
