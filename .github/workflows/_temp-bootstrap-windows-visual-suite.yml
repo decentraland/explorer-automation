@@ -55,12 +55,14 @@ jobs:
     with:
       mode: record
       pr_number: '13'
-      # Same SHA as PR #12 chassis pins for InWorld, swapped to windows64.zip.
-      # Visual scenes don't exercise the auth/loading flow, so the
-      # MinimumSpecsScreen TEMP-gut isn't strictly required — but reusing the
-      # known-good build URL avoids one variable while we validate the
-      # plumbing. Swap to a clean release once the pipeline is green.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip'
+      # Windows build from the same unity-explorer branch (`test/visual-tests`,
+      # PR #22281) that the macOS bootstrap renders against. That branch carries
+      # `SceneRunner.Scene.AlttesterSceneReadinessProbe`, which the Visual fixtures
+      # poll via SceneReady.WaitUntilReady; the chassis/InWorld build on
+      # `temp/automation-instrumented-build` does NOT contain it, hence the
+      # ComponentNotFoundException on the first run. Swap to a clean release
+      # once the visual probe lands on main.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
@@ -94,7 +96,7 @@ jobs:
     with:
       mode: test
       pr_number: '13'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
