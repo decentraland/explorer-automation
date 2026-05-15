@@ -191,7 +191,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$HOME/Library/Application Support/Decentraland/Explorer"
           ACCOUNT="ci-visual-${GITHUB_RUN_ID}"
-          mf account create "$ACCOUNT" --env zone
+          mf account create "$ACCOUNT"
           mf account login "$ACCOUNT"
           echo "MF_ACCOUNT=${ACCOUNT}" >> "$GITHUB_ENV"
 
