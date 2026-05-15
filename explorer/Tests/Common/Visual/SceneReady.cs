@@ -53,7 +53,7 @@ public static class SceneReady
             {
                 if (IsReady())
                 {
-                    ViewContainer.Instance.LoadingScreen.WaitForGone();
+                    ViewContainer.Instance.LoadingScreen.WaitForGone(180);
                     Thread.Sleep(extraMsOnReady);
                     Reporter.Log($"Scene ready: {GetStatusJson()}");
                     return;
