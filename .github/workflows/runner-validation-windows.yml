@@ -605,6 +605,31 @@ jobs:
           $env:PATH = "$found;$env:PATH"
           mf --version
 
+      # MetaForge auto-attaches `--use-log-matrix <path>` to the Explorer launch
+      # command when log-matrix.json exists at the platform-specific store path
+      # (LogMatrixStore.GetStorePath). On Windows that's
+      # %LOCALAPPDATA%\Decentraland\MetaForge\log-matrix.json. The checked-in
+      # matrix at explorer/ci/log-matrix.json REPLACES (isOverride=true) the
+      # build's source-side ReportsHandlingSettingsProduction for the CI run,
+      # so we're independent of whatever the source matrix has enabled.
+      # Default is Log (full verbosity) for every category; only spammers
+      # observed in prior runs are demoted to Warning. New unity-explorer
+      # categories not listed here are silenced — keep this file in sync with
+      # DCL.Diagnostics.ReportCategory (default new entries to Log).
+      - name: Apply CI log matrix
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $src = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\log-matrix.json"
+          $dst = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\log-matrix.json"
+          if (-not (Test-Path $src)) { throw "CI log matrix source missing: $src" }
+          $dstDir = Split-Path -Parent $dst
+          if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
+          Copy-Item $src $dst -Force
+          Write-Host "Applied CI log matrix:"
+          Write-Host "  src: $src"
+          Write-Host "  dst: $dst"
+
       - name: Configure AltTester license
         shell: powershell
         env:
