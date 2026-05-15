@@ -1,111 +1,2005 @@
 {
   "_comment_purpose": "Explorer log matrix override for the CI test runs. Applied by the runner-validation-windows workflow (copied to %LOCALAPPDATA%\\Decentraland\\MetaForge\\log-matrix.json before mf explorer test). REPLACES the build's source-side matrix (ReportsHandlingSettingsProduction/Development) for the duration of the run.",
-  "_comment_semantics": "isOverride=true → this matrix is the sole source of truth for the CI run, independent of whatever the build's source-side matrix has enabled. severity is the MINIMUM level enabled per category (Log<Warning<Error<Exception<Assert). Categories NOT listed here are FULLY silenced (no Exception, no Assert). When adding a new category to unity-explorer DCL.Diagnostics.ReportCategory, add it here too — at Log by default — otherwise it will be invisible in the CI runs.",
-  "_comment_tiers": "Default is Log (full verbosity) for every category — this preserves Error/Exception/Assert visibility on top of the diagnostic Log+Warning stream. Spammers observed in prior runs are demoted: Warning skips the Log firehose; Error would also skip Warnings (not used today — no spammer was caught producing noisy Warnings in run 25917112690).",
+  "_comment_semantics": "isOverride=true -> this matrix is the sole source of truth for the CI run, independent of whatever the build's source-side matrix has enabled. EACH entry is one (category, severity) cell as enabled - matches the 2D inspector grid in unity-explorer (ReportsHandlingSettings asset). Categories NOT listed are FULLY silenced. When adding a new category to DCL.Diagnostics.ReportCategory, add 5 entries here (Log+Warning+Error+Exception+Assert) - or use `mf explorer log-matrix` interactively, which writes the same expanded form.",
+  "_comment_tiers": "Default: full 5-severity coverage (Log+Warning+Error+Exception+Assert) for every category in DCL.Diagnostics.ReportCategory. Spammers observed in prior runs are demoted by 1 step - their Log severity is dropped, leaving Warning+Error+Exception+Assert (4 entries). No spammer was caught producing noisy Warnings on run 25917112690, so none demoted to Error.",
   "isOverride": true,
   "debugLogMatrix": [
-    { "category": "ALWAYS",                       "severity": "Log" },
-    { "category": "ANIMATOR",                     "severity": "Log" },
-    { "category": "ASSETS_PROVISION",             "severity": "Log" },
-    { "category": "ASSET_BUNDLES",                "severity": "Log" },
-    { "category": "ASSET_PRE_LOAD",               "severity": "Log" },
-    { "category": "AUDIO_CLIP_WEB_REQUEST",       "severity": "Log" },
-    { "category": "AUTHENTICATION",               "severity": "Log" },
-    { "category": "AVATAR",                       "severity": "Log" },
-    { "category": "AVATAR_ATTACH",                "severity": "Log" },
-    { "category": "BACKPACK",                     "severity": "Log" },
-    { "category": "BADGES",                       "severity": "Log" },
-    { "category": "CAMERA_REEL",                  "severity": "Log" },
-    { "category": "CHARACTER_TRIGGER_AREA",       "severity": "Log" },
-    { "category": "CHAT_HISTORY",                 "severity": "Log" },
-    { "category": "CHAT_MESSAGES",                "severity": "Log" },
-    { "category": "CHROME_DEVTOOL_PROTOCOL",      "severity": "Log" },
-    { "category": "COMMS_API",                    "severity": "Log" },
-    { "category": "COMMS_CHAT_HANDLER",           "severity": "Log" },
-    { "category": "COMMS_SCENE_HANDLER",          "severity": "Log" },
-    { "category": "COMMUNITIES",                  "severity": "Log" },
-    { "category": "COMMUNITY_VOICE_CHAT",         "severity": "Log" },
-    { "category": "CRDT",                         "severity": "Log" },
-    { "category": "CRDT_ECS_BRIDGE",              "severity": "Log" },
-    { "category": "DEBUG",                        "severity": "Log" },
-    { "category": "DISK_CACHE",                   "severity": "Log" },
-    { "category": "DONATIONS",                    "severity": "Log" },
-    { "category": "ECS",                          "severity": "Log" },
-    { "category": "EMOTE",                        "severity": "Log" },
-    { "category": "ENGINE",                       "severity": "Log" },
-    { "category": "EVENTS",                       "severity": "Log" },
-    { "category": "FEATURE_FLAGS",                "severity": "Log" },
-    { "category": "FRIENDS",                      "severity": "Log" },
-    { "category": "GENERIC_WEB_REQUEST",          "severity": "Log" },
-    { "category": "GIFTING",                      "severity": "Log" },
-    { "category": "GLTF_CONTAINER",               "severity": "Log" },
-    { "category": "GPU_INSTANCING",               "severity": "Log" },
-    { "category": "HIGHLIGHTS",                   "severity": "Log" },
-    { "category": "INPUT",                        "severity": "Log" },
-    { "category": "IN_WORLD_CAMERA",              "severity": "Log" },
-    { "category": "JAVASCRIPT",                   "severity": "Log" },
-    { "category": "LANDSCAPE",                    "severity": "Log" },
-    { "category": "LIGHT_SOURCE",                 "severity": "Log" },
-    { "category": "LOD",                          "severity": "Log" },
-    { "category": "MARKETPLACE_CREDITS",          "severity": "Log" },
-    { "category": "MATERIALS",                    "severity": "Log" },
-    { "category": "MEDIA_STREAM",                 "severity": "Log" },
-    { "category": "MOTION",                       "severity": "Log" },
-    { "category": "MULTIPLAYER",                  "severity": "Log" },
-    { "category": "MVC",                          "severity": "Log" },
-    { "category": "MVC_STATE_MACHINE",            "severity": "Log" },
-    { "category": "NEARBY_VOICE_CHAT",            "severity": "Log" },
-    { "category": "NFT_INFO_WEB_REQUEST",         "severity": "Log" },
-    { "category": "NFT_SHAPE_WEB_REQUEST",        "severity": "Log" },
-    { "category": "OUTFITS",                      "severity": "Log" },
-    { "category": "PARTIAL_LOADING",              "severity": "Log" },
-    { "category": "PARTICLE_SYSTEM",              "severity": "Log" },
-    { "category": "PLACES",                       "severity": "Log" },
-    { "category": "PLAYER_SDK_DATA",              "severity": "Log" },
-    { "category": "PLUGINS",                      "severity": "Log" },
-    { "category": "PORTABLE_EXPERIENCE",          "severity": "Log" },
-    { "category": "PRIMITIVE_COLLIDERS",          "severity": "Log" },
-    { "category": "PRIMITIVE_MESHES",             "severity": "Log" },
-    { "category": "PRIORITIZATION",               "severity": "Log" },
-    { "category": "QUALITY",                      "severity": "Log" },
-    { "category": "REALM",                        "severity": "Log" },
-    { "category": "REALM_DATA_DIRTY_RESET_SYSTEM","severity": "Log" },
-    { "category": "RESTRICTED_ACTIONS",           "severity": "Log" },
-    { "category": "ROADS",                        "severity": "Log" },
-    { "category": "RUNTIME_DEEPLINKS",            "severity": "Log" },
-    { "category": "SCENE_ADMINS",                 "severity": "Log" },
-    { "category": "SCENE_FACTORY",                "severity": "Log" },
-    { "category": "SCENE_FETCH_REQUEST",          "severity": "Log" },
-    { "category": "SCENE_LOADING",                "severity": "Log" },
-    { "category": "SCENE_PERMISSIONS",            "severity": "Log" },
-    { "category": "SCENE_UI",                     "severity": "Log" },
-    { "category": "SDK_AUDIO_ANALYSIS",           "severity": "Log" },
-    { "category": "SDK_AUDIO_SOURCES",            "severity": "Log" },
-    { "category": "SDK_CAMERA",                   "severity": "Log" },
-    { "category": "SDK_LOCAL_SCENE_DEVELOPMENT",  "severity": "Log" },
-    { "category": "SDK_OBSERVABLES",              "severity": "Log" },
-    { "category": "SETTINGS_MENU",                "severity": "Log" },
-    { "category": "SKYBOX",                       "severity": "Log" },
-    { "category": "SOCIAL",                       "severity": "Log" },
-    { "category": "STARTUP",                      "severity": "Log" },
-    { "category": "STREAMABLE_LOADING",           "severity": "Log" },
-    { "category": "SYNC",                         "severity": "Log" },
-    { "category": "TEXTURES",                     "severity": "Log" },
-    { "category": "TEXTURE_WEB_REQUEST",          "severity": "Log" },
-    { "category": "THUMBNAILS",                   "severity": "Log" },
-    { "category": "TRANSLATE",                    "severity": "Log" },
-    { "category": "TWEEN",                        "severity": "Log" },
-    { "category": "UI",                           "severity": "Log" },
-    { "category": "VERSION_CONTROL",              "severity": "Log" },
-    { "category": "VOICE_CHAT",                   "severity": "Log" },
-    { "category": "WEARABLE",                     "severity": "Log" },
-
-    { "category": "ANALYTICS",            "severity": "Warning" },
-    { "category": "AUDIO",                "severity": "Warning" },
-    { "category": "LIVEKIT",              "severity": "Warning" },
-    { "category": "MULTIPLAYER_MOVEMENT", "severity": "Warning" },
-    { "category": "PROFILE",              "severity": "Warning" },
-    { "category": "UNSPECIFIED",          "severity": "Warning" }
+    {
+      "category": "ALWAYS",
+      "severity": "Log"
+    },
+    {
+      "category": "ALWAYS",
+      "severity": "Warning"
+    },
+    {
+      "category": "ALWAYS",
+      "severity": "Error"
+    },
+    {
+      "category": "ALWAYS",
+      "severity": "Exception"
+    },
+    {
+      "category": "ALWAYS",
+      "severity": "Assert"
+    },
+    {
+      "category": "ANIMATOR",
+      "severity": "Log"
+    },
+    {
+      "category": "ANIMATOR",
+      "severity": "Warning"
+    },
+    {
+      "category": "ANIMATOR",
+      "severity": "Error"
+    },
+    {
+      "category": "ANIMATOR",
+      "severity": "Exception"
+    },
+    {
+      "category": "ANIMATOR",
+      "severity": "Assert"
+    },
+    {
+      "category": "ASSETS_PROVISION",
+      "severity": "Log"
+    },
+    {
+      "category": "ASSETS_PROVISION",
+      "severity": "Warning"
+    },
+    {
+      "category": "ASSETS_PROVISION",
+      "severity": "Error"
+    },
+    {
+      "category": "ASSETS_PROVISION",
+      "severity": "Exception"
+    },
+    {
+      "category": "ASSETS_PROVISION",
+      "severity": "Assert"
+    },
+    {
+      "category": "ASSET_BUNDLES",
+      "severity": "Log"
+    },
+    {
+      "category": "ASSET_BUNDLES",
+      "severity": "Warning"
+    },
+    {
+      "category": "ASSET_BUNDLES",
+      "severity": "Error"
+    },
+    {
+      "category": "ASSET_BUNDLES",
+      "severity": "Exception"
+    },
+    {
+      "category": "ASSET_BUNDLES",
+      "severity": "Assert"
+    },
+    {
+      "category": "ASSET_PRE_LOAD",
+      "severity": "Log"
+    },
+    {
+      "category": "ASSET_PRE_LOAD",
+      "severity": "Warning"
+    },
+    {
+      "category": "ASSET_PRE_LOAD",
+      "severity": "Error"
+    },
+    {
+      "category": "ASSET_PRE_LOAD",
+      "severity": "Exception"
+    },
+    {
+      "category": "ASSET_PRE_LOAD",
+      "severity": "Assert"
+    },
+    {
+      "category": "AUDIO_CLIP_WEB_REQUEST",
+      "severity": "Log"
+    },
+    {
+      "category": "AUDIO_CLIP_WEB_REQUEST",
+      "severity": "Warning"
+    },
+    {
+      "category": "AUDIO_CLIP_WEB_REQUEST",
+      "severity": "Error"
+    },
+    {
+      "category": "AUDIO_CLIP_WEB_REQUEST",
+      "severity": "Exception"
+    },
+    {
+      "category": "AUDIO_CLIP_WEB_REQUEST",
+      "severity": "Assert"
+    },
+    {
+      "category": "AUTHENTICATION",
+      "severity": "Log"
+    },
+    {
+      "category": "AUTHENTICATION",
+      "severity": "Warning"
+    },
+    {
+      "category": "AUTHENTICATION",
+      "severity": "Error"
+    },
+    {
+      "category": "AUTHENTICATION",
+      "severity": "Exception"
+    },
+    {
+      "category": "AUTHENTICATION",
+      "severity": "Assert"
+    },
+    {
+      "category": "AVATAR",
+      "severity": "Log"
+    },
+    {
+      "category": "AVATAR",
+      "severity": "Warning"
+    },
+    {
+      "category": "AVATAR",
+      "severity": "Error"
+    },
+    {
+      "category": "AVATAR",
+      "severity": "Exception"
+    },
+    {
+      "category": "AVATAR",
+      "severity": "Assert"
+    },
+    {
+      "category": "AVATAR_ATTACH",
+      "severity": "Log"
+    },
+    {
+      "category": "AVATAR_ATTACH",
+      "severity": "Warning"
+    },
+    {
+      "category": "AVATAR_ATTACH",
+      "severity": "Error"
+    },
+    {
+      "category": "AVATAR_ATTACH",
+      "severity": "Exception"
+    },
+    {
+      "category": "AVATAR_ATTACH",
+      "severity": "Assert"
+    },
+    {
+      "category": "BACKPACK",
+      "severity": "Log"
+    },
+    {
+      "category": "BACKPACK",
+      "severity": "Warning"
+    },
+    {
+      "category": "BACKPACK",
+      "severity": "Error"
+    },
+    {
+      "category": "BACKPACK",
+      "severity": "Exception"
+    },
+    {
+      "category": "BACKPACK",
+      "severity": "Assert"
+    },
+    {
+      "category": "BADGES",
+      "severity": "Log"
+    },
+    {
+      "category": "BADGES",
+      "severity": "Warning"
+    },
+    {
+      "category": "BADGES",
+      "severity": "Error"
+    },
+    {
+      "category": "BADGES",
+      "severity": "Exception"
+    },
+    {
+      "category": "BADGES",
+      "severity": "Assert"
+    },
+    {
+      "category": "CAMERA_REEL",
+      "severity": "Log"
+    },
+    {
+      "category": "CAMERA_REEL",
+      "severity": "Warning"
+    },
+    {
+      "category": "CAMERA_REEL",
+      "severity": "Error"
+    },
+    {
+      "category": "CAMERA_REEL",
+      "severity": "Exception"
+    },
+    {
+      "category": "CAMERA_REEL",
+      "severity": "Assert"
+    },
+    {
+      "category": "CHARACTER_TRIGGER_AREA",
+      "severity": "Log"
+    },
+    {
+      "category": "CHARACTER_TRIGGER_AREA",
+      "severity": "Warning"
+    },
+    {
+      "category": "CHARACTER_TRIGGER_AREA",
+      "severity": "Error"
+    },
+    {
+      "category": "CHARACTER_TRIGGER_AREA",
+      "severity": "Exception"
+    },
+    {
+      "category": "CHARACTER_TRIGGER_AREA",
+      "severity": "Assert"
+    },
+    {
+      "category": "CHAT_HISTORY",
+      "severity": "Log"
+    },
+    {
+      "category": "CHAT_HISTORY",
+      "severity": "Warning"
+    },
+    {
+      "category": "CHAT_HISTORY",
+      "severity": "Error"
+    },
+    {
+      "category": "CHAT_HISTORY",
+      "severity": "Exception"
+    },
+    {
+      "category": "CHAT_HISTORY",
+      "severity": "Assert"
+    },
+    {
+      "category": "CHAT_MESSAGES",
+      "severity": "Log"
+    },
+    {
+      "category": "CHAT_MESSAGES",
+      "severity": "Warning"
+    },
+    {
+      "category": "CHAT_MESSAGES",
+      "severity": "Error"
+    },
+    {
+      "category": "CHAT_MESSAGES",
+      "severity": "Exception"
+    },
+    {
+      "category": "CHAT_MESSAGES",
+      "severity": "Assert"
+    },
+    {
+      "category": "CHROME_DEVTOOL_PROTOCOL",
+      "severity": "Log"
+    },
+    {
+      "category": "CHROME_DEVTOOL_PROTOCOL",
+      "severity": "Warning"
+    },
+    {
+      "category": "CHROME_DEVTOOL_PROTOCOL",
+      "severity": "Error"
+    },
+    {
+      "category": "CHROME_DEVTOOL_PROTOCOL",
+      "severity": "Exception"
+    },
+    {
+      "category": "CHROME_DEVTOOL_PROTOCOL",
+      "severity": "Assert"
+    },
+    {
+      "category": "COMMS_API",
+      "severity": "Log"
+    },
+    {
+      "category": "COMMS_API",
+      "severity": "Warning"
+    },
+    {
+      "category": "COMMS_API",
+      "severity": "Error"
+    },
+    {
+      "category": "COMMS_API",
+      "severity": "Exception"
+    },
+    {
+      "category": "COMMS_API",
+      "severity": "Assert"
+    },
+    {
+      "category": "COMMS_CHAT_HANDLER",
+      "severity": "Log"
+    },
+    {
+      "category": "COMMS_CHAT_HANDLER",
+      "severity": "Warning"
+    },
+    {
+      "category": "COMMS_CHAT_HANDLER",
+      "severity": "Error"
+    },
+    {
+      "category": "COMMS_CHAT_HANDLER",
+      "severity": "Exception"
+    },
+    {
+      "category": "COMMS_CHAT_HANDLER",
+      "severity": "Assert"
+    },
+    {
+      "category": "COMMS_SCENE_HANDLER",
+      "severity": "Log"
+    },
+    {
+      "category": "COMMS_SCENE_HANDLER",
+      "severity": "Warning"
+    },
+    {
+      "category": "COMMS_SCENE_HANDLER",
+      "severity": "Error"
+    },
+    {
+      "category": "COMMS_SCENE_HANDLER",
+      "severity": "Exception"
+    },
+    {
+      "category": "COMMS_SCENE_HANDLER",
+      "severity": "Assert"
+    },
+    {
+      "category": "COMMUNITIES",
+      "severity": "Log"
+    },
+    {
+      "category": "COMMUNITIES",
+      "severity": "Warning"
+    },
+    {
+      "category": "COMMUNITIES",
+      "severity": "Error"
+    },
+    {
+      "category": "COMMUNITIES",
+      "severity": "Exception"
+    },
+    {
+      "category": "COMMUNITIES",
+      "severity": "Assert"
+    },
+    {
+      "category": "COMMUNITY_VOICE_CHAT",
+      "severity": "Log"
+    },
+    {
+      "category": "COMMUNITY_VOICE_CHAT",
+      "severity": "Warning"
+    },
+    {
+      "category": "COMMUNITY_VOICE_CHAT",
+      "severity": "Error"
+    },
+    {
+      "category": "COMMUNITY_VOICE_CHAT",
+      "severity": "Exception"
+    },
+    {
+      "category": "COMMUNITY_VOICE_CHAT",
+      "severity": "Assert"
+    },
+    {
+      "category": "CRDT",
+      "severity": "Log"
+    },
+    {
+      "category": "CRDT",
+      "severity": "Warning"
+    },
+    {
+      "category": "CRDT",
+      "severity": "Error"
+    },
+    {
+      "category": "CRDT",
+      "severity": "Exception"
+    },
+    {
+      "category": "CRDT",
+      "severity": "Assert"
+    },
+    {
+      "category": "CRDT_ECS_BRIDGE",
+      "severity": "Log"
+    },
+    {
+      "category": "CRDT_ECS_BRIDGE",
+      "severity": "Warning"
+    },
+    {
+      "category": "CRDT_ECS_BRIDGE",
+      "severity": "Error"
+    },
+    {
+      "category": "CRDT_ECS_BRIDGE",
+      "severity": "Exception"
+    },
+    {
+      "category": "CRDT_ECS_BRIDGE",
+      "severity": "Assert"
+    },
+    {
+      "category": "DEBUG",
+      "severity": "Log"
+    },
+    {
+      "category": "DEBUG",
+      "severity": "Warning"
+    },
+    {
+      "category": "DEBUG",
+      "severity": "Error"
+    },
+    {
+      "category": "DEBUG",
+      "severity": "Exception"
+    },
+    {
+      "category": "DEBUG",
+      "severity": "Assert"
+    },
+    {
+      "category": "DISK_CACHE",
+      "severity": "Log"
+    },
+    {
+      "category": "DISK_CACHE",
+      "severity": "Warning"
+    },
+    {
+      "category": "DISK_CACHE",
+      "severity": "Error"
+    },
+    {
+      "category": "DISK_CACHE",
+      "severity": "Exception"
+    },
+    {
+      "category": "DISK_CACHE",
+      "severity": "Assert"
+    },
+    {
+      "category": "DONATIONS",
+      "severity": "Log"
+    },
+    {
+      "category": "DONATIONS",
+      "severity": "Warning"
+    },
+    {
+      "category": "DONATIONS",
+      "severity": "Error"
+    },
+    {
+      "category": "DONATIONS",
+      "severity": "Exception"
+    },
+    {
+      "category": "DONATIONS",
+      "severity": "Assert"
+    },
+    {
+      "category": "ECS",
+      "severity": "Log"
+    },
+    {
+      "category": "ECS",
+      "severity": "Warning"
+    },
+    {
+      "category": "ECS",
+      "severity": "Error"
+    },
+    {
+      "category": "ECS",
+      "severity": "Exception"
+    },
+    {
+      "category": "ECS",
+      "severity": "Assert"
+    },
+    {
+      "category": "EMOTE",
+      "severity": "Log"
+    },
+    {
+      "category": "EMOTE",
+      "severity": "Warning"
+    },
+    {
+      "category": "EMOTE",
+      "severity": "Error"
+    },
+    {
+      "category": "EMOTE",
+      "severity": "Exception"
+    },
+    {
+      "category": "EMOTE",
+      "severity": "Assert"
+    },
+    {
+      "category": "ENGINE",
+      "severity": "Log"
+    },
+    {
+      "category": "ENGINE",
+      "severity": "Warning"
+    },
+    {
+      "category": "ENGINE",
+      "severity": "Error"
+    },
+    {
+      "category": "ENGINE",
+      "severity": "Exception"
+    },
+    {
+      "category": "ENGINE",
+      "severity": "Assert"
+    },
+    {
+      "category": "EVENTS",
+      "severity": "Log"
+    },
+    {
+      "category": "EVENTS",
+      "severity": "Warning"
+    },
+    {
+      "category": "EVENTS",
+      "severity": "Error"
+    },
+    {
+      "category": "EVENTS",
+      "severity": "Exception"
+    },
+    {
+      "category": "EVENTS",
+      "severity": "Assert"
+    },
+    {
+      "category": "FEATURE_FLAGS",
+      "severity": "Log"
+    },
+    {
+      "category": "FEATURE_FLAGS",
+      "severity": "Warning"
+    },
+    {
+      "category": "FEATURE_FLAGS",
+      "severity": "Error"
+    },
+    {
+      "category": "FEATURE_FLAGS",
+      "severity": "Exception"
+    },
+    {
+      "category": "FEATURE_FLAGS",
+      "severity": "Assert"
+    },
+    {
+      "category": "FRIENDS",
+      "severity": "Log"
+    },
+    {
+      "category": "FRIENDS",
+      "severity": "Warning"
+    },
+    {
+      "category": "FRIENDS",
+      "severity": "Error"
+    },
+    {
+      "category": "FRIENDS",
+      "severity": "Exception"
+    },
+    {
+      "category": "FRIENDS",
+      "severity": "Assert"
+    },
+    {
+      "category": "GENERIC_WEB_REQUEST",
+      "severity": "Log"
+    },
+    {
+      "category": "GENERIC_WEB_REQUEST",
+      "severity": "Warning"
+    },
+    {
+      "category": "GENERIC_WEB_REQUEST",
+      "severity": "Error"
+    },
+    {
+      "category": "GENERIC_WEB_REQUEST",
+      "severity": "Exception"
+    },
+    {
+      "category": "GENERIC_WEB_REQUEST",
+      "severity": "Assert"
+    },
+    {
+      "category": "GIFTING",
+      "severity": "Log"
+    },
+    {
+      "category": "GIFTING",
+      "severity": "Warning"
+    },
+    {
+      "category": "GIFTING",
+      "severity": "Error"
+    },
+    {
+      "category": "GIFTING",
+      "severity": "Exception"
+    },
+    {
+      "category": "GIFTING",
+      "severity": "Assert"
+    },
+    {
+      "category": "GLTF_CONTAINER",
+      "severity": "Log"
+    },
+    {
+      "category": "GLTF_CONTAINER",
+      "severity": "Warning"
+    },
+    {
+      "category": "GLTF_CONTAINER",
+      "severity": "Error"
+    },
+    {
+      "category": "GLTF_CONTAINER",
+      "severity": "Exception"
+    },
+    {
+      "category": "GLTF_CONTAINER",
+      "severity": "Assert"
+    },
+    {
+      "category": "GPU_INSTANCING",
+      "severity": "Log"
+    },
+    {
+      "category": "GPU_INSTANCING",
+      "severity": "Warning"
+    },
+    {
+      "category": "GPU_INSTANCING",
+      "severity": "Error"
+    },
+    {
+      "category": "GPU_INSTANCING",
+      "severity": "Exception"
+    },
+    {
+      "category": "GPU_INSTANCING",
+      "severity": "Assert"
+    },
+    {
+      "category": "HIGHLIGHTS",
+      "severity": "Log"
+    },
+    {
+      "category": "HIGHLIGHTS",
+      "severity": "Warning"
+    },
+    {
+      "category": "HIGHLIGHTS",
+      "severity": "Error"
+    },
+    {
+      "category": "HIGHLIGHTS",
+      "severity": "Exception"
+    },
+    {
+      "category": "HIGHLIGHTS",
+      "severity": "Assert"
+    },
+    {
+      "category": "INPUT",
+      "severity": "Log"
+    },
+    {
+      "category": "INPUT",
+      "severity": "Warning"
+    },
+    {
+      "category": "INPUT",
+      "severity": "Error"
+    },
+    {
+      "category": "INPUT",
+      "severity": "Exception"
+    },
+    {
+      "category": "INPUT",
+      "severity": "Assert"
+    },
+    {
+      "category": "IN_WORLD_CAMERA",
+      "severity": "Log"
+    },
+    {
+      "category": "IN_WORLD_CAMERA",
+      "severity": "Warning"
+    },
+    {
+      "category": "IN_WORLD_CAMERA",
+      "severity": "Error"
+    },
+    {
+      "category": "IN_WORLD_CAMERA",
+      "severity": "Exception"
+    },
+    {
+      "category": "IN_WORLD_CAMERA",
+      "severity": "Assert"
+    },
+    {
+      "category": "JAVASCRIPT",
+      "severity": "Log"
+    },
+    {
+      "category": "JAVASCRIPT",
+      "severity": "Warning"
+    },
+    {
+      "category": "JAVASCRIPT",
+      "severity": "Error"
+    },
+    {
+      "category": "JAVASCRIPT",
+      "severity": "Exception"
+    },
+    {
+      "category": "JAVASCRIPT",
+      "severity": "Assert"
+    },
+    {
+      "category": "LANDSCAPE",
+      "severity": "Log"
+    },
+    {
+      "category": "LANDSCAPE",
+      "severity": "Warning"
+    },
+    {
+      "category": "LANDSCAPE",
+      "severity": "Error"
+    },
+    {
+      "category": "LANDSCAPE",
+      "severity": "Exception"
+    },
+    {
+      "category": "LANDSCAPE",
+      "severity": "Assert"
+    },
+    {
+      "category": "LIGHT_SOURCE",
+      "severity": "Log"
+    },
+    {
+      "category": "LIGHT_SOURCE",
+      "severity": "Warning"
+    },
+    {
+      "category": "LIGHT_SOURCE",
+      "severity": "Error"
+    },
+    {
+      "category": "LIGHT_SOURCE",
+      "severity": "Exception"
+    },
+    {
+      "category": "LIGHT_SOURCE",
+      "severity": "Assert"
+    },
+    {
+      "category": "LOD",
+      "severity": "Log"
+    },
+    {
+      "category": "LOD",
+      "severity": "Warning"
+    },
+    {
+      "category": "LOD",
+      "severity": "Error"
+    },
+    {
+      "category": "LOD",
+      "severity": "Exception"
+    },
+    {
+      "category": "LOD",
+      "severity": "Assert"
+    },
+    {
+      "category": "MARKETPLACE_CREDITS",
+      "severity": "Log"
+    },
+    {
+      "category": "MARKETPLACE_CREDITS",
+      "severity": "Warning"
+    },
+    {
+      "category": "MARKETPLACE_CREDITS",
+      "severity": "Error"
+    },
+    {
+      "category": "MARKETPLACE_CREDITS",
+      "severity": "Exception"
+    },
+    {
+      "category": "MARKETPLACE_CREDITS",
+      "severity": "Assert"
+    },
+    {
+      "category": "MATERIALS",
+      "severity": "Log"
+    },
+    {
+      "category": "MATERIALS",
+      "severity": "Warning"
+    },
+    {
+      "category": "MATERIALS",
+      "severity": "Error"
+    },
+    {
+      "category": "MATERIALS",
+      "severity": "Exception"
+    },
+    {
+      "category": "MATERIALS",
+      "severity": "Assert"
+    },
+    {
+      "category": "MEDIA_STREAM",
+      "severity": "Log"
+    },
+    {
+      "category": "MEDIA_STREAM",
+      "severity": "Warning"
+    },
+    {
+      "category": "MEDIA_STREAM",
+      "severity": "Error"
+    },
+    {
+      "category": "MEDIA_STREAM",
+      "severity": "Exception"
+    },
+    {
+      "category": "MEDIA_STREAM",
+      "severity": "Assert"
+    },
+    {
+      "category": "MOTION",
+      "severity": "Log"
+    },
+    {
+      "category": "MOTION",
+      "severity": "Warning"
+    },
+    {
+      "category": "MOTION",
+      "severity": "Error"
+    },
+    {
+      "category": "MOTION",
+      "severity": "Exception"
+    },
+    {
+      "category": "MOTION",
+      "severity": "Assert"
+    },
+    {
+      "category": "MULTIPLAYER",
+      "severity": "Log"
+    },
+    {
+      "category": "MULTIPLAYER",
+      "severity": "Warning"
+    },
+    {
+      "category": "MULTIPLAYER",
+      "severity": "Error"
+    },
+    {
+      "category": "MULTIPLAYER",
+      "severity": "Exception"
+    },
+    {
+      "category": "MULTIPLAYER",
+      "severity": "Assert"
+    },
+    {
+      "category": "MVC",
+      "severity": "Log"
+    },
+    {
+      "category": "MVC",
+      "severity": "Warning"
+    },
+    {
+      "category": "MVC",
+      "severity": "Error"
+    },
+    {
+      "category": "MVC",
+      "severity": "Exception"
+    },
+    {
+      "category": "MVC",
+      "severity": "Assert"
+    },
+    {
+      "category": "MVC_STATE_MACHINE",
+      "severity": "Log"
+    },
+    {
+      "category": "MVC_STATE_MACHINE",
+      "severity": "Warning"
+    },
+    {
+      "category": "MVC_STATE_MACHINE",
+      "severity": "Error"
+    },
+    {
+      "category": "MVC_STATE_MACHINE",
+      "severity": "Exception"
+    },
+    {
+      "category": "MVC_STATE_MACHINE",
+      "severity": "Assert"
+    },
+    {
+      "category": "NEARBY_VOICE_CHAT",
+      "severity": "Log"
+    },
+    {
+      "category": "NEARBY_VOICE_CHAT",
+      "severity": "Warning"
+    },
+    {
+      "category": "NEARBY_VOICE_CHAT",
+      "severity": "Error"
+    },
+    {
+      "category": "NEARBY_VOICE_CHAT",
+      "severity": "Exception"
+    },
+    {
+      "category": "NEARBY_VOICE_CHAT",
+      "severity": "Assert"
+    },
+    {
+      "category": "NFT_INFO_WEB_REQUEST",
+      "severity": "Log"
+    },
+    {
+      "category": "NFT_INFO_WEB_REQUEST",
+      "severity": "Warning"
+    },
+    {
+      "category": "NFT_INFO_WEB_REQUEST",
+      "severity": "Error"
+    },
+    {
+      "category": "NFT_INFO_WEB_REQUEST",
+      "severity": "Exception"
+    },
+    {
+      "category": "NFT_INFO_WEB_REQUEST",
+      "severity": "Assert"
+    },
+    {
+      "category": "NFT_SHAPE_WEB_REQUEST",
+      "severity": "Log"
+    },
+    {
+      "category": "NFT_SHAPE_WEB_REQUEST",
+      "severity": "Warning"
+    },
+    {
+      "category": "NFT_SHAPE_WEB_REQUEST",
+      "severity": "Error"
+    },
+    {
+      "category": "NFT_SHAPE_WEB_REQUEST",
+      "severity": "Exception"
+    },
+    {
+      "category": "NFT_SHAPE_WEB_REQUEST",
+      "severity": "Assert"
+    },
+    {
+      "category": "OUTFITS",
+      "severity": "Log"
+    },
+    {
+      "category": "OUTFITS",
+      "severity": "Warning"
+    },
+    {
+      "category": "OUTFITS",
+      "severity": "Error"
+    },
+    {
+      "category": "OUTFITS",
+      "severity": "Exception"
+    },
+    {
+      "category": "OUTFITS",
+      "severity": "Assert"
+    },
+    {
+      "category": "PARTIAL_LOADING",
+      "severity": "Log"
+    },
+    {
+      "category": "PARTIAL_LOADING",
+      "severity": "Warning"
+    },
+    {
+      "category": "PARTIAL_LOADING",
+      "severity": "Error"
+    },
+    {
+      "category": "PARTIAL_LOADING",
+      "severity": "Exception"
+    },
+    {
+      "category": "PARTIAL_LOADING",
+      "severity": "Assert"
+    },
+    {
+      "category": "PARTICLE_SYSTEM",
+      "severity": "Log"
+    },
+    {
+      "category": "PARTICLE_SYSTEM",
+      "severity": "Warning"
+    },
+    {
+      "category": "PARTICLE_SYSTEM",
+      "severity": "Error"
+    },
+    {
+      "category": "PARTICLE_SYSTEM",
+      "severity": "Exception"
+    },
+    {
+      "category": "PARTICLE_SYSTEM",
+      "severity": "Assert"
+    },
+    {
+      "category": "PLACES",
+      "severity": "Log"
+    },
+    {
+      "category": "PLACES",
+      "severity": "Warning"
+    },
+    {
+      "category": "PLACES",
+      "severity": "Error"
+    },
+    {
+      "category": "PLACES",
+      "severity": "Exception"
+    },
+    {
+      "category": "PLACES",
+      "severity": "Assert"
+    },
+    {
+      "category": "PLAYER_SDK_DATA",
+      "severity": "Log"
+    },
+    {
+      "category": "PLAYER_SDK_DATA",
+      "severity": "Warning"
+    },
+    {
+      "category": "PLAYER_SDK_DATA",
+      "severity": "Error"
+    },
+    {
+      "category": "PLAYER_SDK_DATA",
+      "severity": "Exception"
+    },
+    {
+      "category": "PLAYER_SDK_DATA",
+      "severity": "Assert"
+    },
+    {
+      "category": "PLUGINS",
+      "severity": "Log"
+    },
+    {
+      "category": "PLUGINS",
+      "severity": "Warning"
+    },
+    {
+      "category": "PLUGINS",
+      "severity": "Error"
+    },
+    {
+      "category": "PLUGINS",
+      "severity": "Exception"
+    },
+    {
+      "category": "PLUGINS",
+      "severity": "Assert"
+    },
+    {
+      "category": "PORTABLE_EXPERIENCE",
+      "severity": "Log"
+    },
+    {
+      "category": "PORTABLE_EXPERIENCE",
+      "severity": "Warning"
+    },
+    {
+      "category": "PORTABLE_EXPERIENCE",
+      "severity": "Error"
+    },
+    {
+      "category": "PORTABLE_EXPERIENCE",
+      "severity": "Exception"
+    },
+    {
+      "category": "PORTABLE_EXPERIENCE",
+      "severity": "Assert"
+    },
+    {
+      "category": "PRIMITIVE_COLLIDERS",
+      "severity": "Log"
+    },
+    {
+      "category": "PRIMITIVE_COLLIDERS",
+      "severity": "Warning"
+    },
+    {
+      "category": "PRIMITIVE_COLLIDERS",
+      "severity": "Error"
+    },
+    {
+      "category": "PRIMITIVE_COLLIDERS",
+      "severity": "Exception"
+    },
+    {
+      "category": "PRIMITIVE_COLLIDERS",
+      "severity": "Assert"
+    },
+    {
+      "category": "PRIMITIVE_MESHES",
+      "severity": "Log"
+    },
+    {
+      "category": "PRIMITIVE_MESHES",
+      "severity": "Warning"
+    },
+    {
+      "category": "PRIMITIVE_MESHES",
+      "severity": "Error"
+    },
+    {
+      "category": "PRIMITIVE_MESHES",
+      "severity": "Exception"
+    },
+    {
+      "category": "PRIMITIVE_MESHES",
+      "severity": "Assert"
+    },
+    {
+      "category": "PRIORITIZATION",
+      "severity": "Log"
+    },
+    {
+      "category": "PRIORITIZATION",
+      "severity": "Warning"
+    },
+    {
+      "category": "PRIORITIZATION",
+      "severity": "Error"
+    },
+    {
+      "category": "PRIORITIZATION",
+      "severity": "Exception"
+    },
+    {
+      "category": "PRIORITIZATION",
+      "severity": "Assert"
+    },
+    {
+      "category": "QUALITY",
+      "severity": "Log"
+    },
+    {
+      "category": "QUALITY",
+      "severity": "Warning"
+    },
+    {
+      "category": "QUALITY",
+      "severity": "Error"
+    },
+    {
+      "category": "QUALITY",
+      "severity": "Exception"
+    },
+    {
+      "category": "QUALITY",
+      "severity": "Assert"
+    },
+    {
+      "category": "REALM",
+      "severity": "Log"
+    },
+    {
+      "category": "REALM",
+      "severity": "Warning"
+    },
+    {
+      "category": "REALM",
+      "severity": "Error"
+    },
+    {
+      "category": "REALM",
+      "severity": "Exception"
+    },
+    {
+      "category": "REALM",
+      "severity": "Assert"
+    },
+    {
+      "category": "REALM_DATA_DIRTY_RESET_SYSTEM",
+      "severity": "Log"
+    },
+    {
+      "category": "REALM_DATA_DIRTY_RESET_SYSTEM",
+      "severity": "Warning"
+    },
+    {
+      "category": "REALM_DATA_DIRTY_RESET_SYSTEM",
+      "severity": "Error"
+    },
+    {
+      "category": "REALM_DATA_DIRTY_RESET_SYSTEM",
+      "severity": "Exception"
+    },
+    {
+      "category": "REALM_DATA_DIRTY_RESET_SYSTEM",
+      "severity": "Assert"
+    },
+    {
+      "category": "RESTRICTED_ACTIONS",
+      "severity": "Log"
+    },
+    {
+      "category": "RESTRICTED_ACTIONS",
+      "severity": "Warning"
+    },
+    {
+      "category": "RESTRICTED_ACTIONS",
+      "severity": "Error"
+    },
+    {
+      "category": "RESTRICTED_ACTIONS",
+      "severity": "Exception"
+    },
+    {
+      "category": "RESTRICTED_ACTIONS",
+      "severity": "Assert"
+    },
+    {
+      "category": "ROADS",
+      "severity": "Log"
+    },
+    {
+      "category": "ROADS",
+      "severity": "Warning"
+    },
+    {
+      "category": "ROADS",
+      "severity": "Error"
+    },
+    {
+      "category": "ROADS",
+      "severity": "Exception"
+    },
+    {
+      "category": "ROADS",
+      "severity": "Assert"
+    },
+    {
+      "category": "RUNTIME_DEEPLINKS",
+      "severity": "Log"
+    },
+    {
+      "category": "RUNTIME_DEEPLINKS",
+      "severity": "Warning"
+    },
+    {
+      "category": "RUNTIME_DEEPLINKS",
+      "severity": "Error"
+    },
+    {
+      "category": "RUNTIME_DEEPLINKS",
+      "severity": "Exception"
+    },
+    {
+      "category": "RUNTIME_DEEPLINKS",
+      "severity": "Assert"
+    },
+    {
+      "category": "SCENE_ADMINS",
+      "severity": "Log"
+    },
+    {
+      "category": "SCENE_ADMINS",
+      "severity": "Warning"
+    },
+    {
+      "category": "SCENE_ADMINS",
+      "severity": "Error"
+    },
+    {
+      "category": "SCENE_ADMINS",
+      "severity": "Exception"
+    },
+    {
+      "category": "SCENE_ADMINS",
+      "severity": "Assert"
+    },
+    {
+      "category": "SCENE_FACTORY",
+      "severity": "Log"
+    },
+    {
+      "category": "SCENE_FACTORY",
+      "severity": "Warning"
+    },
+    {
+      "category": "SCENE_FACTORY",
+      "severity": "Error"
+    },
+    {
+      "category": "SCENE_FACTORY",
+      "severity": "Exception"
+    },
+    {
+      "category": "SCENE_FACTORY",
+      "severity": "Assert"
+    },
+    {
+      "category": "SCENE_FETCH_REQUEST",
+      "severity": "Log"
+    },
+    {
+      "category": "SCENE_FETCH_REQUEST",
+      "severity": "Warning"
+    },
+    {
+      "category": "SCENE_FETCH_REQUEST",
+      "severity": "Error"
+    },
+    {
+      "category": "SCENE_FETCH_REQUEST",
+      "severity": "Exception"
+    },
+    {
+      "category": "SCENE_FETCH_REQUEST",
+      "severity": "Assert"
+    },
+    {
+      "category": "SCENE_LOADING",
+      "severity": "Log"
+    },
+    {
+      "category": "SCENE_LOADING",
+      "severity": "Warning"
+    },
+    {
+      "category": "SCENE_LOADING",
+      "severity": "Error"
+    },
+    {
+      "category": "SCENE_LOADING",
+      "severity": "Exception"
+    },
+    {
+      "category": "SCENE_LOADING",
+      "severity": "Assert"
+    },
+    {
+      "category": "SCENE_PERMISSIONS",
+      "severity": "Log"
+    },
+    {
+      "category": "SCENE_PERMISSIONS",
+      "severity": "Warning"
+    },
+    {
+      "category": "SCENE_PERMISSIONS",
+      "severity": "Error"
+    },
+    {
+      "category": "SCENE_PERMISSIONS",
+      "severity": "Exception"
+    },
+    {
+      "category": "SCENE_PERMISSIONS",
+      "severity": "Assert"
+    },
+    {
+      "category": "SCENE_UI",
+      "severity": "Log"
+    },
+    {
+      "category": "SCENE_UI",
+      "severity": "Warning"
+    },
+    {
+      "category": "SCENE_UI",
+      "severity": "Error"
+    },
+    {
+      "category": "SCENE_UI",
+      "severity": "Exception"
+    },
+    {
+      "category": "SCENE_UI",
+      "severity": "Assert"
+    },
+    {
+      "category": "SDK_AUDIO_ANALYSIS",
+      "severity": "Log"
+    },
+    {
+      "category": "SDK_AUDIO_ANALYSIS",
+      "severity": "Warning"
+    },
+    {
+      "category": "SDK_AUDIO_ANALYSIS",
+      "severity": "Error"
+    },
+    {
+      "category": "SDK_AUDIO_ANALYSIS",
+      "severity": "Exception"
+    },
+    {
+      "category": "SDK_AUDIO_ANALYSIS",
+      "severity": "Assert"
+    },
+    {
+      "category": "SDK_AUDIO_SOURCES",
+      "severity": "Log"
+    },
+    {
+      "category": "SDK_AUDIO_SOURCES",
+      "severity": "Warning"
+    },
+    {
+      "category": "SDK_AUDIO_SOURCES",
+      "severity": "Error"
+    },
+    {
+      "category": "SDK_AUDIO_SOURCES",
+      "severity": "Exception"
+    },
+    {
+      "category": "SDK_AUDIO_SOURCES",
+      "severity": "Assert"
+    },
+    {
+      "category": "SDK_CAMERA",
+      "severity": "Log"
+    },
+    {
+      "category": "SDK_CAMERA",
+      "severity": "Warning"
+    },
+    {
+      "category": "SDK_CAMERA",
+      "severity": "Error"
+    },
+    {
+      "category": "SDK_CAMERA",
+      "severity": "Exception"
+    },
+    {
+      "category": "SDK_CAMERA",
+      "severity": "Assert"
+    },
+    {
+      "category": "SDK_LOCAL_SCENE_DEVELOPMENT",
+      "severity": "Log"
+    },
+    {
+      "category": "SDK_LOCAL_SCENE_DEVELOPMENT",
+      "severity": "Warning"
+    },
+    {
+      "category": "SDK_LOCAL_SCENE_DEVELOPMENT",
+      "severity": "Error"
+    },
+    {
+      "category": "SDK_LOCAL_SCENE_DEVELOPMENT",
+      "severity": "Exception"
+    },
+    {
+      "category": "SDK_LOCAL_SCENE_DEVELOPMENT",
+      "severity": "Assert"
+    },
+    {
+      "category": "SDK_OBSERVABLES",
+      "severity": "Log"
+    },
+    {
+      "category": "SDK_OBSERVABLES",
+      "severity": "Warning"
+    },
+    {
+      "category": "SDK_OBSERVABLES",
+      "severity": "Error"
+    },
+    {
+      "category": "SDK_OBSERVABLES",
+      "severity": "Exception"
+    },
+    {
+      "category": "SDK_OBSERVABLES",
+      "severity": "Assert"
+    },
+    {
+      "category": "SETTINGS_MENU",
+      "severity": "Log"
+    },
+    {
+      "category": "SETTINGS_MENU",
+      "severity": "Warning"
+    },
+    {
+      "category": "SETTINGS_MENU",
+      "severity": "Error"
+    },
+    {
+      "category": "SETTINGS_MENU",
+      "severity": "Exception"
+    },
+    {
+      "category": "SETTINGS_MENU",
+      "severity": "Assert"
+    },
+    {
+      "category": "SKYBOX",
+      "severity": "Log"
+    },
+    {
+      "category": "SKYBOX",
+      "severity": "Warning"
+    },
+    {
+      "category": "SKYBOX",
+      "severity": "Error"
+    },
+    {
+      "category": "SKYBOX",
+      "severity": "Exception"
+    },
+    {
+      "category": "SKYBOX",
+      "severity": "Assert"
+    },
+    {
+      "category": "SOCIAL",
+      "severity": "Log"
+    },
+    {
+      "category": "SOCIAL",
+      "severity": "Warning"
+    },
+    {
+      "category": "SOCIAL",
+      "severity": "Error"
+    },
+    {
+      "category": "SOCIAL",
+      "severity": "Exception"
+    },
+    {
+      "category": "SOCIAL",
+      "severity": "Assert"
+    },
+    {
+      "category": "STARTUP",
+      "severity": "Log"
+    },
+    {
+      "category": "STARTUP",
+      "severity": "Warning"
+    },
+    {
+      "category": "STARTUP",
+      "severity": "Error"
+    },
+    {
+      "category": "STARTUP",
+      "severity": "Exception"
+    },
+    {
+      "category": "STARTUP",
+      "severity": "Assert"
+    },
+    {
+      "category": "STREAMABLE_LOADING",
+      "severity": "Log"
+    },
+    {
+      "category": "STREAMABLE_LOADING",
+      "severity": "Warning"
+    },
+    {
+      "category": "STREAMABLE_LOADING",
+      "severity": "Error"
+    },
+    {
+      "category": "STREAMABLE_LOADING",
+      "severity": "Exception"
+    },
+    {
+      "category": "STREAMABLE_LOADING",
+      "severity": "Assert"
+    },
+    {
+      "category": "SYNC",
+      "severity": "Log"
+    },
+    {
+      "category": "SYNC",
+      "severity": "Warning"
+    },
+    {
+      "category": "SYNC",
+      "severity": "Error"
+    },
+    {
+      "category": "SYNC",
+      "severity": "Exception"
+    },
+    {
+      "category": "SYNC",
+      "severity": "Assert"
+    },
+    {
+      "category": "TEXTURES",
+      "severity": "Log"
+    },
+    {
+      "category": "TEXTURES",
+      "severity": "Warning"
+    },
+    {
+      "category": "TEXTURES",
+      "severity": "Error"
+    },
+    {
+      "category": "TEXTURES",
+      "severity": "Exception"
+    },
+    {
+      "category": "TEXTURES",
+      "severity": "Assert"
+    },
+    {
+      "category": "TEXTURE_WEB_REQUEST",
+      "severity": "Log"
+    },
+    {
+      "category": "TEXTURE_WEB_REQUEST",
+      "severity": "Warning"
+    },
+    {
+      "category": "TEXTURE_WEB_REQUEST",
+      "severity": "Error"
+    },
+    {
+      "category": "TEXTURE_WEB_REQUEST",
+      "severity": "Exception"
+    },
+    {
+      "category": "TEXTURE_WEB_REQUEST",
+      "severity": "Assert"
+    },
+    {
+      "category": "THUMBNAILS",
+      "severity": "Log"
+    },
+    {
+      "category": "THUMBNAILS",
+      "severity": "Warning"
+    },
+    {
+      "category": "THUMBNAILS",
+      "severity": "Error"
+    },
+    {
+      "category": "THUMBNAILS",
+      "severity": "Exception"
+    },
+    {
+      "category": "THUMBNAILS",
+      "severity": "Assert"
+    },
+    {
+      "category": "TRANSLATE",
+      "severity": "Log"
+    },
+    {
+      "category": "TRANSLATE",
+      "severity": "Warning"
+    },
+    {
+      "category": "TRANSLATE",
+      "severity": "Error"
+    },
+    {
+      "category": "TRANSLATE",
+      "severity": "Exception"
+    },
+    {
+      "category": "TRANSLATE",
+      "severity": "Assert"
+    },
+    {
+      "category": "TWEEN",
+      "severity": "Log"
+    },
+    {
+      "category": "TWEEN",
+      "severity": "Warning"
+    },
+    {
+      "category": "TWEEN",
+      "severity": "Error"
+    },
+    {
+      "category": "TWEEN",
+      "severity": "Exception"
+    },
+    {
+      "category": "TWEEN",
+      "severity": "Assert"
+    },
+    {
+      "category": "UI",
+      "severity": "Log"
+    },
+    {
+      "category": "UI",
+      "severity": "Warning"
+    },
+    {
+      "category": "UI",
+      "severity": "Error"
+    },
+    {
+      "category": "UI",
+      "severity": "Exception"
+    },
+    {
+      "category": "UI",
+      "severity": "Assert"
+    },
+    {
+      "category": "VERSION_CONTROL",
+      "severity": "Log"
+    },
+    {
+      "category": "VERSION_CONTROL",
+      "severity": "Warning"
+    },
+    {
+      "category": "VERSION_CONTROL",
+      "severity": "Error"
+    },
+    {
+      "category": "VERSION_CONTROL",
+      "severity": "Exception"
+    },
+    {
+      "category": "VERSION_CONTROL",
+      "severity": "Assert"
+    },
+    {
+      "category": "VOICE_CHAT",
+      "severity": "Log"
+    },
+    {
+      "category": "VOICE_CHAT",
+      "severity": "Warning"
+    },
+    {
+      "category": "VOICE_CHAT",
+      "severity": "Error"
+    },
+    {
+      "category": "VOICE_CHAT",
+      "severity": "Exception"
+    },
+    {
+      "category": "VOICE_CHAT",
+      "severity": "Assert"
+    },
+    {
+      "category": "WEARABLE",
+      "severity": "Log"
+    },
+    {
+      "category": "WEARABLE",
+      "severity": "Warning"
+    },
+    {
+      "category": "WEARABLE",
+      "severity": "Error"
+    },
+    {
+      "category": "WEARABLE",
+      "severity": "Exception"
+    },
+    {
+      "category": "WEARABLE",
+      "severity": "Assert"
+    },
+    {
+      "category": "ANALYTICS",
+      "severity": "Warning"
+    },
+    {
+      "category": "ANALYTICS",
+      "severity": "Error"
+    },
+    {
+      "category": "ANALYTICS",
+      "severity": "Exception"
+    },
+    {
+      "category": "ANALYTICS",
+      "severity": "Assert"
+    },
+    {
+      "category": "AUDIO",
+      "severity": "Warning"
+    },
+    {
+      "category": "AUDIO",
+      "severity": "Error"
+    },
+    {
+      "category": "AUDIO",
+      "severity": "Exception"
+    },
+    {
+      "category": "AUDIO",
+      "severity": "Assert"
+    },
+    {
+      "category": "LIVEKIT",
+      "severity": "Warning"
+    },
+    {
+      "category": "LIVEKIT",
+      "severity": "Error"
+    },
+    {
+      "category": "LIVEKIT",
+      "severity": "Exception"
+    },
+    {
+      "category": "LIVEKIT",
+      "severity": "Assert"
+    },
+    {
+      "category": "MULTIPLAYER_MOVEMENT",
+      "severity": "Warning"
+    },
+    {
+      "category": "MULTIPLAYER_MOVEMENT",
+      "severity": "Error"
+    },
+    {
+      "category": "MULTIPLAYER_MOVEMENT",
+      "severity": "Exception"
+    },
+    {
+      "category": "MULTIPLAYER_MOVEMENT",
+      "severity": "Assert"
+    },
+    {
+      "category": "PROFILE",
+      "severity": "Warning"
+    },
+    {
+      "category": "PROFILE",
+      "severity": "Error"
+    },
+    {
+      "category": "PROFILE",
+      "severity": "Exception"
+    },
+    {
+      "category": "PROFILE",
+      "severity": "Assert"
+    },
+    {
+      "category": "UNSPECIFIED",
+      "severity": "Warning"
+    },
+    {
+      "category": "UNSPECIFIED",
+      "severity": "Error"
+    },
+    {
+      "category": "UNSPECIFIED",
+      "severity": "Exception"
+    },
+    {
+      "category": "UNSPECIFIED",
+      "severity": "Assert"
+    }
   ],
   "sentryMatrix": []
 }
