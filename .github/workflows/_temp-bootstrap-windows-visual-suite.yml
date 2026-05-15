@@ -1,0 +1,122 @@
+name: TEMP — Bootstrap visual suite (Windows)
+
+# ════════════════════════════════════════════════════════════════════════
+# DELETE THIS FILE once `run-visual-suite-windows.yml` and the platform
+# fan-out in `manual-visual-tests.yml` / `generate-baselines.yml` have been
+# merged to main AND the /visual-tests + /generate-baselines slash commands
+# fire end-to-end on Windows.
+#
+# Purpose:
+#   GitHub's `issue_comment` trigger only fires for workflow files that
+#   exist on the *default branch* of the repo. Until our workflows land
+#   on main, /generate-baselines and /visual-tests do nothing — leaving
+#   the Windows pipeline un-smoke-tested. This temporary workflow runs
+#   the full record-then-validate sequence on every push to the Windows
+#   integration branch, against a pinned unity-explorer build, so we can
+#   prove the plumbing works end-to-end before merging.
+#
+# What it does on every push to feat/snapshots-comparison-win:
+#   1. Calls run-visual-suite-windows.yml with mode=record. Renders new
+#      *.windows.png baselines against the pinned build, auto-commits
+#      them back to this branch via github-actions[bot].
+#   2. After (1) lands, calls run-visual-suite-windows.yml with mode=test.
+#      Pulls the just-committed baselines and validates against them
+#      using the same build, exercising the whole diff codepath. The
+#      result is guaranteed-pass by construction (record + validate on
+#      the same render); the point is to validate the *system*, not
+#      visual drift.
+# ════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: [feat/snapshots-comparison-win]
+    paths:
+      # Re-trigger only on changes that could affect the pipeline output.
+      # Skip docs-only / unrelated commits to save runner minutes.
+      - '.github/workflows/_temp-bootstrap-windows-visual-suite.yml'
+      - '.github/workflows/run-visual-suite-windows.yml'
+      - 'explorer/scenes/**'
+      - 'explorer/Tests/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# One bootstrap run at a time. Cancel earlier in-flight runs so a quick
+# follow-up push doesn't queue behind a stale render.
+concurrency:
+  group: temp-bootstrap-windows-visual-suite
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: 1. Record baselines (windows)
+    uses: ./.github/workflows/run-visual-suite-windows.yml
+    with:
+      mode: record
+      pr_number: '13'
+      # Same SHA as PR #12 chassis pins for InWorld, swapped to windows64.zip.
+      # Visual scenes don't exercise the auth/loading flow, so the
+      # MinimumSpecsScreen TEMP-gut isn't strictly required — but reusing the
+      # known-good build URL avoids one variable while we validate the
+      # plumbing. Swap to a clean release once the pipeline is green.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip'
+      tests_ref: feat/snapshots-comparison-win
+    secrets: inherit
+
+  print-record-log:
+    name: 1a. Print Explorer log (record)
+    needs: record
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Player.log artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: player-log-windows-record-run-${{ github.run_id }}
+          path: ./logs
+      - name: Print Player.log
+        run: |
+          echo "::group::Explorer Player.log (windows record)"
+          if [ -f ./logs/Player.log ]; then
+            cat ./logs/Player.log
+          else
+            echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
+          fi
+          echo "::endgroup::"
+
+  validate:
+    name: 2. Validate against just-recorded baselines (windows)
+    needs: record
+    uses: ./.github/workflows/run-visual-suite-windows.yml
+    with:
+      mode: test
+      pr_number: '13'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip'
+      tests_ref: feat/snapshots-comparison-win
+    secrets: inherit
+
+  print-validate-log:
+    name: 2a. Print Explorer log (validate)
+    needs: validate
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Player.log artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: player-log-windows-test-run-${{ github.run_id }}
+          path: ./logs
+      - name: Print Player.log
+        run: |
+          echo "::group::Explorer Player.log (windows validate)"
+          if [ -f ./logs/Player.log ]; then
+            cat ./logs/Player.log
+          else
+            echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
+          fi
+          echo "::endgroup::"
