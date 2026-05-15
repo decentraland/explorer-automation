@@ -43,11 +43,19 @@ Fixtures are tagged with NUnit `[Category]` so you can run them in isolation:
 
 Within each category, fixtures execute in their declared `[Order]`.
 
+### Fixture ordering invariant
+
+The `Auth` fixtures (`Order` ≥ 1000) **must run last in the assembly.** They inherit `LoggedOutAuthBaseTest`, which signs the player out and leaves the Explorer on the LoginSelection screen. `BaseTest.EnsureInWorld` can recover from splash, cached-account, or already-in-world — but **not** from a fully logged-out state. Any non-Auth fixture that runs after Auth will fail in `OneTimeSetUp`.
+
+NUnit quirk that makes this fragile: fixtures **with** `[Order]` run first in numeric order, then fixtures **without** `[Order]` run last in undefined order. So just giving Auth a high Order isn't enough — every other fixture must also carry an `[Order]` lower than 1000, otherwise it falls into the "unordered" bucket and runs *after* Auth.
+
+**Rule when adding a new fixture:** annotate it with `[Order(N)]` where `N < 1000`. Current allocation: in-world fixtures `10–19`, visual fixtures `20–29`, Auth `1000+`. Pick the next free number in the relevant band.
+
 ## Running Tests
 
 ### Run everything in one shot
 
-Auth tests run first (Order 1–3) and leave a Thirdweb-cached identity in-world; InWorld tests pick up from there.
+InWorld fixtures run first (Order 10–19) and leave the player in-world; Auth fixtures run last (Order 1000+) because they sign out — running them in any other position would leave the Explorer at LoginSelection and break every subsequent fixture's `EnsureInWorld`.
 
 ```bash
 metaforge explorer run --clear -- --alttester     # logged-out launch

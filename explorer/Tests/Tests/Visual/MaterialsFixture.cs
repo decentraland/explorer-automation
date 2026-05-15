@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [AllureSuite("Visual")]
 [AllureSubSuite("materials")]
 [Category("Visual")]
+[Order(22)]
 public class MaterialsFixture
 {
     [OneTimeSetUp]

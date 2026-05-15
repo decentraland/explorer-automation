@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [AllureSuite("Visual")]
 [AllureSubSuite("gltf")]
 [Category("Visual")]
+[Order(21)]
 public class GltfFixture
 {
     [OneTimeSetUp]
