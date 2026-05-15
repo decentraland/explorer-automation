@@ -291,6 +291,7 @@ export function main() {
     type: LightSource.Type.Spot({ innerAngle: 12, outerAngle: 30 }),
   })
 
+
   // Camera pulled back/up and aimed slightly off-center so the cube at the
   // parcel corner (0, 0, 0) stays in frame alongside the y-stacked rows in
   // the parcel interior.
