@@ -88,7 +88,7 @@ jobs:
     timeout-minutes: 30
 
     env:
-      PLATFORM: ${{ inputs.platform }}
+      TARGET_OS: ${{ inputs.platform }}
       MODE: ${{ inputs.mode }}
       PR_NUMBER: ${{ inputs.pr_number }}
       # github.repository inside a workflow_call run resolves to the caller's repo
@@ -112,13 +112,13 @@ jobs:
             test|record|bootstrap) ;;
             *) echo "::error::Unknown mode '$MODE'. Expected 'test', 'record', or 'bootstrap'."; exit 1 ;;
           esac
-          case "$PLATFORM" in
+          case "$TARGET_OS" in
             macos) ;;
             windows)
               echo "::error::platform=windows is not yet supported — install steps are macOS-only. See per-os-baselines-plan.md."
               exit 1
               ;;
-            *) echo "::error::Unknown platform '$PLATFORM'. Expected 'macos' or 'windows'."; exit 1 ;;
+            *) echo "::error::Unknown platform '$TARGET_OS'. Expected 'macos' or 'windows'."; exit 1 ;;
           esac
 
       - name: Compute identifiers
@@ -130,11 +130,11 @@ jobs:
           # (manual dispatch) PR_NUMBER is empty — bucket those under a
           # `manual/` segment plus the workflow run id so successive
           # manual dispatches don't overwrite each other's reports.
-          # PLATFORM segment lets parallel macOS + Windows runs
+          # TARGET_OS segment lets parallel macOS + Windows runs
           # write to separate paths without clobbering each other.
           REPO_SLUG="${PR_REPO//\//-}"
           PR_SEGMENT="${PR_NUMBER:-manual-${GITHUB_RUN_ID}}"
-          S3_PATH="@dcl/${REPO_SLUG}/visual-regression/${MODE}/${PLATFORM}/${PR_SEGMENT}/${COMMIT_SHA}"
+          S3_PATH="@dcl/${REPO_SLUG}/visual-regression/${MODE}/${TARGET_OS}/${PR_SEGMENT}/${COMMIT_SHA}"
           {
             echo "s3_path=${S3_PATH}"
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
@@ -255,14 +255,18 @@ jobs:
         id: report
         if: always()
         run: |
+          set -euo pipefail
           REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
                         -name "index.html" -path "*allure-report*" 2>/dev/null | head -1)
           if [ -z "$REPORT" ]; then
-            echo "::warning::Allure report not found; skipping upload."
-            echo "report_path=" >> "$GITHUB_OUTPUT"
-          else
-            echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
+            # Hard fail: the report is the user-visible evidence of the run.
+            # Missing it means we can't show pass/fail diffs to reviewers,
+            # which defeats the point of the pipeline. Better to fail loudly
+            # than ship a green check with no artifact.
+            echo "::error::Allure report not found under metaforge data dir. metaforge's report-gen step likely failed — check earlier logs for 'allure exited with code'."
+            exit 1
           fi
+          echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         if: always() && steps.report.outputs.report_path != ''
@@ -295,8 +299,8 @@ jobs:
           retention-days: 14
 
       # ─── Baselines mode: commit regenerated PNGs back to the PR branch ───
-      # Only fires when:
-      #   1. mode is `record` (we asked for new baselines), AND
+      # Fires when:
+      #   1. mode is `record` or `bootstrap` (we asked for new baselines), AND
       #   2. PR_NUMBER is non-empty (a PR exists to push to). Manual
       #      workflow_dispatch in record mode renders new baselines you
       #      can inspect via the Allure report, but never commits — there
@@ -304,8 +308,14 @@ jobs:
       #      accidental push to main / dev would be destructive.
       # The caller's metaforge clone is already checked out at TESTS_REF,
       # so we commit from that working tree.
+      #
+      # Intentionally NOT gated on the report being present: the baselines
+      # are the load-bearing artifact, the report is the user-visible
+      # evidence. If `mf explorer test` recorded baselines but report-gen
+      # failed afterward, we'd lose the baselines if we skipped this step,
+      # forcing the user to re-run an expensive macOS-runner job.
       - name: Commit regenerated baselines
-        if: always() && (inputs.mode == 'record' || inputs.mode == 'bootstrap') && env.PR_NUMBER != '' && steps.report.outputs.report_path != ''
+        if: always() && (inputs.mode == 'record' || inputs.mode == 'bootstrap') && env.PR_NUMBER != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
