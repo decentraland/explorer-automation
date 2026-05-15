@@ -1,20 +1,22 @@
 name: Generate Baselines
 
-# Slash-command-driven baseline regenerator. Triggered by `/generate-baselines`
-# on a PR comment in this repo. Dispatches into the reusable run-visual-suite
-# workflow with mode: record, which:
-#   1. Runs the visual suite with --record-baselines (overwrites baseline PNGs).
-#   2. Commits the regenerated PNGs back to the PR branch.
-#   3. Uploads the Allure report to S3 and posts a result comment on the PR.
+# Slash-command-driven baseline regenerator. Dispatches into the reusable
+# run-visual-suite workflow, which records baselines and commits them back
+# to the PR branch.
 #
 # Why server-side recording instead of local? CI runs on a deterministic
 # macOS runner image; local dev machines can produce subtly different pixels
 # due to GPU, font subpixel hinting, color profile, etc. Pinning baselines
 # to runner-rendered images keeps the test suite stable.
 #
-# Trigger:
-#   Comment "/generate-baselines" on a PR. Restricted to OWNER / MEMBER /
-#   COLLABORATOR — anyone else's comment is silently ignored.
+# Grammar:
+#   /generate-baselines                              → record every baseline (default mode)
+#   /generate-baselines --bootstrap                  → only record baselines that are missing today
+#   /generate-baselines --filter Category=Visual&... → restrict to matching tests
+#   /generate-baselines --bootstrap --filter ...     → both flags
+#
+# Restricted to OWNER / MEMBER / COLLABORATOR — anyone else's comment is
+# silently ignored.
 #
 # Build URL resolution:
 #   Baselines are pixel-sensitive to which Explorer build rendered them, so
@@ -55,8 +57,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       authorized: ${{ steps.gate.outputs.authorized }}
+      mode: ${{ steps.flags.outputs.mode }}
+      filter: ${{ steps.flags.outputs.filter }}
       pr_number: ${{ steps.pr.outputs.number }}
-      filter: ${{ steps.filter.outputs.value }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
       head_short_sha: ${{ steps.pr.outputs.head_short_sha }}
       head_ref: ${{ steps.pr.outputs.head_ref }}
@@ -107,27 +110,49 @@ jobs:
             echo "head_ref=${HEAD_REF}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Parse filter from comment
-        id: filter
+      - name: Parse flags from comment
+        id: flags
         if: steps.gate.outputs.authorized == 'true'
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
           FIRST_LINE=$(printf '%s' "$COMMENT_BODY" | head -n1)
-          VALUE="${FIRST_LINE#/generate-baselines}"
-          VALUE="${VALUE# }"
+          REST="${FIRST_LINE#/generate-baselines}"
+          REST="${REST# }"
+
+          MODE=record
+          FILTER=""
+
+          # --filter is special: it greedily consumes the rest of the line, so it must be the last flag if both are given
+          while [ -n "$REST" ]; do
+            case "$REST" in
+              --bootstrap|--bootstrap\ *)
+                MODE=bootstrap
+                REST="${REST#--bootstrap}"
+                REST="${REST# }"
+                ;;
+              --filter\ *)
+                FILTER="${REST#--filter }"
+                REST=""
+                ;;
+              *)
+                echo "::error::Unrecognized arguments to /generate-baselines: '$REST'. Expected: [--bootstrap] [--filter <expr>]"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+
           DELIM="EOF_$(openssl rand -hex 8)"
           {
-            echo "value<<${DELIM}"
-            echo "${VALUE}"
+            echo "filter<<${DELIM}"
+            echo "${FILTER}"
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
-          if [ -n "$VALUE" ]; then
-            echo "::notice::Using filter: ${VALUE}"
-          else
-            echo "::notice::No filter supplied; using workflow default."
-          fi
+
+          echo "::notice::Mode: ${MODE}; Filter: ${FILTER:-<default>}"
 
       - name: Resolve Explorer build URL
         id: build
@@ -194,12 +219,12 @@ jobs:
           echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
 
   run-suite:
-    name: Regenerate baselines
+    name: Regenerate baselines (${{ needs.resolve.outputs.mode }})
     needs: resolve
     if: needs.resolve.outputs.authorized == 'true'
     uses: ./.github/workflows/run-visual-suite.yml
     with:
-      mode: record
+      mode: ${{ needs.resolve.outputs.mode }}
       filter: ${{ needs.resolve.outputs.filter }}
       pr_number: ${{ needs.resolve.outputs.pr_number }}
       build_url: ${{ needs.resolve.outputs.build_url }}

@@ -30,8 +30,14 @@ name: Visual Suite
 on:
   workflow_call:
     inputs:
+      platform:
+        description: 'Target OS for the run. "macos" today; "windows" wired in but the install steps don''t exist yet — leave as macos until the Windows runner is provisioned.'
+        type: string
+        required: false
+        default: macos
+
       mode:
-        description: '"test" to validate against baselines (default) or "record" to regenerate them.'
+        description: '"test" to validate against baselines (default), "record" to regenerate them, or "bootstrap" to only record baselines that are currently missing.'
         type: string
         required: false
         default: test
@@ -77,11 +83,12 @@ permissions:
 
 jobs:
   run:
-    name: Visual suite (${{ inputs.mode }})
-    runs-on: macos-14
+    name: Visual suite (${{ inputs.mode }} / ${{ inputs.platform }})
+    runs-on: ${{ inputs.platform == 'windows' && 'windows-latest' || 'macos-14' }}
     timeout-minutes: 30
 
     env:
+      PLATFORM: ${{ inputs.platform }}
       MODE: ${{ inputs.mode }}
       PR_NUMBER: ${{ inputs.pr_number }}
       # github.repository inside a workflow_call run resolves to the caller's repo
@@ -98,12 +105,20 @@ jobs:
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
 
     steps:
-      - name: Validate mode
+      - name: Validate inputs
         run: |
           set -euo pipefail
           case "$MODE" in
-            test|record) ;;
-            *) echo "::error::Unknown mode '$MODE'. Expected 'test' or 'record'."; exit 1 ;;
+            test|record|bootstrap) ;;
+            *) echo "::error::Unknown mode '$MODE'. Expected 'test', 'record', or 'bootstrap'."; exit 1 ;;
+          esac
+          case "$PLATFORM" in
+            macos) ;;
+            windows)
+              echo "::error::platform=windows is not yet supported — install steps are macOS-only. See per-os-baselines-plan.md."
+              exit 1
+              ;;
+            *) echo "::error::Unknown platform '$PLATFORM'. Expected 'macos' or 'windows'."; exit 1 ;;
           esac
 
       - name: Compute identifiers
@@ -115,9 +130,11 @@ jobs:
           # (manual dispatch) PR_NUMBER is empty — bucket those under a
           # `manual/` segment plus the workflow run id so successive
           # manual dispatches don't overwrite each other's reports.
+          # PLATFORM segment lets parallel macOS + Windows runs
+          # write to separate paths without clobbering each other.
           REPO_SLUG="${PR_REPO//\//-}"
           PR_SEGMENT="${PR_NUMBER:-manual-${GITHUB_RUN_ID}}"
-          S3_PATH="@dcl/${REPO_SLUG}/visual-regression/${MODE}/${PR_SEGMENT}/${COMMIT_SHA}"
+          S3_PATH="@dcl/${REPO_SLUG}/visual-regression/${MODE}/${PLATFORM}/${PR_SEGMENT}/${COMMIT_SHA}"
           {
             echo "s3_path=${S3_PATH}"
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
@@ -216,9 +233,10 @@ jobs:
           fi
 
           RECORD_FLAG=""
-          if [ "$MODE" = "record" ]; then
-            RECORD_FLAG="--record-baselines"
-          fi
+          case "$MODE" in
+            record)    RECORD_FLAG="--record-baselines" ;;
+            bootstrap) export SNAPSHOT_MODE=MissingOnly ;;
+          esac
 
           TEST_EXIT=0
           mf explorer test "${BUILD_URL}" \
@@ -287,7 +305,7 @@ jobs:
       # The caller's metaforge clone is already checked out at TESTS_REF,
       # so we commit from that working tree.
       - name: Commit regenerated baselines
-        if: always() && inputs.mode == 'record' && env.PR_NUMBER != '' && steps.report.outputs.report_path != ''
+        if: always() && (inputs.mode == 'record' || inputs.mode == 'bootstrap') && env.PR_NUMBER != '' && steps.report.outputs.report_path != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -300,8 +318,7 @@ jobs:
 
           cd "$REPO_ROOT"
 
-          # only stage baseline PNGs
-          git add '**/Baselines/*.png' || true
+          git add '**/Baselines/**/*.png' || true
           if git diff --cached --quiet; then
             echo "No baseline changes to commit."
             exit 0
@@ -323,7 +340,7 @@ jobs:
           repository: ${{ env.PR_REPO }}
           issue-number: ${{ env.PR_NUMBER }}
           comment-author: 'github-actions[bot]'
-          body-includes: ${{ inputs.mode == 'record' && '## Baseline regeneration' || '## Visual regression tests' }}
+          body-includes: ${{ format('## {0} ({1})', (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests', inputs.platform) }}
 
       - name: Comment results on PR
         if: always() && env.PR_NUMBER != ''
@@ -334,12 +351,14 @@ jobs:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace
           body: |
-            ## ${{ inputs.mode == 'record' && 'Baseline regeneration' || 'Visual regression tests' }}
+            ## ${{ (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests' }} (${{ inputs.platform }})
 
-            ${{ job.status == 'success' && (inputs.mode == 'record' && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || (inputs.mode == 'record' && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**') }}
+            ${{ job.status == 'success' && ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**') }}
 
             | | |
             |---|---|
+            | Platform | `${{ inputs.platform }}` |
+            | Mode | `${{ inputs.mode }}` |
             | Commit | `${{ env.COMMIT_SHA }}` |
             | Branch | `${{ env.BRANCH_LABEL }}` |
             | Tests ref | `${{ env.TESTS_REF || 'main' }}` |
@@ -347,7 +366,7 @@ jobs:
             | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
             | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
-            <sub>${{ inputs.mode == 'record' && 'Triggered via `/generate-baselines`' || 'Triggered via `/visual-tests`' }} · this comment is updated on every run.</sub>
+            <sub>${{ (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Triggered via `/generate-baselines`' || 'Triggered via `/visual-tests`' }} · this comment is updated on every run for this platform.</sub>
 
       # Upload the Explorer's Player.log so callers can download and print it
       - name: Upload Explorer Player.log
