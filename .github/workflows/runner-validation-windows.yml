@@ -696,9 +696,8 @@ jobs:
           exit $LASTEXITCODE
 
       # Failure-only heavy diag: process snapshot, AltTester Player.log scan,
-      # port 13000 state. The Explorer Player.log itself is dumped by the
-      # always-on "Print Explorer Player.log" step below — no need to repeat
-      # it here.
+      # port 13000 state. Explorer Player.log itself is uploaded by the
+      # always-on "Upload logs and report (artifact fallback)" step below.
       - name: Diag - dump Explorer / AltTester logs on InWorld failure
         if: failure() && env.DRY_RUN != 'true'
         shell: powershell
@@ -727,31 +726,6 @@ jobs:
           Write-Host "=== AltTester port 13000 listener state ==="
           Write-Host ($portCheck | Out-String)
 
-      # Mirror Nicolas's _temp-bootstrap-visual-suite pattern: always surface
-      # Player.log in the Actions UI inside a collapsible group so reviewers
-      # don't have to download the artifact to read it. Runs on both success
-      # and failure paths; the heavier failure-only diag step above adds
-      # process snapshot + AltTester scan + port check on top of this.
-      - name: Print Explorer Player.log
-        if: always() && env.DRY_RUN != 'true'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Continue"
-          $explorerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
-          Write-Host "::group::Explorer Player.log"
-          if (Test-Path $explorerLog) {
-            Write-Host "(path: $explorerLog, size: $((Get-Item $explorerLog).Length) bytes)"
-            Get-Content $explorerLog | ForEach-Object { Write-Host $_ }
-          } else {
-            Write-Host "(not found at $explorerLog)"
-          }
-          Write-Host "::endgroup::"
-
-      - name: Dry-run notice
-        if: env.DRY_RUN == 'true'
-        shell: powershell
-        run: Write-Host "::notice::dry_run=true - skipped mf explorer test. Chassis steps (install, license, account) ran to verify wiring."
-
       - name: Locate Allure report
         id: report
         if: always() && env.DRY_RUN != 'true'
@@ -776,6 +750,41 @@ jobs:
             Write-Host "Report at: $report"
             "report_path=$report" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
+
+      # aws-actions/configure-aws-credentials only exports env vars; it does
+      # NOT install the AWS CLI. The Windows 11 Desktop partner image doesn't
+      # ship `aws` either — Mac runners get it for free, but here we have to
+      # side-load. MSI install is idempotent; persistent runner caches it.
+      - name: Install AWS CLI
+        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = "Stop"
+          $awsDir = "C:\Program Files\Amazon\AWSCLIV2"
+          if (Get-Command aws -ErrorAction SilentlyContinue) {
+            Write-Host "aws CLI already on PATH: $(aws --version) - skipping install."
+            return
+          }
+          if (Test-Path (Join-Path $awsDir "aws.exe")) {
+            Write-Host "aws CLI installed at $awsDir but not on PATH - prepending."
+            "$awsDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$awsDir;$env:PATH"
+            aws --version
+            return
+          }
+          $msi = Join-Path $env:TEMP "AWSCLIV2.msi"
+          Write-Host "Downloading AWS CLI v2 MSI..."
+          Invoke-WebRequest -UseBasicParsing -Uri "https://awscli.amazonaws.com/AWSCLIV2.msi" -OutFile $msi
+          Write-Host "Installing AWS CLI v2 silently..."
+          $proc = Start-Process msiexec.exe -ArgumentList "/i","`"$msi`"","/qn","/norestart" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "AWS CLI MSI installer exited with code $($proc.ExitCode)" }
+          if (-not (Test-Path (Join-Path $awsDir "aws.exe"))) {
+            throw "AWS CLI install completed but $awsDir\aws.exe is missing"
+          }
+          "$awsDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$awsDir;$env:PATH"
+          aws --version
 
       - name: Configure AWS credentials
         if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
