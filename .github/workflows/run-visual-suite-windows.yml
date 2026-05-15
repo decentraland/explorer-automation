@@ -245,6 +245,30 @@ jobs:
           $ErrorActionPreference = "Stop"
           $installDir = "C:\Program Files\AltTesterDesktop"
           $target = Join-Path $installDir "AltTesterDesktop.exe"
+          # Pre-step probe. The runner is shared/persistent, so AltTester normally
+          # survives between jobs — when it doesn't, we want to know whether it
+          # disappeared cleanly (dir gone) or partially (exe present but
+          # UnityPlayer.dll missing, etc). Pair this with the post-cleanup probe
+          # at the bottom of the file: comparing run N's "post" line with run
+          # N+1's "pre" line localises who clobbered the install.
+          Write-Host "::group::AltTester install probe (pre-install)"
+          if (Test-Path $installDir) {
+            Write-Host ("installDir exists: {0}" -f $installDir)
+            Get-ChildItem -Path $installDir -ErrorAction SilentlyContinue |
+              Select-Object Name, Length, LastWriteTimeUtc |
+              Format-Table | Out-String | Write-Host
+            if (Test-Path $target) {
+              $info = Get-Item $target
+              Write-Host ("AltTesterDesktop.exe: {0:N1} MB, mtime(UTC)={1:o}" -f ($info.Length / 1MB), $info.LastWriteTimeUtc)
+            } else {
+              Write-Host "AltTesterDesktop.exe: MISSING"
+            }
+            $unityDll = Join-Path $installDir "UnityPlayer.dll"
+            Write-Host ("UnityPlayer.dll present: {0}" -f (Test-Path $unityDll))
+          } else {
+            Write-Host ("installDir DOES NOT exist: {0}" -f $installDir)
+          }
+          Write-Host "::endgroup::"
           $needsInstall = $true
           if ((Test-Path $target) -and (Test-Path (Join-Path $installDir "UnityPlayer.dll"))) {
             $sizeMb = (Get-Item $target).Length / 1MB
@@ -751,3 +775,34 @@ jobs:
               Write-Host "Killing $($_.ProcessName) (PID: $($_.Id))"
               Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
             }
+
+      # Counterpart to the pre-install probe at the top of this file. By logging
+      # the install state at job-exit we can tell, on the next run, whether the
+      # install dir was already clobbered when we started (=> something else on
+      # the persistent runner deleted it between jobs) or whether it survived
+      # cleanup intact (=> mystery happens later, possibly at runner-image
+      # provisioning).
+      - name: AltTester install probe (post-cleanup)
+        if: always()
+        timeout-minutes: 1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $installDir = "C:\Program Files\AltTesterDesktop"
+          $target = Join-Path $installDir "AltTesterDesktop.exe"
+          $unityDll = Join-Path $installDir "UnityPlayer.dll"
+          if (Test-Path $installDir) {
+            Write-Host ("installDir exists: {0}" -f $installDir)
+            Get-ChildItem -Path $installDir -ErrorAction SilentlyContinue |
+              Select-Object Name, Length, LastWriteTimeUtc |
+              Format-Table | Out-String | Write-Host
+            if (Test-Path $target) {
+              $info = Get-Item $target
+              Write-Host ("AltTesterDesktop.exe: {0:N1} MB, mtime(UTC)={1:o}" -f ($info.Length / 1MB), $info.LastWriteTimeUtc)
+            } else {
+              Write-Host "AltTesterDesktop.exe: MISSING"
+            }
+            Write-Host ("UnityPlayer.dll present: {0}" -f (Test-Path $unityDll))
+          } else {
+            Write-Host ("installDir DOES NOT exist: {0}" -f $installDir)
+          }
