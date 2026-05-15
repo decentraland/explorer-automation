@@ -62,16 +62,6 @@ on:
         type: boolean
         required: false
         default: false
-      diagnose_alttester:
-        description: 'Run AltTester loader-hang diagnostic (Procmon + ProcDump capture) instead of the InWorld suite. Local probes proved -batchmode -nographics works on Windows 11 in user session AND under LocalSystem session 0 (both ready in 5-11s); this step captures a full memory dump of the hung AltTester on the runner to find the real root cause.'
-        type: boolean
-        required: false
-        default: false
-      diagnose_explorer:
-        description: 'Run Explorer Vulkan smoke (no AltTester, with --use-log-matrix to re-enable STARTUP/AUTHENTICATION/SCENE_LOADING categories) instead of the InWorld suite. Default Decentraland ReportCategory filter silences those categories, so a normal mf-explorer-test Player.log goes blank after the device-info banner regardless of whether auth/realm hangs - this smoke gives us visibility into the splash/auth/realm flow on the runner.'
-        type: boolean
-        required: false
-        default: false
 
   push:
     branches: [feat/runner-validation]
@@ -89,6 +79,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   # ── 1. Resolve build URL on a cheap runner so the GPU runner only does ──
@@ -171,12 +162,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Resolves the PR # for the head branch so the S3 path stays stable
+      # across reruns on the same PR and so the result comment lands on the
+      # right PR. Empty for workflow_dispatch runs from main / detached refs;
+      # downstream steps fall back to manual-${run_id}.
+      - name: Resolve PR number
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "$HEAD_REF" \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""' 2>/dev/null || echo "")
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          if [ -n "$PR_NUMBER" ]; then
+            echo "::notice::Resolved PR #${PR_NUMBER} for branch ${HEAD_REF}"
+          else
+            echo "::notice::No open PR found for branch ${HEAD_REF}; using manual segment in S3 path."
+          fi
+
       - name: Compute identifiers
         id: ids
         shell: powershell
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           $shortSha = $env:COMMIT_SHA.Substring(0, 7)
-          $s3Path = "@dcl/decentraland-explorer-automation/runner-validation-windows/$($env:GITHUB_RUN_ID)/$shortSha"
+          if ($env:PR_NUMBER) { $prSegment = $env:PR_NUMBER } else { $prSegment = "manual-$($env:GITHUB_RUN_ID)" }
+          $s3Path = "@dcl/decentraland-explorer-automation/runner-validation-windows/$prSegment/$shortSha"
           $reportUrl = "$($env:PUBLIC_URL_PREFIX)/$s3Path/index.html"
           "s3_path=$s3Path" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "report_url=$reportUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -658,486 +677,8 @@ jobs:
           $env:PATH = "$npmPrefix;$env:PATH"
           & (Join-Path $npmPrefix "allure.cmd") --version
 
-      # TEMP smoke: launch Decentraland.exe directly in *normal* (non-batch)
-      # mode without AltTester to verify the basic chassis - that the GPU /
-      # graphics stack on this runner can actually initialize a Vulkan device
-      # and start the Unity engine. We've been stuck on AltTester batchmode
-      # never advertising the ready line; before chasing that further, prove
-      # the underlying Explorer can render at all on this T4 + Server 2022
-      # image. If this smoke shows clean Vulkan init, the AltTester issue is
-      # isolated to batchmode/license. If it fails, the chassis itself is the
-      # blocker and AltTester debugging is premature.
-      #
-      # mf explorer install (above) drops the build under
-      #   %LOCALAPPDATA%\Decentraland\MetaForge\explorer\<version>\Decentraland.exe
-      # (see MetaForgeCLI/Services/ExplorerVersionService.cs:39,113).
-      # Disabled while testing against unity-explorer PR #8778 - that build
-      # already has every category enabled at every severity in source, so the
-      # runtime --use-log-matrix override is redundant. To re-enable: restore
-      # the original `if: inputs.diagnose_explorer == true` condition below.
-      - name: Smoke - Explorer Vulkan launch (no batch, no AltTester)
-        if: false  # was: inputs.diagnose_explorer == true  # Gated on dispatch input. Re-enabled 2026-05-13 to see where the inworld run gets stuck: mf-explorer-test Player.log goes blank after the env-dump because STARTUP/AUTHENTICATION/SCENE_LOADING are silenced by the default ReportCategory; this smoke launches Explorer directly with --use-log-matrix to make those categories visible.
-        shell: powershell
-        timeout-minutes: 7
-        run: |
-          $ErrorActionPreference = "Continue"
-          $versionsRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
-          if (-not (Test-Path $versionsRoot)) {
-            throw "Explorer versions dir not found: $versionsRoot (did 'mf explorer install' succeed?)"
-          }
-          $exe = Get-ChildItem -Path $versionsRoot -Recurse -Filter "Decentraland.exe" -ErrorAction SilentlyContinue |
-                 Select-Object -First 1
-          if (-not $exe) {
-            Write-Host "Versions dir contents:"
-            Get-ChildItem -Path $versionsRoot -Recurse | Select-Object FullName
-            throw "Decentraland.exe not found under $versionsRoot"
-          }
-          Write-Host "Found Explorer: $($exe.FullName)"
-          $buildDir = Split-Path -Parent $exe.FullName
-
-          # Clean Player.log for a fresh trace.
-          $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
-          if (Test-Path $logPath) { Remove-Item $logPath -Force }
-
-          # Explorer's default ReportCategory filter silences info logs for
-          # ~120 categories incl. STARTUP, AUTHENTICATION, SCENE_LOADING,
-          # ENGINE, FEATURE_FLAGS, ASSETS_PROVISION. Without these on, the
-          # log goes silent right after the device-info banner and we have
-          # no way to tell where the splash/auth/realm flow is stuck.
-          # `--use-log-matrix <json>` (built-in CI flag) lets us re-enable
-          # them. `override: false` merges over the default matrix so we
-          # *add* visibility without silencing anything else.
-          $logCategories = @(
-            "STARTUP", "AUTHENTICATION", "SCENE_LOADING", "ENGINE",
-            "FEATURE_FLAGS", "ASSETS_PROVISION", "LANDSCAPE",
-            "REALM_DATA_DIRTY_RESET_SYSTEM", "MULTIPLAYER",
-            "COMMS_SCENE_HANDLER", "COMMS_API", "AUTHENTICATION",
-            "CRDT", "SCENE_FACTORY", "GENERIC_WEB_REQUEST"
-          ) | Sort-Object -Unique
-          $severities = @("Log", "Warning", "Error", "Exception")
-          $entries = @()
-          foreach ($cat in $logCategories) {
-            foreach ($sev in $severities) {
-              $entries += [ordered]@{ category = $cat; severity = $sev }
-            }
-          }
-          $matrix = [ordered]@{
-            override = $false
-            debugLogMatrix = $entries
-            sentryMatrix = @()
-          }
-          $matrixPath = Join-Path $buildDir "ci-log-matrix.json"
-          $matrix | ConvertTo-Json -Depth 5 | Set-Content -Path $matrixPath -Encoding utf8
-          Write-Host "Wrote log matrix to $matrixPath"
-
-          # Previous run with -force-vulkan produced:
-          #   Forcing GfxDevice: Vulkan
-          #   InitializeEngineGraphics failed
-          # Drop the Vulkan force so Unity picks its default chain
-          # (D3D12 -> D3D11 -> Vulkan). If any of the three works, the
-          # chassis is viable.
-          # Order matters: Decentraland's custom `--use-log-matrix` parser
-          # picks the *next* arg after the flag, but it seems to skip past
-          # Unity built-in `-screen-*` flags and end up grabbing the last
-          # positional (e.g. "720" from `-screen-height 720`). Putting our
-          # flag at the very end keeps the next-token unambiguous.
-          $arglist = @(
-            "-screen-fullscreen", "0",
-            "-screen-width", "1280",
-            "-screen-height", "720",
-            "--use-log-matrix", $matrixPath
-          )
-          Write-Host "Launching: $($exe.FullName) $($arglist -join ' ')"
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList $arglist -PassThru
-          Write-Host "Started PID $($proc.Id)."
-
-          # Pre-resolve procdump64.exe BEFORE the first snapshot wait so the
-          # actual sleep ticks are accurate (no surprise minutes lost on the
-          # zip download).
-          $diagDir = Join-Path $env:RUNNER_TEMP "explorer-diag"
-          New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
-          $tools = Join-Path $env:USERPROFILE "sysinternals"
-          New-Item -ItemType Directory -Path $tools -Force | Out-Null
-          $procdump = Get-ChildItem -Path $tools -Recurse -File -Filter "procdump64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $procdump) {
-            Write-Host "Downloading Procdump.zip..."
-            $z = Join-Path $env:RUNNER_TEMP "Procdump.zip"
-            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile $z -UseBasicParsing
-            Expand-Archive -Path $z -DestinationPath $tools -Force
-            $procdump = Get-ChildItem -Path $tools -Recurse -File -Filter "procdump64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-          if ($procdump) { Write-Host "procdump: $($procdump.FullName)" }
-          else { Write-Host "::warning::procdump64.exe not resolved; mini-snapshots will be skipped." }
-
-          # Snapshot helper. ProcDump -mm = MiniPlus dump (~50-200 MB) with
-          # full thread stacks but no full heap. Cheap enough to take 2-3 of
-          # at different timestamps so we can see *which* bootstrap step is
-          # progressing or stuck. Run 25816852559 only had a t=5min snapshot,
-          # which is why we can't yet tell whether the hang is at t=5s or
-          # t=4m59s - this gives us t=60s and t=180s windows too.
-          function Take-MiniDump([int]$pid_, [string]$label) {
-            if (-not $procdump) { return }
-            $live = Get-Process -Id $pid_ -ErrorAction SilentlyContinue
-            if (-not $live) { Write-Host "[$label] process already exited"; return }
-            $dump = Join-Path $diagDir "explorer-$label.dmp"
-            Write-Host "[$label] procdump -mm $pid_ -> $dump"
-            & $procdump.FullName -accepteula -mm $pid_ $dump 2>&1 | Tee-Object -FilePath (Join-Path $diagDir "procdump-$label.txt") | Write-Host
-            try { Copy-Item $logPath (Join-Path $diagDir "Player-$label.log") -Force -ErrorAction SilentlyContinue } catch {}
-          }
-
-          Write-Host "Waiting 60s for first snapshot..."
-          Start-Sleep -Seconds 60
-          Take-MiniDump $proc.Id "t60"
-
-          Write-Host "Waiting 120s for second snapshot (t=180s total)..."
-          Start-Sleep -Seconds 120
-          Take-MiniDump $proc.Id "t180"
-
-          Write-Host "Waiting 120s for final full dump (t=300s total)..."
-          Start-Sleep -Seconds 120
-
-          Write-Host "--- proc state ---"
-          $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-          if ($live) {
-            Write-Host "Still running. HasExited=$($live.HasExited)"
-          } else {
-            Write-Host "Process exited early. ExitCode=$($proc.ExitCode)"
-          }
-
-          Write-Host "--- Player.log path ---"
-          Write-Host $logPath
-          if (-not (Test-Path $logPath)) {
-            Write-Host "::warning::Player.log was never created - Unity may have failed before logging init."
-          } else {
-            Write-Host "--- Player.log (full) ---"
-            Get-Content $logPath
-            Write-Host "--- Player.log filtered: Vulkan / GfxDevice / Renderer / engine / ERROR ---"
-            Select-String -Path $logPath -Pattern "Vulkan|GfxDevice|Renderer:|Initialize engine|GPU|Direct3D|OpenGL|ERROR|Failed|Exception" -SimpleMatch:$false |
-              ForEach-Object { Write-Host $_.Line }
-          }
-
-          # Final full memory dump (-ma) of the live Explorer process. The
-          # earlier -mm snapshots at t=60s and t=180s give us thread-stack
-          # progression; this -ma is the deep-dive view (managed heap +
-          # native modules, ~1-3 GB) we keep from the previous run for the
-          # same point in time. Together they let us tell whether the hang
-          # is right at start or only at t=5min, and which bootstrap step is
-          # awaiting at each timestamp.
-          if ($live) {
-            Write-Host "--- ProcDump final full dump on live Explorer ($($proc.Id)) ---"
-
-            if (-not $procdump) {
-              Write-Host "::warning::procdump64.exe not resolved earlier; skipping final dump."
-            } else {
-              # Loaded modules snapshot - cheap and survives even if -ma fails.
-              try {
-                Get-Process -Id $proc.Id -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Modules |
-                  Select-Object ModuleName, FileName, FileVersion, Company |
-                  Format-Table -AutoSize | Out-String | Set-Content -Path (Join-Path $diagDir "explorer-modules.txt")
-                Write-Host "Modules snapshot -> $diagDir\explorer-modules.txt"
-              } catch { "modules: $_" | Set-Content -Path (Join-Path $diagDir "explorer-modules.txt") }
-
-              $dumpFile = Join-Path $diagDir "explorer.dmp"
-              Write-Host "Running procdump -ma $($proc.Id) -> $dumpFile"
-              & $procdump.FullName -accepteula -ma $proc.Id $dumpFile 2>&1 | Tee-Object -FilePath (Join-Path $diagDir "procdump-output.txt") | Write-Host
-            }
-
-            Copy-Item $logPath (Join-Path $diagDir "Player.log") -Force -ErrorAction SilentlyContinue
-            Write-Host "Killing Explorer PID $($proc.Id)"
-            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-
-            Get-ChildItem $diagDir -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String | Write-Host
-          }
-
-      # AltTester Desktop is itself a Unity app, so its stdout is empty even
-      # when it runs fine - it writes everything to a *Player.log* inside
-      # %USERPROFILE%\AppData\LocalLow\<Company>\<Product>\. MetaForge's
-      # AltTesterService watches stdout for "AltTester(R) Server is running
-      # on port 13000" - which is why it always times out on Windows: the
-      # line is never on stdout, only in Player.log. This smoke launches the
-      # exe with -batchmode + -logFile <path> to *force* Unity to redirect
-      # its log to a file we control, then grep for the ready line.
-      - name: Smoke - AltTester batchmode + Player.log capture
-        if: false  # Confirmed AltTester Desktop batchmode hangs in Unity init even on WDDM/T4 (no -logFile output, no Player.log). Same hang the cleanup step guards against. Re-enable to re-diagnose if behavior changes.
-        shell: powershell
-        timeout-minutes: 3
-        env:
-          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
-        run: |
-          $ErrorActionPreference = "Continue"
-          $exe = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
-          if (-not (Test-Path $exe)) { throw "AltTester Desktop not at $exe" }
-          if (-not $env:ALTTESTER_LICENSE) { throw "ALTTESTER_LICENSE secret missing" }
-
-          # Pre-clean any prior AltTester Player.log under LocalLow so we
-          # don't read stale lines. Walk LocalLow and remove every Player.log
-          # under a directory whose name mentions AltTester.
-          $lowRoot = Join-Path $env:USERPROFILE "AppData\LocalLow"
-          if (Test-Path $lowRoot) {
-            Get-ChildItem -Path $lowRoot -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "AltTester|Altom" } |
-              ForEach-Object {
-                Write-Host "Pre-clean: removing $($_.FullName)"
-                Remove-Item -Force -Path $_.FullName -ErrorAction SilentlyContinue
-              }
-          }
-
-          $logFile = Join-Path $env:TEMP "alttester-unity.log"
-          if (Test-Path $logFile) { Remove-Item $logFile -Force }
-
-          # `-logFile <path>` forces Unity Player to write its log to that
-          # path instead of (or in addition to) the default LocalLow location.
-          # We still also grab the LocalLow log after the fact as a fallback
-          # in case the build ignores -logFile.
-          $arglist = @(
-            "-batchmode", "-nographics", "-termsAndConditionsAccepted",
-            "-port", "13000",
-            "-license", $env:ALTTESTER_LICENSE,
-            "-logFile", $logFile
-          )
-          $masked = ($arglist -join ' ') -replace [regex]::Escape($env:ALTTESTER_LICENSE), '<LICENSE>'
-          Write-Host "Launching: $exe $masked"
-          $proc = Start-Process -FilePath $exe -ArgumentList $arglist -NoNewWindow -PassThru
-          Write-Host "Started PID $($proc.Id). Sleeping 60s..."
-          Start-Sleep -Seconds 60
-
-          Write-Host "--- proc state ---"
-          $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
-          if ($live) {
-            Write-Host "Still running. HasExited=$($live.HasExited)"
-          } else {
-            Write-Host "Process is gone. ExitCode=$($proc.ExitCode)"
-          }
-
-          Write-Host "--- -logFile target ($logFile) ---"
-          if (Test-Path $logFile) {
-            Get-Content $logFile
-          } else {
-            Write-Host "(empty / not created - build may ignore -logFile)"
-          }
-
-          Write-Host "--- LocalLow Player.log scan ---"
-          if (Test-Path $lowRoot) {
-            $found = Get-ChildItem -Path $lowRoot -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "AltTester|Altom" }
-            if (-not $found) {
-              Write-Host "(no AltTester Player.log under $lowRoot)"
-            } else {
-              foreach ($f in $found) {
-                Write-Host "=== $($f.FullName) ==="
-                Get-Content $f.FullName
-              }
-            }
-          }
-
-          if ($live) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-
-      # ── AltTester loader-hang diagnostic. ──
-      # Local probes (2026-05-13) ruled out the obvious causes: the exact same
-      # arglist `-batchmode -nographics -termsAndConditionsAccepted -port <p>
-      # -license <k> -logFile <path>` starts AltTester Desktop in ~5-11s
-      #   - in a user-mode interactive Windows 11 session (10.0.26200), AND
-      #   - under LocalSystem in session 0 via PsExec64 -s (no interactive desktop)
-      # producing a 5KB Unity log and an open WS server on the requested port.
-      # So the hang on this runner is NOT in the flag set, NOT in Window
-      # Station / session 0, NOT in GPU (since -nographics gives NullGfxDevice).
-      # It is something specific to the partner Win11 Desktop image - most
-      # likely Defender / EDR blocking a DLL load, an outbound proxy choking
-      # license activation, or a VC++ / loader callback specific to this AMI.
-      #
-      # This step captures the evidence needed to RCA it:
-      #   - Defender state + force-exclude AltTester install dir
-      #   - DLL signatures + VC runtime versions inside the AltTester install
-      #   - Outbound reachability to alttester.com (license server)
-      #   - Procmon trace of all file/registry/network calls during launch
-      #   - ProcDump full memory dump of the hung process at t=90s
-      #   - Loaded modules snapshot of the hung process
-      # All uploaded as artifacts for offline analysis (WinDbg / Procmon GUI).
-      - name: Diag - AltTester loader hang capture
-        if: inputs.diagnose_alttester == true
-        shell: powershell
-        timeout-minutes: 10
-        env:
-          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
-        run: |
-          $ErrorActionPreference = "Continue"
-          $diagDir = Join-Path $env:RUNNER_TEMP "alttester-diag"
-          New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
-          Write-Host "Diag dir: $diagDir"
-
-          # 1. Sysinternals tools. ProcDump and Procmon ship in SEPARATE zips
-          # (the prior attempt used PSTools.zip which has PsExec but not ProcDump).
-          # Both are Microsoft-signed. Find files via Get-ChildItem after extract
-          # so we're resilient to filename casing and any future zip layout change.
-          $tools = Join-Path $env:USERPROFILE "sysinternals"
-          New-Item -ItemType Directory -Path $tools -Force | Out-Null
-          function Resolve-Tool($dir, $name) {
-            $hit = Get-ChildItem -Path $dir -Recurse -File -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { return $hit.FullName } else { return $null }
-          }
-          $procdump = Resolve-Tool $tools "procdump64.exe"
-          $procmon  = Resolve-Tool $tools "Procmon64.exe"
-          if (-not $procdump) {
-            Write-Host "Downloading Procdump.zip..."
-            $z = Join-Path $env:RUNNER_TEMP "Procdump.zip"
-            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile $z -UseBasicParsing
-            Expand-Archive -Path $z -DestinationPath $tools -Force
-            $procdump = Resolve-Tool $tools "procdump64.exe"
-          }
-          if (-not $procmon) {
-            Write-Host "Downloading ProcessMonitor.zip..."
-            $z = Join-Path $env:RUNNER_TEMP "ProcessMonitor.zip"
-            Invoke-WebRequest -Uri "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile $z -UseBasicParsing
-            Expand-Archive -Path $z -DestinationPath $tools -Force
-            $procmon = Resolve-Tool $tools "Procmon64.exe"
-          }
-          if (-not $procdump) { throw "procdump64.exe not found under $tools after download" }
-          if (-not $procmon)  { throw "Procmon64.exe not found under $tools after download" }
-          Write-Host "procdump: $procdump"
-          Write-Host "procmon:  $procmon"
-
-          # 2. Environment snapshot.
-          Write-Host "=== whoami / session ==="
-          whoami | Tee-Object -FilePath "$diagDir\whoami.txt"
-          ([System.Diagnostics.Process]::GetCurrentProcess()).SessionId | Out-File "$diagDir\sessionid.txt"
-          query session 2>&1 | Out-File "$diagDir\query-session.txt"
-
-          Write-Host "=== Defender state ==="
-          try { Get-MpComputerStatus | Format-List | Out-File "$diagDir\defender-status.txt" } catch { "Get-MpComputerStatus failed: $_" | Out-File "$diagDir\defender-status.txt" }
-          try { Get-MpPreference | Format-List | Out-File "$diagDir\defender-prefs.txt" } catch {}
-          try { Get-MpThreatDetection 2>$null | Format-List | Out-File "$diagDir\defender-threats.txt" } catch {}
-
-          Write-Host "=== Force-exclude AltTester from Defender ==="
-          try {
-            Add-MpPreference -ExclusionPath "C:\Program Files\AltTesterDesktop" -ErrorAction Stop
-            Add-MpPreference -ExclusionProcess "AltTesterDesktop.exe" -ErrorAction Stop
-            "Exclusions added" | Out-File "$diagDir\defender-exclusion.txt"
-          } catch {
-            "Add-MpPreference failed: $_" | Out-File "$diagDir\defender-exclusion.txt"
-          }
-
-          Write-Host "=== AltTester install signatures ==="
-          Get-ChildItem -Path "C:\Program Files\AltTesterDesktop" -Include *.exe,*.dll -Recurse -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              $sig = Get-AuthenticodeSignature $_.FullName
-              [PSCustomObject]@{
-                Path   = $_.FullName
-                Status = $sig.Status
-                Signer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { '<unsigned>' }
-              }
-            } | Format-List | Out-File "$diagDir\at-signatures.txt"
-
-          Write-Host "=== VC runtime DLLs ==="
-          $vcrt = @("vcruntime140.dll","vcruntime140_1.dll","msvcp140.dll","ucrtbase.dll")
-          foreach ($d in $vcrt) {
-            $p = Join-Path "$env:SystemRoot\System32" $d
-            if (Test-Path $p) {
-              "${d}: $((Get-Item $p).VersionInfo.FileVersion)" | Out-File "$diagDir\vcrt.txt" -Append
-            } else {
-              "${d}: MISSING" | Out-File "$diagDir\vcrt.txt" -Append
-            }
-          }
-
-          Write-Host "=== Outbound to alttester.com ==="
-          try { Test-NetConnection alttester.com -Port 443 -InformationLevel Detailed 2>&1 | Out-File "$diagDir\netconn-alttester.txt" } catch { "TNC failed: $_" | Out-File "$diagDir\netconn-alttester.txt" }
-          try {
-            $r = Invoke-WebRequest -Uri "https://alttester.com/" -UseBasicParsing -TimeoutSec 15
-            "Status=$($r.StatusCode) Len=$($r.RawContentLength)" | Out-File "$diagDir\http-alttester.txt"
-          } catch { "HTTP alttester.com failed: $_" | Out-File "$diagDir\http-alttester.txt" }
-
-          # 3. Start Procmon capture (no UI). Captures everything; we'll filter offline.
-          $pml = Join-Path $diagDir "alttester.pml"
-          Write-Host "=== Starting Procmon -> $pml ==="
-          Start-Process -FilePath $procmon -ArgumentList @("/AcceptEula","/Quiet","/Minimized","/Backingfile",$pml) -WindowStyle Hidden
-          Start-Sleep -Seconds 3
-
-          # 4. Launch AltTester with the standard MetaForge arglist.
-          $exe = "C:\Program Files\AltTesterDesktop\AltTesterDesktop.exe"
-          $logFile = Join-Path $diagDir "alttester-unity.log"
-          $arglist = @(
-            "-batchmode", "-nographics", "-termsAndConditionsAccepted",
-            "-port", "13000",
-            "-license", $env:ALTTESTER_LICENSE,
-            "-logFile", $logFile
-          )
-          $masked = ($arglist -join ' ') -replace [regex]::Escape($env:ALTTESTER_LICENSE), '<LICENSE>'
-          Write-Host "=== Launching AltTester: $exe $masked ==="
-          $atProc = Start-Process -FilePath $exe -ArgumentList $arglist -PassThru -WindowStyle Hidden
-          Write-Host "AT PID=$($atProc.Id)"
-
-          # 5. Poll TCP 13000 for ready, up to 90s.
-          $ready = $false
-          $deadline = (Get-Date).AddSeconds(90)
-          while ((Get-Date) -lt $deadline) {
-            try {
-              $t = New-Object System.Net.Sockets.TcpClient
-              $iar = $t.BeginConnect("127.0.0.1", 13000, $null, $null)
-              if ($iar.AsyncWaitHandle.WaitOne(500, $false)) { $t.EndConnect($iar); if ($t.Connected) { $ready = $true; break } }
-            } catch { } finally { try { $t.Close() } catch {} }
-            $alive = Get-Process -Id $atProc.Id -ErrorAction SilentlyContinue
-            if (-not $alive) { Write-Host "AT exited early ExitCode=$($atProc.ExitCode)"; break }
-            Start-Sleep -Milliseconds 500
-          }
-          $elapsed = [int]((Get-Date) - $atProc.StartTime).TotalSeconds
-          "ready=$ready elapsed=${elapsed}s pid=$($atProc.Id)" | Tee-Object -FilePath "$diagDir\summary.txt"
-
-          # 6. Loaded modules of the (possibly hung) process - snapshot before dump.
-          try {
-            Get-Process -Id $atProc.Id -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Modules |
-              Select-Object ModuleName, FileName, FileVersion, Company |
-              Format-Table -AutoSize | Out-File "$diagDir\at-modules.txt"
-          } catch { "modules: $_" | Out-File "$diagDir\at-modules.txt" }
-
-          # 7. ProcDump full memory dump - only meaningful if hang reproduced.
-          if (-not $ready) {
-            $alive = Get-Process -Id $atProc.Id -ErrorAction SilentlyContinue
-            if ($alive) {
-              Write-Host "=== ProcDump (-ma full) on hung AltTester ==="
-              $dumpFile = Join-Path $diagDir "alttester.dmp"
-              & $procdump -accepteula -ma $atProc.Id $dumpFile 2>&1 | Out-File "$diagDir\procdump-output.txt"
-            } else {
-              "AT process exited; no dump." | Out-File "$diagDir\procdump-output.txt"
-            }
-          } else {
-            "AT ready in ${elapsed}s; no hang to dump." | Out-File "$diagDir\procdump-output.txt"
-          }
-
-          # 8. Copy Player.log fallbacks (both user and system profile LocalLow).
-          foreach ($r in @("$env:USERPROFILE\AppData\LocalLow","C:\Windows\System32\config\systemprofile\AppData\LocalLow")) {
-            if (-not (Test-Path $r)) { continue }
-            Get-ChildItem -Path $r -Recurse -Filter "Player.log" -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "AltTester|Altom" } |
-              ForEach-Object {
-                $name = "player-$([System.IO.Path]::GetFileName($_.Directory.FullName))-" + ([System.IO.Path]::GetFileNameWithoutExtension($r)) + ".log"
-                Copy-Item $_.FullName (Join-Path $diagDir $name) -Force
-              }
-          }
-
-          # 9. Stop Procmon (flush backing file).
-          Write-Host "=== Stopping Procmon ==="
-          & $procmon /Terminate 2>&1 | Out-File "$diagDir\procmon-terminate.txt"
-          Start-Sleep -Seconds 5
-
-          # 10. Kill AltTester if still alive.
-          Get-Process AltTesterDesktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-          # 11. List artifacts so the job log shows what we captured.
-          Write-Host "=== Diag artifacts ==="
-          Get-ChildItem $diagDir -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String | Write-Host
-
-          # 12. Remove Defender exclusions we added.
-          try { Remove-MpPreference -ExclusionPath "C:\Program Files\AltTesterDesktop" -ErrorAction SilentlyContinue } catch {}
-          try { Remove-MpPreference -ExclusionProcess "AltTesterDesktop.exe" -ErrorAction SilentlyContinue } catch {}
-
-      # AltTester Desktop smoke proved -batchmode -nographics hangs in Unity init
-      # on this runner even with WDDM/T4 working. `mf explorer test` invokes
-      # AltTesterService.StartServerAsync with the same flag set
-      # (MetaForgeCLI/Services/AltTesterService.cs:18) and waits for the ready
-      # line "AltTester(R) Server is running on port 13000". First-run
-      # expectation: hang on ready timeout. Cap step at 20 min so the cleanup
-      # step still gets to run.
       - name: Run InWorld suite
-        if: env.DRY_RUN != 'true' && inputs.diagnose_alttester != true && inputs.diagnose_explorer != true
+        if: env.DRY_RUN != 'true'
         timeout-minutes: 40
         shell: powershell
         env:
@@ -1156,7 +697,7 @@ jobs:
       # always-on "Print Explorer Player.log" step below — no need to repeat
       # it here.
       - name: Diag - dump Explorer / AltTester logs on InWorld failure
-        if: failure() && env.DRY_RUN != 'true' && inputs.diagnose_alttester != true && inputs.diagnose_explorer != true
+        if: failure() && env.DRY_RUN != 'true'
         shell: powershell
         run: |
           $ErrorActionPreference = "Continue"
@@ -1234,7 +775,7 @@ jobs:
           }
 
       - name: Configure AWS credentials
-        if: false  # TEMP: disabled while stabilizing InWorld run. Re-enable once test is green.
+        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
@@ -1243,7 +784,7 @@ jobs:
 
       - name: Upload Allure report to S3
         id: s3
-        if: false  # TEMP: disabled while stabilizing InWorld run.
+        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
         shell: powershell
         env:
           BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
@@ -1253,8 +794,10 @@ jobs:
           $reportDir = Split-Path -Parent $env:REPORT
           aws s3 sync "$reportDir" "s3://$env:BUCKET/$env:S3_PATH/" --acl public-read --cache-control "public, max-age=300"
 
+      # Fallback so a failed S3 upload still leaves Player.log + allure-report
+      # downloadable from the run page.
       - name: Upload logs and report (artifact fallback)
-        if: always()  # Re-enabled to diagnose AltTester ready-timeout. S3 upload stays off.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: runner-validation-windows-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
@@ -1266,38 +809,48 @@ jobs:
             ~/AppData/Local/Decentraland/MetaForge/**/allure-results/**
             ~/AppData/Roaming/DecentralandLauncherLight/output.log
 
-      # Separate artifact step for the AltTester diagnostic dir: upload-artifact@v4
-      # requires all paths in one step to share a workspace-relative root, and the
-      # diag dir lives outside workspace under ${{ runner.temp }} (so it gets
-      # cleaned automatically between jobs). Splitting it out lets v4 use the diag
-      # dir itself as the rootDirectory.
-      - name: Upload AltTester diag artifact
-        if: always() && inputs.diagnose_alttester == true
-        uses: actions/upload-artifact@v4
-        with:
-          name: alttester-diag-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
-          if-no-files-found: warn
-          path: ${{ runner.temp }}/alttester-diag/**
-
-      # Mirrors the AltTester diag artifact pattern: explorer-diag lives outside
-      # workspace under ${{ runner.temp }}, so upload-artifact@v4 needs a step
-      # with that directory as its root. Contains the live-Explorer memory dump
-      # captured by the Vulkan smoke when diagnose_explorer=true.
-      - name: Upload Explorer diag artifact
-        if: always() && inputs.diagnose_explorer == true
-        uses: actions/upload-artifact@v4
-        with:
-          name: explorer-diag-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
-          if-no-files-found: warn
-          path: ${{ runner.temp }}/explorer-diag/**
-
       - name: Summarize report URL
-        if: false  # TEMP: disabled while stabilizing InWorld run.
+        if: always() && steps.s3.outcome == 'success'
         shell: powershell
         run: |
           $url = "${{ steps.ids.outputs.report_url }}"
           "::notice::Allure report: $url" | Write-Host
           "**Allure report:** [$url]($url)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      # Mirrors the macOS visual-suite pattern (PR #2): find any prior
+      # comment by github-actions[bot] with the marker below, then replace
+      # it. Result: one rolling comment per PR, updated on every run, no
+      # flood. Skipped for workflow_dispatch / push without an open PR.
+      - name: Find existing PR comment
+        if: always() && steps.pr.outputs.number != ''
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ steps.pr.outputs.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '## InWorld smoke (Windows GPU)'
+
+      - name: Comment results on PR
+        if: always() && steps.pr.outputs.number != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ steps.pr.outputs.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            ## InWorld smoke (Windows GPU)
+
+            ${{ job.status == 'success' && '✅ **InWorld suite passed.**' || '❌ **InWorld suite failed.**' }}
+
+            | | |
+            |---|---|
+            | Commit | `${{ steps.ids.outputs.short_sha }}` |
+            | Branch | `${{ github.ref_name }}` |
+            | Filter | `${{ env.TEST_FILTER }}` |
+            | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed - see workflow artifact_' || '_not generated_') }} |
+            | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+            <sub>Self-hosted `win-gpu-t4-onboarding-new-image` · this comment is updated on every run.</sub>
 
       # ── Cleanup is mandatory on a persistent self-hosted runner. Every step ──
       # ── runs unconditionally (`always()` + per-step error swallow) so a ──
