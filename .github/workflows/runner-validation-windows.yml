@@ -5,7 +5,7 @@ name: Runner Validation (Windows)
 # counterpart to Nicolas's macOS `run-visual-suite.yml` reusable workflow
 # (PR #2 / feat/snapshots-comparison), but:
 #   - Targets self-hosted Windows w/ NVIDIA T4 instead of macos-14
-#   - Runs the `InWorld` NUnit category (single smoke test by default)
+#   - Runs the `InWorld` NUnit category (full ~17-test suite by default)
 #     instead of the `Visual` category
 #   - Uses PowerShell blocks lifted from
 #     decentraland/onboarding-e2e/.github/workflows/explorer-smoke.yaml
@@ -17,8 +17,9 @@ name: Runner Validation (Windows)
 #
 # Triggers:
 #   - workflow_dispatch (manual, with overrides for build_url + test filter)
-#   - push on feat/runner-validation if this YAML changes (fast iteration
-#     during PR review; remove or narrow before merging to main)
+#   - push on feat/win-gpu-test-runner-workflow if this YAML or explorer/Tests
+#     changes (fast iteration during PR review; remove or narrow before
+#     merging to main)
 #
 # Required secrets (per Slack thread 2026-05-08, Charly provisioned):
 #   - ALTTESTER_LICENSE                        AltTester Pro license key
@@ -31,10 +32,10 @@ name: Runner Validation (Windows)
 # Required vars:
 #   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL   Public-facing prefix of the bucket
 #
-# Runner access prerequisite:
-#   The `win-gpu-t4-onboarding` runner tag must be granted to
-#   decentraland/explorer-automation. As of 2026-05-11 the tag is registered
-#   on decentraland/onboarding-e2e - confirmation pending from Charly.
+# Runner:
+#   `win-gpu-t4-onboarding-new-image` (Win 11 Desktop partner image, NVIDIA T4,
+#   4 vCPU). Persistent self-hosted runner; install steps below are idempotent
+#   so subsequent runs reuse cached drivers/SDKs/CLIs (~12 min savings).
 
 on:
   workflow_dispatch:
@@ -64,7 +65,7 @@ on:
         default: false
 
   push:
-    branches: [feat/runner-validation]
+    branches: [feat/win-gpu-test-runner-workflow]
     paths:
       - '.github/workflows/runner-validation-windows.yml'
       - 'explorer/Tests/**'
@@ -203,11 +204,11 @@ jobs:
 
       # ── GPU diagnostics (never fails; surfaces hardware state in logs) ──
       # Lifted from onboarding-e2e/explorer-smoke.yaml; safe to re-run on a
-      # persistent runner since it only reads device info. Extended with
-      # driver-model + Vulkan ICD probes because the previous Vulkan smoke
-      # showed `InitializeEngineGraphics failed` on this image, and the
-      # leading theory is that the T4 ships in TCC (compute-only) mode with
-      # no Vulkan ICD exposed.
+      # persistent runner since it only reads device info. The driver-model +
+      # Vulkan ICD probes are kept as an early-warning canary: if the image
+      # ever ships a TCC-mode T4 again or loses Vulkan ICD registration,
+      # subsequent steps will fail much later (Unity GfxDevice init) with
+      # confusing symptoms — this step makes the cause obvious in the log.
       - name: GPU diagnostics
         shell: powershell
         run: |
