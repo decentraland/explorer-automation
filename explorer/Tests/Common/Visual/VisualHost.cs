@@ -67,7 +67,8 @@ public static class VisualHost
         Reporter.Log($"VisualHost loaded scene: {sceneId}");
 
         // chokidar debounces watch events for 800ms — wait past it so the websocket reload
-        // fires before the test starts polling for frame stability.
+        // fires before the test starts polling. SceneReady.WaitUntilReady() handles the
+        // not-ready → ready cycle from there, so this sleep only needs to cover the debounce.
         Thread.Sleep(900);
     }
 

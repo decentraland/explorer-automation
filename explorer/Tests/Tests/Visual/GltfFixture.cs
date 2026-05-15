@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [AllureSuite("Visual")]
 [AllureSubSuite("gltf")]
 [Category("Visual")]
+[Order(21)]
 public class GltfFixture
 {
     [OneTimeSetUp]
@@ -16,7 +17,7 @@ public class GltfFixture
     [Test]
     public void Default()
     {
-        Frame.WaitForStable();
-        Snapshot.AssertMatchesBaseline("default", tolerance: 3);
+        SceneReady.WaitUntilReady();
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }

@@ -16,25 +16,37 @@ name: Visual Suite
 # across platforms.
 #
 # Required secrets (caller passes via `secrets: inherit`):
-#   - ALTTESTER_LICENSE                    AltTester Pro license key
-#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer; write on decentraland/explorer-automation (for baseline auto-commits)
-#   - EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
-#   - EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
-#   - EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
-#   - EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+#   - ALTTESTER_LICENSE                        AltTester Pro license key
+#   - REPOS_READ_ONLY_TOKEN                    PAT — read on decentraland/MetaForge + decentraland/unity-explorer (read-only is sufficient; baseline auto-commits use GITHUB_TOKEN)
+#   - DEV_EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
+#   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
+#   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
+#   - DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
 #
 # Required vars on the caller's repo (read via `vars.*` inside this workflow,
 # which resolves against the caller's repo for workflow_call invocations):
-#   - EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
+#   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
 
 on:
   workflow_call:
     inputs:
+      platform:
+        description: 'Target OS for the run. "macos" today; "windows" wired in but the install steps don''t exist yet — leave as macos until the Windows runner is provisioned.'
+        type: string
+        required: false
+        default: macos
+
       mode:
-        description: '"test" to validate against baselines (default) or "record" to regenerate them.'
+        description: '"test" to validate against baselines (default), "record" to regenerate them, or "bootstrap" to only record baselines that are currently missing.'
         type: string
         required: false
         default: test
+
+      filter:
+        description: 'NUnit filter expression passed to `mf explorer test --filter`. Empty falls back to "Category=Visual" (run the whole visual suite).'
+        type: string
+        required: false
+        default: ''
 
       pr_number:
         description: 'PR number on the *caller* repo, used for the S3 path and the result comment. Leave empty for non-PR runs (e.g. manual dispatch); the result then surfaces only in the workflow summary.'
@@ -71,11 +83,12 @@ permissions:
 
 jobs:
   run:
-    name: Visual suite (${{ inputs.mode }})
-    runs-on: macos-14
+    name: Visual suite (${{ inputs.mode }} / ${{ inputs.platform }})
+    runs-on: ${{ inputs.platform == 'windows' && 'windows-latest' || 'macos-14' }}
     timeout-minutes: 30
 
     env:
+      TARGET_OS: ${{ inputs.platform }}
       MODE: ${{ inputs.mode }}
       PR_NUMBER: ${{ inputs.pr_number }}
       # github.repository inside a workflow_call run resolves to the caller's repo
@@ -86,16 +99,26 @@ jobs:
       # and tests_ref (or "main") when callers omit them (e.g. manual dispatch)
       COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || format('run-{0}', github.run_id) }}
       BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || 'main') }}
+      # Filter passed to `mf explorer test --filter`. Defaults to the whole visual suite when caller doesnt supply one
+      TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=Visual' }}
       # vars.* inside a workflow_call run reads the *caller's* repo vars
-      PUBLIC_URL_PREFIX: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
 
     steps:
-      - name: Validate mode
+      - name: Validate inputs
         run: |
           set -euo pipefail
           case "$MODE" in
-            test|record) ;;
-            *) echo "::error::Unknown mode '$MODE'. Expected 'test' or 'record'."; exit 1 ;;
+            test|record|bootstrap) ;;
+            *) echo "::error::Unknown mode '$MODE'. Expected 'test', 'record', or 'bootstrap'."; exit 1 ;;
+          esac
+          case "$TARGET_OS" in
+            macos) ;;
+            windows)
+              echo "::error::platform=windows is not yet supported — install steps are macOS-only. See per-os-baselines-plan.md."
+              exit 1
+              ;;
+            *) echo "::error::Unknown platform '$TARGET_OS'. Expected 'macos' or 'windows'."; exit 1 ;;
           esac
 
       - name: Compute identifiers
@@ -107,9 +130,11 @@ jobs:
           # (manual dispatch) PR_NUMBER is empty — bucket those under a
           # `manual/` segment plus the workflow run id so successive
           # manual dispatches don't overwrite each other's reports.
+          # TARGET_OS segment lets parallel macOS + Windows runs
+          # write to separate paths without clobbering each other.
           REPO_SLUG="${PR_REPO//\//-}"
           PR_SEGMENT="${PR_NUMBER:-manual-${GITHUB_RUN_ID}}"
-          S3_PATH="@dcl/${REPO_SLUG}/visual-regression/${MODE}/${PR_SEGMENT}/${COMMIT_SHA}"
+          S3_PATH="@dcl/${REPO_SLUG}/visual-regression/${MODE}/${TARGET_OS}/${PR_SEGMENT}/${COMMIT_SHA}"
           {
             echo "s3_path=${S3_PATH}"
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
@@ -191,7 +216,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$HOME/Library/Application Support/Decentraland/Explorer"
           ACCOUNT="ci-visual-${GITHUB_RUN_ID}"
-          mf account create "$ACCOUNT" --env zone
+          mf account create "$ACCOUNT"
           mf account login "$ACCOUNT"
           echo "MF_ACCOUNT=${ACCOUNT}" >> "$GITHUB_ENV"
 
@@ -208,16 +233,17 @@ jobs:
           fi
 
           RECORD_FLAG=""
-          if [ "$MODE" = "record" ]; then
-            RECORD_FLAG="--record-baselines"
-          fi
+          case "$MODE" in
+            record)    RECORD_FLAG="--record-baselines" ;;
+            bootstrap) export SNAPSHOT_MODE=MissingOnly ;;
+          esac
 
           TEST_EXIT=0
           mf explorer test "${BUILD_URL}" \
             --non-interactive \
             ${TESTS_REF:+--tests-ref "$TESTS_REF"} \
             $RECORD_FLAG \
-            --filter "Category=Visual" \
+            --filter "$TEST_FILTER" \
             --report-type SingleFile \
             --skip-allure-open \
             || TEST_EXIT=$?
@@ -229,27 +255,32 @@ jobs:
         id: report
         if: always()
         run: |
+          set -euo pipefail
           REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
                         -name "index.html" -path "*allure-report*" 2>/dev/null | head -1)
           if [ -z "$REPORT" ]; then
-            echo "::warning::Allure report not found; skipping upload."
-            echo "report_path=" >> "$GITHUB_OUTPUT"
-          else
-            echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
+            # Hard fail: the report is the user-visible evidence of the run.
+            # Missing it means we can't show pass/fail diffs to reviewers,
+            # which defeats the point of the pipeline. Better to fail loudly
+            # than ship a green check with no artifact.
+            echo "::error::Allure report not found under metaforge data dir. metaforge's report-gen step likely failed — check earlier logs for 'allure exited with code'."
+            exit 1
           fi
+          echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         if: always() && steps.report.outputs.report_path != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
 
       - name: Upload Allure report to S3
+        id: s3
         if: always() && steps.report.outputs.report_path != ''
         env:
-          BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+          BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
           REPORT: ${{ steps.report.outputs.report_path }}
         run: |
@@ -268,8 +299,8 @@ jobs:
           retention-days: 14
 
       # ─── Baselines mode: commit regenerated PNGs back to the PR branch ───
-      # Only fires when:
-      #   1. mode is `record` (we asked for new baselines), AND
+      # Fires when:
+      #   1. mode is `record` or `bootstrap` (we asked for new baselines), AND
       #   2. PR_NUMBER is non-empty (a PR exists to push to). Manual
       #      workflow_dispatch in record mode renders new baselines you
       #      can inspect via the Allure report, but never commits — there
@@ -277,10 +308,16 @@ jobs:
       #      accidental push to main / dev would be destructive.
       # The caller's metaforge clone is already checked out at TESTS_REF,
       # so we commit from that working tree.
+      #
+      # Intentionally NOT gated on the report being present: the baselines
+      # are the load-bearing artifact, the report is the user-visible
+      # evidence. If `mf explorer test` recorded baselines but report-gen
+      # failed afterward, we'd lose the baselines if we skipped this step,
+      # forcing the user to re-run an expensive macOS-runner job.
       - name: Commit regenerated baselines
-        if: always() && inputs.mode == 'record' && env.PR_NUMBER != '' && steps.report.outputs.report_path != ''
+        if: always() && (inputs.mode == 'record' || inputs.mode == 'bootstrap') && env.PR_NUMBER != ''
         env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           REPO_ROOT="$HOME/Library/Application Support/Decentraland/MetaForge/explorer-automation"
@@ -291,8 +328,7 @@ jobs:
 
           cd "$REPO_ROOT"
 
-          # only stage baseline PNGs
-          git add '**/Baselines/*.png' || true
+          git add '**/Baselines/**/*.png' || true
           if git diff --cached --quiet; then
             echo "No baseline changes to commit."
             exit 0
@@ -314,7 +350,7 @@ jobs:
           repository: ${{ env.PR_REPO }}
           issue-number: ${{ env.PR_NUMBER }}
           comment-author: 'github-actions[bot]'
-          body-includes: ${{ inputs.mode == 'record' && '## Baseline regeneration' || '## Visual regression tests' }}
+          body-includes: ${{ format('## {0} ({1})', (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests', inputs.platform) }}
 
       - name: Comment results on PR
         if: always() && env.PR_NUMBER != ''
@@ -325,19 +361,32 @@ jobs:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace
           body: |
-            ## ${{ inputs.mode == 'record' && 'Baseline regeneration' || 'Visual regression tests' }}
+            ## ${{ (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests' }} (${{ inputs.platform }})
 
-            ${{ job.status == 'success' && (inputs.mode == 'record' && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || (inputs.mode == 'record' && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**') }}
+            ${{ job.status == 'success' && ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**') }}
 
             | | |
             |---|---|
+            | Platform | `${{ inputs.platform }}` |
+            | Mode | `${{ inputs.mode }}` |
             | Commit | `${{ env.COMMIT_SHA }}` |
             | Branch | `${{ env.BRANCH_LABEL }}` |
             | Tests ref | `${{ env.TESTS_REF || 'main' }}` |
-            | Allure report | ${{ steps.report.outputs.report_path != '' && format('[Open]({0})', steps.ids.outputs.report_url) || '_not generated_' }} |
+            | Filter | `${{ env.TEST_FILTER }}` |
+            | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
             | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
-            <sub>${{ inputs.mode == 'record' && 'Triggered via `/generate-baselines`' || 'Triggered via `/visual-tests`' }} · this comment is updated on every run.</sub>
+            <sub>${{ (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Triggered via `/generate-baselines`' || 'Triggered via `/visual-tests`' }} · this comment is updated on every run for this platform.</sub>
+
+      # Upload the Explorer's Player.log so callers can download and print it
+      - name: Upload Explorer Player.log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-log-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
+          path: /Users/runner/Library/Logs/Decentraland/Explorer/Player.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Cleanup metaforge state
         if: always()

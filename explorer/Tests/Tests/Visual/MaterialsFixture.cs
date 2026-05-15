@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [AllureSuite("Visual")]
 [AllureSubSuite("materials")]
 [Category("Visual")]
+[Order(22)]
 public class MaterialsFixture
 {
     [OneTimeSetUp]
@@ -16,7 +17,7 @@ public class MaterialsFixture
     [Test]
     public void Default()
     {
-        Frame.WaitForStable();
-        Snapshot.AssertMatchesBaseline("default", tolerance: 3);
+        SceneReady.WaitUntilReady();
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }

@@ -2,19 +2,17 @@ namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Email + OTP Login")]
 [Category("Auth")]
-[Order(2)]
-[Ignore("Auth suite temporarily disabled")]
+// MUST stay last — see comment on EmailOtpLoginTests.
+[Order(1001)]
 public class EmailOtpLoginWithNewsletterTests : LoggedOutAuthBaseTest
 {
     [Test]
     public void TestNewUserCanLoginWithEmailOtpAndSubscribeToNewsletter()
     {
-        var primaryEmail = OtpMailbox.GeneratePlusAliasEmail();
-        Reporter.Log($"Primary test email: {primaryEmail}");
-
-        // Step 1 — submit email. Pool = primary + alternates (each with fresh +hash),
-        // shuffled to spread load across Thirdweb's per-address rate-limit buckets.
-        var email = SubmitEmailWithRateLimitFallback(primaryEmail, shufflePool: true);
+        // Step 1 — submit email. Each call to GenerateFreshEmail returns a brand-new
+        // qa-<hash>@<EMAIL_DOMAIN> recipient (its own per-address rate-limit bucket),
+        // so we can retry transparently on any transient failure.
+        var email = SubmitEmailWithRetry(OtpMailbox.GenerateFreshEmail);
 
         // Step 2 — fetch OTP from inbox and submit
         var code = OtpMailbox.WaitForOtp(email);

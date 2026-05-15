@@ -49,15 +49,6 @@ concurrency:
   group: temp-bootstrap-visual-suite
   cancel-in-progress: true
 
-env:
-  # Pinned unity-explorer PR build under test. Both record and validate
-  # phases use this same artifact — that's how the bootstrap proves
-  # end-to-end plumbing without needing pre-existing baselines.
-  PINNED_BUILD_URL: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
-  # PR #2 in this repo — used by run-visual-suite.yml for the result
-  # comment + S3 path namespacing.
-  BOOTSTRAP_PR: '2'
-
 jobs:
   record:
     name: 1. Record baselines
@@ -65,11 +56,34 @@ jobs:
     with:
       mode: record
       pr_number: '2'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_macos.zip'
       tests_ref: feat/snapshots-comparison
       # commit_sha + branch_label are cosmetic; let the reusable fall back
       # to its run-id default for the bootstrap run.
     secrets: inherit
+
+  print-record-log:
+    name: 1a. Print Explorer log (record)
+    needs: record
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Player.log artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: player-log-record-run-${{ github.run_id }}
+          path: ./logs
+      - name: Print Player.log
+        run: |
+          echo "::group::Explorer Player.log (record)"
+          if [ -f ./logs/Player.log ]; then
+            cat ./logs/Player.log
+          else
+            echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
+          fi
+          echo "::endgroup::"
 
   validate:
     name: 2. Validate against just-recorded baselines
@@ -78,6 +92,29 @@ jobs:
     with:
       mode: test
       pr_number: '2'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-21880-4a69d3a/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_macos.zip'
       tests_ref: feat/snapshots-comparison
     secrets: inherit
+
+  print-validate-log:
+    name: 2a. Print Explorer log (validate)
+    needs: validate
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Player.log artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: player-log-test-run-${{ github.run_id }}
+          path: ./logs
+      - name: Print Player.log
+        run: |
+          echo "::group::Explorer Player.log (validate)"
+          if [ -f ./logs/Player.log ]; then
+            cat ./logs/Player.log
+          else
+            echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
+          fi
+          echo "::endgroup::"

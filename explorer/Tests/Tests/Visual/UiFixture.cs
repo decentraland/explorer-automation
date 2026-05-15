@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [AllureSuite("Visual")]
 [AllureSubSuite("ui")]
 [Category("Visual")]
+[Order(23)]
 public class UiFixture
 {
     [OneTimeSetUp]
@@ -16,7 +17,7 @@ public class UiFixture
     [Test]
     public void Default()
     {
-        Frame.WaitForStable();
-        Snapshot.AssertMatchesBaseline("default", tolerance: 3);
+        SceneReady.WaitUntilReady();
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }

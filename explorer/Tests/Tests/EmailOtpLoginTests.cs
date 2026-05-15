@@ -2,19 +2,21 @@ namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Email + OTP Login")]
 [Category("Auth")]
-[Order(1)]
-[Ignore("Auth suite temporarily disabled")]
+// MUST stay among the highest Order values in the assembly: this fixture (via
+// LoggedOutAuthBaseTest) signs out, leaving the Explorer at LoginSelection. BaseTest's
+// EnsureInWorld can't recover from that state, so any non-Auth fixture running after
+// would fail. NUnit also runs fixtures with no [Order] *after* ordered ones, so every
+// other fixture in this assembly must carry an [Order] lower than this one.
+[Order(1000)]
 public class EmailOtpLoginTests : LoggedOutAuthBaseTest
 {
     [Test]
     public void TestNewUserCanLoginWithEmailOtp()
     {
-        var primaryEmail = OtpMailbox.GeneratePlusAliasEmail();
-        Reporter.Log($"Primary test email: {primaryEmail}");
-
-        // Step 1 — submit email. Pool = primary + alternates (each with fresh +hash),
-        // shuffled to spread load across Thirdweb's per-address rate-limit buckets.
-        var email = SubmitEmailWithRateLimitFallback(primaryEmail, shufflePool: true);
+        // Step 1 — submit email. Each call to GenerateFreshEmail returns a brand-new
+        // qa-<hash>@<EMAIL_DOMAIN> recipient (its own per-address rate-limit bucket),
+        // so we can retry transparently on any transient failure.
+        var email = SubmitEmailWithRetry(OtpMailbox.GenerateFreshEmail);
 
         // Step 2 — fetch OTP from inbox and submit
         var code = OtpMailbox.WaitForOtp(email);

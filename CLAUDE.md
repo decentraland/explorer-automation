@@ -7,13 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working anywher
 This repo hosts **two independent test stacks** that share a single test identity and credentials:
 
 - **`explorer/`** — C# / .NET 10 / NUnit / AltTester suite for the Decentraland Explorer **desktop client** (Unity). See [explorer/CLAUDE.md](explorer/CLAUDE.md) for build commands, architecture, and conventions.
-- **`web/`** — TypeScript / Playwright suite for the Decentraland **web dapp** (`https://decentraland.org` + `/auth`) and the cross-platform handoff into the desktop client. See [web/CLAUDE.md](web/CLAUDE.md).
+- **`web/`** — TypeScript / Playwright suite for two web surfaces: the Decentraland auth/landing flows at `https://decentraland.org` + `/auth` (including the cross-platform handoff into the desktop client) and the **marketplace dapp** at `/marketplace/` (off-chain browsing + on-chain buy/sell flows on Polygon Amoy testnet). See [web/CLAUDE.md](web/CLAUDE.md).
 
 ### Shared at the root
 
 - **`.env`** — IMAP credentials for OTP retrieval; loaded by both stacks. Template in `.env.example`.
 - **`Makefile`** — repo-wide entry points (install, build, test wrappers). `make help` lists them.
-- **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`.
+- **`scripts/setup-test-identity.sh`** — provisions the BIP39 wallet identity used by all in-world tests (both `@cross` Playwright tests and the C# `InWorld` category).
+- **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`. The `dcl-testing-playwright`, `playwright-best-practices`, and `dcl-testing` skills apply inside `web/` (auth + marketplace).
 
 To provision the BIP39 wallet identity used by all in-world tests, use `metaforge account create <name>` directly. See each stack's README for details.
 

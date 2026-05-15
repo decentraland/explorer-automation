@@ -47,7 +47,7 @@ SNAPSHOT_MODE=record dotnet test --filter TestSettingsPanelLooksRight
 SNAPSHOT_MODE=record metaforge explorer test --filter TestSettingsPanelLooksRight
 ```
 
-This drops `Tests/Baselines/MyFeatureSnapshotTests/TestSettingsPanelLooksRight__settings_panel.png`. Commit it. Subsequent runs without the env var compare against it.
+This drops `Tests/Baselines/MyFeatureSnapshotTests/TestSettingsPanelLooksRight__settings_panel.<os>.png` (where `<os>` is `macos`, `windows`, or `linux` depending on the recording host). Commit it. Subsequent runs without the env var compare against the baseline for whichever OS the test ran on; if a baseline for another OS is missing, that OS's run fails until it's bootstrapped too.
 
 ## Public API
 
@@ -96,7 +96,7 @@ Resolution order: per-call `mode:` argument → `SNAPSHOT_MODE` env var → defa
 | Mode | When to use | How to trigger |
 |---|---|---|
 | `Compare` (default) | CI / regular runs | env var unset |
-| `Record` | Refresh after an intentional UI change — overwrites baseline, passes | `SNAPSHOT_MODE=record dotnet test --filter ...` |
+| `Record` | Refresh after an intentional UI change — overwrites baseline (skips write if within 1% of the existing one), passes | `SNAPSHOT_MODE=record dotnet test --filter ...` |
 | `MissingOnly` | Bootstrap a newly added snapshot — saves baseline if missing, compares otherwise | `SNAPSHOT_MODE=missingonly dotnet test --filter ...` |
 
 Per-call override:
@@ -123,7 +123,9 @@ Tuning rule of thumb:
 
 ## Baselines
 
-Stored under `Tests/Baselines/<TestClass>/<TestMethod>__<name>.png`. Committed to git so reviewers can see UI changes in PR diffs.
+Stored under `Tests/Baselines/<TestClass>/<TestMethod>__<name>.<os>.png`. Committed to git so reviewers can see UI changes in PR diffs.
+
+The `<os>` suffix is one of `macos`, `windows`, or `linux`, picked at test time from `RuntimeInformation.IsOSPlatform(...)` in `BaselineStore.OsTag`. Each OS owns its own PNG because pixel rendering differs across operating systems (Metal vs D3D, font subpixel hinting, color pipeline). When you add support for a second OS, run the suite once with `SNAPSHOT_MODE=missingonly` (or comment `/bootstrap-baselines` in CI) to seed baselines for tests that don't have one for that OS yet — existing baselines are untouched.
 
 `Tests.csproj` excludes them from the build output (`CopyToOutputDirectory="Never"`) so `bin/` stays small.
 
@@ -138,6 +140,7 @@ Each snapshot wraps its work in an `AllureApi.Step("Snapshot: <name>")`. Attachm
 | Match | `<name>.actual.png` |
 | Mismatch | `<name>.actual.png`, `<name>.baseline.png`, `<name>.diff.png` |
 | Recorded / bootstrapped | `<name>.recorded.png` |
+| Record skipped (within 1% of existing baseline) | `<name>.actual.png` |
 | Missing baseline (Compare mode) | `<name>.actual.png` (then `Assert.Fail`) |
 
 The diff PNG paints mismatched pixels solid red over a 50%-faded copy of the actual frame so differences pop against the original context.
@@ -181,7 +184,7 @@ Tests/Common/Snapshots/
   ScreenshotCapture.cs   # AltDriver wrapper + SkiaSharp encode/crop helpers
   BaselineStore.cs       # baseline path resolution + I/O
 
-Tests/Baselines/<TestClass>/<TestMethod>__<name>.png   # committed baselines
+Tests/Baselines/<TestClass>/<TestMethod>__<name>.<os>.png   # committed baselines, <os> ∈ {macos, windows, linux}
 Tests/Tests/Visual/ExampleCubeFixture.cs               # sample test
 ```
 
