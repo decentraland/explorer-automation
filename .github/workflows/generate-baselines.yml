@@ -56,6 +56,7 @@ jobs:
     outputs:
       authorized: ${{ steps.gate.outputs.authorized }}
       pr_number: ${{ steps.pr.outputs.number }}
+      filter: ${{ steps.filter.outputs.value }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
       head_short_sha: ${{ steps.pr.outputs.head_short_sha }}
       head_ref: ${{ steps.pr.outputs.head_ref }}
@@ -105,6 +106,28 @@ jobs:
             echo "head_short_sha=${HEAD_SHA:0:7}"
             echo "head_ref=${HEAD_REF}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Parse filter from comment
+        id: filter
+        if: steps.gate.outputs.authorized == 'true'
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          FIRST_LINE=$(printf '%s' "$COMMENT_BODY" | head -n1)
+          VALUE="${FIRST_LINE#/generate-baselines}"
+          VALUE="${VALUE# }"
+          DELIM="EOF_$(openssl rand -hex 8)"
+          {
+            echo "value<<${DELIM}"
+            echo "${VALUE}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          if [ -n "$VALUE" ]; then
+            echo "::notice::Using filter: ${VALUE}"
+          else
+            echo "::notice::No filter supplied; using workflow default."
+          fi
 
       - name: Resolve Explorer build URL
         id: build
@@ -177,6 +200,7 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: record
+      filter: ${{ needs.resolve.outputs.filter }}
       pr_number: ${{ needs.resolve.outputs.pr_number }}
       build_url: ${{ needs.resolve.outputs.build_url }}
       tests_ref: ${{ needs.resolve.outputs.head_ref }}

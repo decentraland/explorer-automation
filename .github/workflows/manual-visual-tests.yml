@@ -35,6 +35,11 @@ on:
         type: choice
         options: [test, record]
         default: test
+      filter:
+        description: 'NUnit filter for `mf explorer test --filter`. Empty = Category=Visual (whole suite).'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -92,6 +97,7 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: ${{ inputs.mode }}
+      filter: ${{ inputs.filter }}
       build_url: ${{ needs.resolve.outputs.build_url }}
       tests_ref: ${{ inputs.tests_ref }}
     secrets: inherit

@@ -36,6 +36,12 @@ on:
         required: false
         default: test
 
+      filter:
+        description: 'NUnit filter expression passed to `mf explorer test --filter`. Empty falls back to "Category=Visual" (run the whole visual suite).'
+        type: string
+        required: false
+        default: ''
+
       pr_number:
         description: 'PR number on the *caller* repo, used for the S3 path and the result comment. Leave empty for non-PR runs (e.g. manual dispatch); the result then surfaces only in the workflow summary.'
         type: string
@@ -86,6 +92,8 @@ jobs:
       # and tests_ref (or "main") when callers omit them (e.g. manual dispatch)
       COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || format('run-{0}', github.run_id) }}
       BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || 'main') }}
+      # Filter passed to `mf explorer test --filter`. Defaults to the whole visual suite when caller doesnt supply one
+      TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=Visual' }}
       # vars.* inside a workflow_call run reads the *caller's* repo vars
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
 
@@ -217,7 +225,7 @@ jobs:
             --non-interactive \
             ${TESTS_REF:+--tests-ref "$TESTS_REF"} \
             $RECORD_FLAG \
-            --filter "Category=Visual" \
+            --filter "$TEST_FILTER" \
             --report-type SingleFile \
             --skip-allure-open \
             || TEST_EXIT=$?
@@ -335,6 +343,7 @@ jobs:
             | Commit | `${{ env.COMMIT_SHA }}` |
             | Branch | `${{ env.BRANCH_LABEL }}` |
             | Tests ref | `${{ env.TESTS_REF || 'main' }}` |
+            | Filter | `${{ env.TEST_FILTER }}` |
             | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
             | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
