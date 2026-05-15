@@ -91,7 +91,34 @@ jobs:
     timeout-minutes: 5
     outputs:
       build_url: ${{ steps.build.outputs.build_url }}
+      pr_number: ${{ steps.pr.outputs.number }}
     steps:
+      # Resolves the PR # for the head branch so the S3 path stays stable
+      # across reruns on the same PR and so the result comment lands on the
+      # right PR. Empty for workflow_dispatch runs from main / detached refs;
+      # downstream steps fall back to manual-${run_id}. Runs here (ubuntu)
+      # because the Windows runner has neither bash nor gh on PATH until
+      # later install steps.
+      - name: Resolve PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "$HEAD_REF" \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""' 2>/dev/null || echo "")
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          if [ -n "$PR_NUMBER" ]; then
+            echo "::notice::Resolved PR #${PR_NUMBER} for branch ${HEAD_REF}"
+          else
+            echo "::notice::No open PR found for branch ${HEAD_REF}; using manual segment in S3 path."
+          fi
+
       - name: Resolve Explorer build URL
         id: build
         env:
@@ -163,36 +190,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Resolves the PR # for the head branch so the S3 path stays stable
-      # across reruns on the same PR and so the result comment lands on the
-      # right PR. Empty for workflow_dispatch runs from main / detached refs;
-      # downstream steps fall back to manual-${run_id}.
-      - name: Resolve PR number
-        id: pr
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_REF: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          PR_NUMBER=$(gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --head "$HEAD_REF" \
-            --state open \
-            --json number \
-            --jq '.[0].number // ""' 2>/dev/null || echo "")
-          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          if [ -n "$PR_NUMBER" ]; then
-            echo "::notice::Resolved PR #${PR_NUMBER} for branch ${HEAD_REF}"
-          else
-            echo "::notice::No open PR found for branch ${HEAD_REF}; using manual segment in S3 path."
-          fi
-
       - name: Compute identifiers
         id: ids
         shell: powershell
         env:
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           $shortSha = $env:COMMIT_SHA.Substring(0, 7)
           if ($env:PR_NUMBER) { $prSegment = $env:PR_NUMBER } else { $prSegment = "manual-$($env:GITHUB_RUN_ID)" }
@@ -823,19 +825,19 @@ jobs:
       # it. Result: one rolling comment per PR, updated on every run, no
       # flood. Skipped for workflow_dispatch / push without an open PR.
       - name: Find existing PR comment
-        if: always() && steps.pr.outputs.number != ''
+        if: always() && needs.resolve.outputs.pr_number != ''
         uses: peter-evans/find-comment@v3
         id: find-comment
         with:
-          issue-number: ${{ steps.pr.outputs.number }}
+          issue-number: ${{ needs.resolve.outputs.pr_number }}
           comment-author: 'github-actions[bot]'
           body-includes: '## InWorld smoke (Windows GPU)'
 
       - name: Comment results on PR
-        if: always() && steps.pr.outputs.number != ''
+        if: always() && needs.resolve.outputs.pr_number != ''
         uses: peter-evans/create-or-update-comment@v4
         with:
-          issue-number: ${{ steps.pr.outputs.number }}
+          issue-number: ${{ needs.resolve.outputs.pr_number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace
           body: |
