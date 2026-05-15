@@ -13,6 +13,7 @@ namespace ExplorerAutomation.Tests.Tests;
 /// </summary>
 [AllureSuite("Cross-Platform Verification")]
 [Category("CrossVerify")]
+[Order(15)]
 public class CrossPlatformVerificationTests : BaseTest
 {
     [Test]

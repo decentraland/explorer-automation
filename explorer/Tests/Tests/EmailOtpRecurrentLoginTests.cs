@@ -2,8 +2,8 @@ namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Email + OTP Login")]
 [Category("Auth")]
-[Order(3)]
-[Ignore("Auth suite temporarily disabled")]
+// MUST stay last — see comment on EmailOtpLoginTests.
+[Order(1002)]
 public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
 {
     // Precondition: the account at IMAP_USER (no plus-alias) must already exist —

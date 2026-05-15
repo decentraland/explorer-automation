@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests;
 /// Run with: dotnet test Tests/ --filter "DiagnoseMainMenuSidebar"
 /// </summary>
 [TestFixture]
+[Order(14)]
 public class DiagnosticTests
 {
     private AltDriver Driver => CommonStuff.AltDriver;

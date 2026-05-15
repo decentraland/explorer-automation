@@ -2,8 +2,12 @@ namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Email + OTP Login")]
 [Category("Auth")]
-[Order(1)]
-[Ignore("Auth suite temporarily disabled")]
+// MUST stay among the highest Order values in the assembly: this fixture (via
+// LoggedOutAuthBaseTest) signs out, leaving the Explorer at LoginSelection. BaseTest's
+// EnsureInWorld can't recover from that state, so any non-Auth fixture running after
+// would fail. NUnit also runs fixtures with no [Order] *after* ordered ones, so every
+// other fixture in this assembly must carry an [Order] lower than this one.
+[Order(1000)]
 public class EmailOtpLoginTests : LoggedOutAuthBaseTest
 {
     [Test]

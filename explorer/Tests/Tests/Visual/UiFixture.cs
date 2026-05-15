@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 [AllureSuite("Visual")]
 [AllureSubSuite("ui")]
 [Category("Visual")]
+[Order(23)]
 public class UiFixture
 {
     [OneTimeSetUp]

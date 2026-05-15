@@ -267,6 +267,7 @@ After the view-writer creates the required views, write the test using the newly
 - **No `Thread.Sleep`.** Use `Wait()` from BaseTest for brief animation pauses. Use `WaitFor()` / `WaitForGone()` for element-based waits.
 - **No `Console.WriteLine`.** Use `Reporter.Log()` for all logging.
 - **Tests must be independent.** Each test can run in any order. `[SetUp]` presses Escape to reset state. If a test opens a panel, it must close it before ending.
+- **Every new Explorer fixture must carry `[Order(N)]` with `N < 1000`.** This rule is specific to the Explorer (C#/NUnit) test stack under `explorer/` — the web/Playwright stack has its own ordering model and is unaffected. The Explorer `Auth` fixtures use Order 1000+ because they sign out, and NUnit runs fixtures *without* `[Order]` AFTER fixtures with `[Order]` — so an unannotated fixture would slot in after Auth and fail `EnsureInWorld`. Current bands: in-world `10–19`, visual `20–29`, Auth `1000+`. Pick the next free number in the relevant band. See `explorer/README.md` → "Fixture ordering invariant".
 - **No shared mutable state between tests.** Don't use class-level fields to pass data between `[Test]` methods. Each test sets up its own preconditions.
 - **Clean up after yourself.** If a test opens a panel, close it. The next test expects a clean HUD.
 - **Use `[TestCase]` for parameterized tests** when the same flow applies to multiple inputs:
