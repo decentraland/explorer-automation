@@ -31,10 +31,15 @@ on:
         required: false
         default: ''
       mode:
-        description: 'test = validate against baselines; record = render new baselines (NOT committed).'
+        description: 'test = validate against baselines; record = render new baselines (NOT committed); bootstrap = only record missing baselines.'
         type: choice
-        options: [test, record]
+        options: [test, record, bootstrap]
         default: test
+      platform:
+        description: 'Target OS. Only macos works today; windows is wired in the reusable but install steps don''t exist yet.'
+        type: choice
+        options: [macos, windows]
+        default: macos
       filter:
         description: 'NUnit filter for `mf explorer test --filter`. Empty = Category=Visual (whole suite).'
         type: string
@@ -97,6 +102,7 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: ${{ inputs.mode }}
+      platform: ${{ inputs.platform }}
       filter: ${{ inputs.filter }}
       build_url: ${{ needs.resolve.outputs.build_url }}
       tests_ref: ${{ inputs.tests_ref }}

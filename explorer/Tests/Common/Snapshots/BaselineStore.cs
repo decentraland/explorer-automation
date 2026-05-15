@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace ExplorerAutomation.Tests.Common.Snapshots;
 
 internal static class BaselineStore
@@ -12,9 +14,17 @@ internal static class BaselineStore
         var shortClass = className.Substring(className.LastIndexOf('.') + 1);
         var methodName = ctx.Test.MethodName ?? "Unknown";
 
-        var fileName = $"{methodName}__{Sanitize(snapshotName)}.png";
+        // OS-tagged baselines
+        var fileName = $"{methodName}__{Sanitize(snapshotName)}.{OsTag}.png";
         return Path.Combine(FindProjectRoot(), BASELINES_DIR, shortClass, fileName);
     }
+
+    private static string OsTag =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" :
+        RuntimeInformation.IsOSPlatform(OSPlatform.OSX)     ? "macos"   :
+        RuntimeInformation.IsOSPlatform(OSPlatform.Linux)   ? "linux"   :
+        throw new PlatformNotSupportedException(
+            "Visual baselines are only defined for macOS, Windows, and Linux.");
 
     public static bool Exists(string path) => File.Exists(path);
 
