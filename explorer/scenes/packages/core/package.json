@@ -10,6 +10,6 @@
   },
   "devDependencies": {
     "@dcl/sdk": "latest",
-    "@dcl/js-runtime": "latest"
+    "@dcl/js-runtime": "7.23.2"
   }
 }
