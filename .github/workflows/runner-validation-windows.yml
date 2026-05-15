@@ -186,6 +186,11 @@ jobs:
       # Pre-derive Windows MetaForge userdata root. install.ps1 should write
       # the binary here; we add it to PATH after install.
       MF_BIN_DIR: ${{ format('{0}\Decentraland\MetaForge\bin', '%LOCALAPPDATA%') }}
+      # Flip to 'true' to put the AltTester Unity-side server at Debug level.
+      # Default Warn silences ~30 MB of WaitFor polling chatter from Player.log
+      # per run. Read by GlobalSetup.StartDriver() — AltTester-Server.log keeps
+      # the full command history at Debug regardless of this flag.
+      ALT_VERBOSE_LOGS: 'false'
 
     steps:
       - uses: actions/checkout@v4
@@ -816,6 +821,7 @@ jobs:
           if-no-files-found: warn
           path: |
             ~/AppData/LocalLow/Decentraland/Explorer/Player.log
+            ~/AppData/LocalLow/Decentraland/Explorer/AltTester-Server.log
             ~/AppData/Local/Temp/Decentraland/Explorer/Crashes/**
             ~/AppData/Local/Decentraland/MetaForge/**/allure-report/**
             ~/AppData/Local/Decentraland/MetaForge/**/allure-results/**
