@@ -285,7 +285,7 @@ jobs:
             $zip = Join-Path $env:RUNNER_TEMP "alttester.zip"
             $extractDir = Join-Path $env:RUNNER_TEMP "alttester-installer"
             # 159 MB zip on a Cloudflare edge that occasionally truncates mid-stream;
-            # Invoke-WebRequest swallowed the cut once (run 25941807072 → "End of
+            # Invoke-WebRequest swallowed the cut once (run 25941807072 -> "End of
             # Central Directory record could not be found"). curl.exe with --retry
             # handles transient resets and validates Content-Length before exiting 0.
             if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -561,7 +561,7 @@ jobs:
           if (-not $report) {
             # Hard fail: the report is the user-visible evidence of the run.
             # Missing it means we can't show pass/fail diffs to reviewers.
-            Write-Error "Allure report not found under metaforge data dir. metaforge's report-gen step likely failed — check earlier logs."
+            Write-Error "Allure report not found under metaforge data dir. metaforge's report-gen step likely failed - check earlier logs."
             exit 1
           }
           Write-Host "Report at: $report"
