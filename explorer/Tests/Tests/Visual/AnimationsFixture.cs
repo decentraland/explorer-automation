@@ -22,7 +22,7 @@ public class AnimationsFixture
         // Frame.WaitForStable starts sampling; otherwise an in-progress
         // swing keeps the stability check from finding consecutive
         // matching frames inside its 6 s budget.
-        Thread.Sleep(3500);
+        Thread.Sleep(2500);
 
         Frame.WaitForStable();
         Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
