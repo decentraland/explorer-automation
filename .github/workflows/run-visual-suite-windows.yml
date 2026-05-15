@@ -260,8 +260,23 @@ jobs:
             $url = "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageWindows__2_3_1.zip"
             $zip = Join-Path $env:RUNNER_TEMP "alttester.zip"
             $extractDir = Join-Path $env:RUNNER_TEMP "alttester-installer"
+            # 159 MB zip on a Cloudflare edge that occasionally truncates mid-stream;
+            # Invoke-WebRequest swallowed the cut once (run 25941807072 → "End of
+            # Central Directory record could not be found"). curl.exe with --retry
+            # handles transient resets and validates Content-Length before exiting 0.
+            if (Test-Path $zip) { Remove-Item $zip -Force }
             Write-Host "Downloading $url"
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+            $curlArgs = @(
+              '--fail', '--location', '--show-error', '--silent',
+              '--retry', '5', '--retry-delay', '5', '--retry-all-errors',
+              '--connect-timeout', '30', '--max-time', '600',
+              '--output', $zip, $url
+            )
+            & curl.exe @curlArgs
+            if ($LASTEXITCODE -ne 0) { throw "curl.exe failed downloading AltTester zip (exit $LASTEXITCODE)" }
+            $zipSize = (Get-Item $zip).Length
+            if ($zipSize -lt 50MB) { throw "Downloaded AltTester zip is suspiciously small ($zipSize bytes); aborting before Expand-Archive." }
+            Write-Host ("Downloaded {0:N1} MB" -f ($zipSize / 1MB))
             if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
             Expand-Archive -Path $zip -DestinationPath $extractDir
             $installer = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
