@@ -10,7 +10,7 @@
   "main": "bin/index.js",
   "tags": [],
   "scene": {
-    "parcels": ["0,0", "1,0"],
+    "parcels": ["0,0", "1,0", "0,1", "1,1", "0,2", "1,2"],
     "base": "0,0"
   },
   "skyboxConfig": {
