@@ -18,14 +18,33 @@ const concurrency = Number(process.env.BUILD_CONCURRENCY ?? 5)
 const failFast = process.env.BUILD_FAIL_FAST !== '0'
 const timeoutMs = Number(process.env.BUILD_TIMEOUT_MS ?? 10 * 60 * 1000)
 
+// On Windows `npm` is shipped as three files in the Node install dir:
+//   npm       (POSIX shell script — useless to Node's spawn)
+//   npm.cmd   (Windows batch — what cmd.exe runs)
+//   npm.ps1   (PowerShell)
+// `where npm` returns all three, and the first match is often the bare
+// extensionless one which `spawn` can't execute (ENOENT). We need to pick
+// `npm.cmd` explicitly. On POSIX, `which npm` returns a single path that
+// already runs as-is.
 function resolveNpm(): string {
-  const which = process.platform === 'win32' ? 'where' : 'which'
+  const isWin = process.platform === 'win32'
+  const which = isWin ? 'where' : 'which'
   const r = spawnSync(which, ['npm'], { encoding: 'utf8' })
   if (r.status === 0) {
-    const first = r.stdout.split(/\r?\n/).find((l) => l.trim().length > 0)
-    if (first) return first.trim()
+    const lines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    if (isWin) {
+      const preferredExts = ['.cmd', '.exe', '.bat']
+      for (const ext of preferredExts) {
+        const match = lines.find((l) => l.toLowerCase().endsWith(ext))
+        if (match) return match
+      }
+      if (lines[0]) return lines[0] + '.cmd'
+    } else {
+      if (lines[0]) return lines[0]
+    }
   }
-  return 'npm'
+
+  return isWin ? 'npm.cmd' : 'npm'
 }
 const NPM = resolveNpm()
 
@@ -41,20 +60,38 @@ function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Pro
       reject(new Error(`${cmd} ${args.join(' ')} aborted before start`))
       return
     }
-    // detached: true puts the child in its own process group, so on abort we can
-    // SIGTERM the whole group (-pid) and take down npm + its descendants together.
-    // Without this, killing npm leaves orphan tsc/esbuild processes running.
-    const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+
+    const isWin = process.platform === 'win32'
+    const cmdToSpawn = isWin && /\s/.test(cmd) ? `"${cmd}"` : cmd
+    const child = spawn(cmdToSpawn, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: !isWin,
+      shell: isWin,
+      windowsHide: true,
+    })
     let buffer = ''
     child.stdout.on('data', (d) => (buffer += d))
     child.stderr.on('data', (d) => (buffer += d))
 
     let timedOut = false
+    // Tear down the build process tree. POSIX uses a process group + negative
+    // pid so npm + its tsc/esbuild children all receive the signal at once;
+    // without that, killing npm leaves orphan node processes wedged. Windows
+    // doesn't have process groups in the same form — taskkill /T /F walks
+    // the parent-child tree directly, which is the closest equivalent.
     const killTree = (signalName: NodeJS.Signals) => {
-      try {
-        process.kill(-child.pid!, signalName)
-      } catch {
-        try { child.kill(signalName) } catch { /* already gone */ }
+      if (!child.pid) return
+      if (isWin) {
+        try {
+          spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+        } catch { /* already gone */ }
+      } else {
+        try {
+          process.kill(-child.pid, signalName)
+        } catch {
+          try { child.kill(signalName) } catch { /* already gone */ }
+        }
       }
     }
 
@@ -64,7 +101,7 @@ function run(cmd: string, args: string[], cwd: string, signal: AbortSignal): Pro
     const timeout = setTimeout(() => {
       timedOut = true
       killTree('SIGTERM')
-      // 5s grace for graceful shutdown, then SIGKILL the group.
+      // 5s grace for graceful shutdown, then SIGKILL the group
       setTimeout(() => killTree('SIGKILL'), 5_000).unref()
     }, timeoutMs)
 
@@ -119,9 +156,6 @@ try {
     }
   )
 } catch (err) {
-  // fail-fast threw. We still printed per-job ✓/✗ marks above; now dump the
-  // full error from the job that triggered the abort so the user can see
-  // why the build stopped.
   const message = err instanceof Error ? err.message : String(err)
   process.stderr.write(`\n\x1b[31mBuild aborted:\x1b[0m\n${message}\n`)
   process.exit(1)
