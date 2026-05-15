@@ -17,7 +17,6 @@ public class GltfFixture
     [Test]
     public void Default()
     {
-        SceneReady.WaitUntilReady();
         Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }

@@ -5,7 +5,8 @@ namespace ExplorerAutomation.Tests.Common.Visual;
 /// <summary>
 /// Hot-reloads a built test scene into the running visual-host server. The host
 /// server itself is started/stopped by metaforge (`mf explorer server start`);
-/// this class only orchestrates the per-fixture bundle swap.
+/// this class only orchestrates the per-fixture bundle swap and blocks until the
+/// freshly-loaded scene reports ready.
 ///
 /// Per-fixture flow (called from <c>[OneTimeSetUp]</c>):
 ///   1. Read the test scene's <c>scene.json#main</c> to know its bundle path.
@@ -13,8 +14,10 @@ namespace ExplorerAutomation.Tests.Common.Visual;
 ///   3. Mirror <c>assets/</c> if the scene has any.
 ///   4. Bump the bundle's mtime so chokidar always observes a change event, even when
 ///      the freshly-copied bytes happen to match what was already there.
-///   5. Sleep just past chokidar's 800ms debounce so the reload fires before the
-///      test starts polling for frame stability.
+///   5. Block on <see cref="SceneReady.WaitUntilReady"/> until the previous facade
+///      tears down and the freshly-installed scene reports
+///      <c>SceneLoadingConcluded == true</c>. The not-ready window subsumes
+///      chokidar's 800ms debounce.
 /// </summary>
 public static class VisualHost
 {
@@ -66,10 +69,10 @@ public static class VisualHost
         CurrentSceneId = sceneId;
         Reporter.Log($"VisualHost loaded scene: {sceneId}");
 
-        // chokidar debounces watch events for 800ms — wait past it so the websocket reload
-        // fires before the test starts polling. SceneReady.WaitUntilReady() handles the
-        // not-ready → ready cycle from there, so this sleep only needs to cover the debounce.
-        Thread.Sleep(900);
+        // SceneReady's not-ready phase (10s window, 250ms poll) absorbs chokidar's 800ms
+        // debounce — by the time the WS reload fires and the old facade tears down, the
+        // probe flips to not-ready and phase 2 picks up the new scene.
+        SceneReady.WaitUntilReady();
     }
 
     private static string ReadMainFromSceneJson(string sceneDir)

@@ -2,9 +2,9 @@ namespace ExplorerAutomation.Tests.Common.Visual;
 
 /// <summary>
 /// Polls <c>SceneRunner.Scene.AlttesterSceneReadinessProbe</c> in the running Explorer until the
-/// current scene reports <c>SceneLoadingConcluded == true</c>. Replaces the heuristic
-/// <see cref="Frame.WaitForStable"/> pixel-watch for fixtures that just need to know the
-/// scene has finished streaming before snapshotting.
+/// current scene reports <c>SceneLoadingConcluded == true</c>. Invoked from
+/// <see cref="VisualHost.Load"/> so every visual fixture gets the same readiness guarantee
+/// before snapshotting.
 ///
 /// Two-phase wait so hot-reload fixtures don't false-pass against the soon-to-be-disposed
 /// previous facade:
