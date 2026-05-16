@@ -106,6 +106,47 @@ jobs:
       ALT_VERBOSE_LOGS: 'false'
 
     steps:
+      # Must run BEFORE actions/checkout: without git on PATH the action falls
+      # back to the GitHub REST API (zip extraction), leaving the workspace
+      # without a .git dir. The baseline-commit step downstream then has no
+      # repo to commit/push from.
+      - name: Install Git for Windows (MinGit)
+        shell: powershell
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (Get-Command git -ErrorAction SilentlyContinue) {
+            Write-Host "git already on PATH: $(git --version) - skipping install."
+            return
+          }
+          $dest = Join-Path $env:USERPROFILE "git-mingit"
+          $cached = $null
+          if (Test-Path $dest) {
+            $cached = Get-ChildItem -Path $dest -Recurse -Filter "git.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($cached) {
+            $binDir = Split-Path -Parent $cached.FullName
+            Write-Host "git cached on disk: $($cached.FullName) - reusing."
+            "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$binDir;$env:PATH"
+            & $cached.FullName --version
+            return
+          }
+          $tag = "v2.54.0.windows.1"
+          $version = "2.54.0"
+          $url = "https://github.com/git-for-windows/git/releases/download/$tag/MinGit-$version-64-bit.zip"
+          $zip = Join-Path $env:TEMP "mingit.zip"
+          Write-Host "Downloading MinGit $version from $url"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $dest
+          $bin = Get-ChildItem -Path $dest -Recurse -Filter "git.exe" | Select-Object -First 1
+          if (-not $bin) { throw "git.exe not found in extracted MinGit zip" }
+          $binDir = Split-Path -Parent $bin.FullName
+          "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$binDir;$env:PATH"
+          & $bin.FullName --version
+
       - uses: actions/checkout@v4
 
       - name: Validate inputs
@@ -363,43 +404,6 @@ jobs:
 
       # MinGit: `mf explorer test` clones explorer-automation internally;
       # base image doesn't ship git. Portable build cached under USERPROFILE.
-      - name: Install Git for Windows (MinGit)
-        shell: powershell
-        timeout-minutes: 10
-        run: |
-          $ErrorActionPreference = "Stop"
-          if (Get-Command git -ErrorAction SilentlyContinue) {
-            Write-Host "git already on PATH: $(git --version) - skipping install."
-            return
-          }
-          $dest = Join-Path $env:USERPROFILE "git-mingit"
-          $cached = $null
-          if (Test-Path $dest) {
-            $cached = Get-ChildItem -Path $dest -Recurse -Filter "git.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-          if ($cached) {
-            $binDir = Split-Path -Parent $cached.FullName
-            Write-Host "git cached on disk: $($cached.FullName) - reusing."
-            "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-            $env:PATH = "$binDir;$env:PATH"
-            & $cached.FullName --version
-            return
-          }
-          $tag = "v2.54.0.windows.1"
-          $version = "2.54.0"
-          $url = "https://github.com/git-for-windows/git/releases/download/$tag/MinGit-$version-64-bit.zip"
-          $zip = Join-Path $env:TEMP "mingit.zip"
-          Write-Host "Downloading MinGit $version from $url"
-          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
-          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-          Expand-Archive -Path $zip -DestinationPath $dest
-          $bin = Get-ChildItem -Path $dest -Recurse -Filter "git.exe" | Select-Object -First 1
-          if (-not $bin) { throw "git.exe not found in extracted MinGit zip" }
-          $binDir = Split-Path -Parent $bin.FullName
-          "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          $env:PATH = "$binDir;$env:PATH"
-          & $bin.FullName --version
-
       - name: Verify MetaForge access
         shell: powershell
         env:
