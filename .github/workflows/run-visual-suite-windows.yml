@@ -147,7 +147,15 @@ jobs:
           $env:PATH = "$binDir;$env:PATH"
           & $bin.FullName --version
 
+      # Always check out the tip of tests_ref, not github.sha. In the
+      # record->validate bootstrap flow the record-job pushes a baseline
+      # commit onto the branch; the validate-job that runs after must see
+      # that commit, otherwise it falls back to "Snapshot baseline missing"
+      # on every fixture. github.sha is frozen at workflow-trigger time and
+      # would miss the auto-commit.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tests_ref }}
 
       - name: Validate inputs
         shell: powershell

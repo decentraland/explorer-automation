@@ -28,11 +28,19 @@ name: TEMP — Bootstrap visual suite (Windows)
 # ════════════════════════════════════════════════════════════════════════
 
 on:
-  # Manual only. Push trigger was removed once the pipeline went green so
-  # that routine commits on this branch don't burn runner minutes; re-run
-  # via the Actions UI ("Run workflow") whenever you need another round of
-  # record-then-validate against the pinned build.
   workflow_dispatch:
+  push:
+    branches: [feat/snapshots-comparison-win]
+    paths:
+      # Re-trigger only on changes that could affect the pipeline output.
+      # Skip docs-only / unrelated commits to save runner minutes. The
+      # auto-commits from record-job touch Baselines/ and are explicitly
+      # excluded so they don't re-loop the bootstrap.
+      - '.github/workflows/_temp-bootstrap-windows-visual-suite.yml'
+      - '.github/workflows/run-visual-suite-windows.yml'
+      - 'explorer/scenes/**'
+      - 'explorer/Tests/**'
+      - '!explorer/Tests/Baselines/**'
 
 permissions:
   contents: write
