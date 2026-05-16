@@ -652,10 +652,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
-          $repoRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer-automation"
+          # Baselines are written by BaselineStore.cs into <project root>/Baselines/,
+          # where the project root is the dir containing Tests.csproj that mf resolves
+          # via AppContext.BaseDirectory. On a GH-hosted Windows runner mf doesn't create
+          # a managed clone under $LOCALAPPDATA, so tests run straight out of the
+          # actions/checkout workspace and the PNGs land there too.
+          $repoRoot = $env:GITHUB_WORKSPACE
           if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
-            Write-Host "::warning::No managed clone of explorer-automation found at $repoRoot; skipping baseline commit."
-            exit 0
+            throw "GITHUB_WORKSPACE has no .git dir: $repoRoot. Expected actions/checkout to have run."
           }
           Set-Location $repoRoot
 
