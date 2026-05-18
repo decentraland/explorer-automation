@@ -10,10 +10,10 @@ name: Test — Bootstrap visual suite
 #   branch, against a pinned unity-explorer PR build, so we can prove the
 #   plumbing works end-to-end before merging.
 #
-# What it does on every push to feat/snapshots-comparison:
+# What it does on every push to chore/lower-visual-tests-tolerance:
 #   1. Calls run-visual-suite.yml with mode=record. This renders new
 #      baselines against the pinned unity-explorer build, auto-commits
-#      the PNGs back to feat/snapshots-comparison via github-actions[bot].
+#      the PNGs back to chore/lower-visual-tests-tolerance via github-actions[bot].
 #   2. After (1) lands, calls run-visual-suite.yml with mode=test. This
 #      pulls the just-committed baselines and validates against them
 #      using the same unity-explorer build, exercising the whole diff
@@ -24,7 +24,7 @@ name: Test — Bootstrap visual suite
 
 on:
  push:
-   branches: [feat/snapshots-comparison]
+   branches: [chore/lower-visual-tests-tolerance]
    paths:
      # Re-trigger when the bootstrap workflow itself changes, when the
      # scenes/baselines code changes, or when the reusable workflow
@@ -52,7 +52,7 @@ jobs:
       mode: record
       pr_number: '2'
       build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22360-3a55381/Decentraland_macos.zip'
-      tests_ref: feat/snapshots-comparison
+      tests_ref: chore/lower-visual-tests-tolerance
       # commit_sha + branch_label are cosmetic; let the reusable fall back
       # to its run-id default for the bootstrap run.
     secrets: inherit
@@ -88,7 +88,7 @@ jobs:
       mode: test
       pr_number: '2'
       build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22360-3a55381/Decentraland_macos.zip'
-      tests_ref: feat/snapshots-comparison
+      tests_ref: chore/lower-visual-tests-tolerance
     secrets: inherit
 
   print-validate-log:
