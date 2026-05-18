@@ -16,16 +16,12 @@ public class TextShapeFixture
     [Test]
     public void Default()
     {
-        // SceneReady gates on the SDK-side probe: scene script done, ECS entities materialized.
-        // Without it we're racing the hot-reload — TextShape glyph atlases finish loading later
-        // than the scene-loaded signal, so Frame.WaitForStable can latch onto a "stable but
-        // incomplete" frame (no text → still pixel-identical between samples).
-        SceneReady.WaitUntilReady();
-        SceneCensus.Log("text-shape post-ready");
+        // TMP glyph atlases continue resolving after SceneReady (atlas generation runs
+        // async even on a primed scene), so sleep a beat before snapshotting to avoid
+        // capturing half-rasterised text.
+        Thread.Sleep(2000);
 
-        Frame.WaitForStable();
-        SceneCensus.Log("text-shape post-stable");
-
+        SceneCensus.Log("text-shape pre-snapshot");
         Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
     }
 }
