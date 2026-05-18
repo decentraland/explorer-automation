@@ -73,9 +73,7 @@ public static class VisualHost
         // debounce — by the time the WS reload fires and the old facade tears down, the
         // probe flips to not-ready and phase 2 picks up the new scene.
         SceneReady.WaitUntilReady();
-
-        // Put mouse pointer at a safe position to avoid any unwanted hover feedback
-        // on PointerEvent entities
+        
         ParkCursor();
     }
 
@@ -84,7 +82,8 @@ public static class VisualHost
     private static void ParkCursor()
     {
         if (CommonStuff.AltDriver == null) return;
-        CommonStuff.AltDriver.MoveMouse(new AltVector2(0, 0), duration: 0f, wait: true);
+        var screenSize = CommonStuff.AltDriver.GetApplicationScreenSize();
+        CommonStuff.AltDriver.MoveMouse(new AltVector2(0, screenSize.y - 1), duration: 0f, wait: true);
     }
 
     private static string ReadMainFromSceneJson(string sceneDir)
