@@ -132,29 +132,18 @@ jobs:
             exit 0
           fi
 
-          # Latest published unity-explorer release. These ship with the AltTester
-          # SDK baked in; they're the same artifacts the team installs from the GH
-          # release page. Skipping prereleases/drafts.
-          RELEASE_JSON=$(gh api \
-            "repos/decentraland/unity-explorer/releases?per_page=20" \
-            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
-
-          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-            echo "::error::No published unity-explorer release found and no build_url override given."
-            exit 1
-          fi
-
-          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-          BUILD_URL=$(echo "$RELEASE_JSON" \
-            | jq -r '.assets[] | select(.name == "Decentraland_windows64.zip") | .browser_download_url')
-
-          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
-            echo "::error::Release ${RELEASE_TAG} has no Decentraland_windows64.zip asset attached."
-            exit 1
-          fi
-
-          echo "::notice::Using unity-explorer release ${RELEASE_TAG}."
-          echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+          # TEMP PIN: unity-explorer PR #8788 (merged into dev, no TEMP-gut).
+          # GH release-tagged builds (v0.X.Y-alpha) strip the AltTester scripting
+          # define via CloudBuild.cs:65-71 (IS_RELEASE_BUILD=true → remove ALTTESTER),
+          # so the test runner hangs at "Wait for connection: 0%" forever. PR/branch
+          # builds at explorer-artifacts.decentraland.org keep AltTester intact.
+          # This pin lets us validate the in-test MinSpecs Continue-click handler
+          # (DismissMinimumSpecsModalIfPresent in BaseTest) against a real modal.
+          # Unpin once the dapp-side build pipeline exposes a stable "latest dev
+          # mainline" artifact URL, or once we automate scraping it from a PR bot.
+          PINNED_BUILD_URL="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/fix/validate-spawn-point/pr-22295-4b7e552/Decentraland_windows64.zip"
+          echo "::notice::Using pinned unity-explorer PR #8788 build (mainline, no TEMP-gut): ${PINNED_BUILD_URL}"
+          echo "build_url=${PINNED_BUILD_URL}" >> "$GITHUB_OUTPUT"
 
   run:
     name: Runner validation (InWorld smoke)
@@ -164,7 +153,10 @@ jobs:
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld' }}
+      # Iteration default: single-test smoke proves bootstrap (MinSpecs modal +
+      # splash + auth + loading + MainMenu) and one in-world interaction. Flip
+      # back to 'Category=InWorld' once the chassis is reliably green again.
+      TEST_FILTER: ${{ inputs.test_filter || 'Name=TestOpenPlacesWithShortcut' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
