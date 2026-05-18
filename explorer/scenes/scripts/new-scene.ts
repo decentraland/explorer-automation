@@ -82,7 +82,6 @@ public class ${className}
     [Test]
     public void Default()
     {
-        Frame.WaitForStable();
         Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
     }
 }
