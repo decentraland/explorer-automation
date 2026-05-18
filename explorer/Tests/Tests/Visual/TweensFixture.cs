@@ -24,6 +24,6 @@ public class TweensFixture
         // those follow-up systems plenty of time before the snapshot fires.
         Thread.Sleep(1000);
 
-        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
+        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
     }
 }

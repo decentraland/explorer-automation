@@ -214,3 +214,28 @@ The safe order is:
 If the baseline change is *standalone* (no Explorer change required — e.g. tightening tolerance on an existing test, recording for a brand-new scene that doesn't depend on Explorer changes), this doesn't apply and you can merge in any order.
 
 See [SNAPSHOTS.md](SNAPSHOTS.md) for the full reference: snapshot API, modes, tolerance tuning, Allure attachments, baseline storage, known caveats.
+
+### Example: running the visual suite locally end-to-end
+
+A full local run from a clean checkout, against the `chore/visual-test-app-args` Explorer build:
+
+```bash
+# 1. Install repo dependencies (metaforge, .NET toolchain checks, scenes deps)
+make install
+
+# 2. One-time: provision a test wallet identity (skip if you already have one)
+metaforge account create dev
+
+# 3. Log in with an existing account (interactive picker if multiple exist)
+metaforge account login
+
+# 4. Start the scenes host server (detaches; stays up across runs)
+metaforge explorer server start
+
+# 5. Run the visual suite against the target Explorer branch
+#    Expected: report is green, all tests pass.
+metaforge explorer test chore/visual-test-app-args --filter "Category=Visual"
+
+# 6. Stop the host server when you're done
+metaforge explorer server stop
+```

@@ -22,6 +22,6 @@ public class SwapMaterialFixture
         // grace before the snapshot fires.
         Thread.Sleep(1000);
 
-        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
+        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
     }
 }
