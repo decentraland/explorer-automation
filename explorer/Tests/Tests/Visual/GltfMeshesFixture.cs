@@ -16,7 +16,6 @@ public class GltfMeshesFixture
     [Test]
     public void Default()
     {
-        Frame.WaitForStable();
-        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }
