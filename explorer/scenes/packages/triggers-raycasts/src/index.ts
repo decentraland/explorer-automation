@@ -132,8 +132,15 @@ const COLOR_PEDESTAL = Color4.create(0.28, 0.28, 0.32, 1) // dark patch under ea
  * empty click handler is required by the PointerEvents API; the only
  * observable effect is the hover-text overlay when the cursor is over the
  * entity.
+ *
+ * Flip DEBUG_HOVER_HINTS to true to wire up hover tooltips while debugging the
+ * scene by hand. Kept off for visual-test runs so the cursor never paints a
+ * hover outline.
  */
+const DEBUG_HOVER_HINTS = false
+
 function attachHint(entity: Entity, text: string): void {
+  if (!DEBUG_HOVER_HINTS) return
   pointerEventsSystem.onPointerDown(
     {
       entity,

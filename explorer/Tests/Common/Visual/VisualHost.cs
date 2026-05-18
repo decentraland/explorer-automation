@@ -73,17 +73,6 @@ public static class VisualHost
         // debounce — by the time the WS reload fires and the old facade tears down, the
         // probe flips to not-ready and phase 2 picks up the new scene.
         SceneReady.WaitUntilReady();
-        
-        ParkCursor();
-    }
-
-    // Move the OS cursor out of the way so unlocked-cursor scenes don't paint hover
-    // outlines / tooltips on whatever entity sits under the default pointer position.
-    private static void ParkCursor()
-    {
-        if (CommonStuff.AltDriver == null) return;
-        var screenSize = CommonStuff.AltDriver.GetApplicationScreenSize();
-        CommonStuff.AltDriver.MoveMouse(new AltVector2(0, screenSize.y - 1), duration: 0f, wait: true);
     }
 
     private static string ReadMainFromSceneJson(string sceneDir)
