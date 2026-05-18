@@ -132,18 +132,50 @@ jobs:
             exit 0
           fi
 
-          # TEMP PIN: unity-explorer PR #8788 (merged into dev, no TEMP-gut).
-          # GH release-tagged builds (v0.X.Y-alpha) strip the AltTester scripting
-          # define via CloudBuild.cs:65-71 (IS_RELEASE_BUILD=true → remove ALTTESTER),
-          # so the test runner hangs at "Wait for connection: 0%" forever. PR/branch
-          # builds at explorer-artifacts.decentraland.org keep AltTester intact.
-          # This pin lets us validate the in-test MinSpecs Continue-click handler
-          # (DismissMinimumSpecsModalIfPresent in BaseTest) against a real modal.
-          # Unpin once the dapp-side build pipeline exposes a stable "latest dev
-          # mainline" artifact URL, or once we automate scraping it from a PR bot.
-          PINNED_BUILD_URL="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/fix/validate-spawn-point/pr-22295-4b7e552/Decentraland_windows64.zip"
-          echo "::notice::Using pinned unity-explorer PR #8788 build (mainline, no TEMP-gut): ${PINNED_BUILD_URL}"
-          echo "build_url=${PINNED_BUILD_URL}" >> "$GITHUB_OUTPUT"
+          # Pick the most recent successful unity-explorer PR build that has a
+          # reachable Windows artifact. PR/branch builds keep the AltTester
+          # scripting define (release-tagged builds strip it via CloudBuild.cs
+          # when IS_RELEASE_BUILD=true), so they're the only artifacts we can
+          # actually drive with AltTester. URL pattern mirrors the resolver in
+          # explorer-automation PR #2 (visual tests on macOS):
+          #   <CDN>/@dcl/unity-explorer/branch/<head_branch>/pr-<run_number>-<sha7>/Decentraland_windows64.zip
+          # We HEAD-probe each candidate because Unity Cloud Build can mark the
+          # workflow run successful while the artifact upload silently dropped,
+          # and old artifacts get garbage-collected from the CDN.
+          ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
+          CANDIDATES_JSON=$(gh api \
+            "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?event=pull_request&status=success&per_page=20" \
+            --jq '[.workflow_runs[] | {head_branch, head_sha, run_number}]')
+
+          BUILD_URL=""
+          PICKED_BRANCH=""
+          PICKED_RUN=""
+          PICKED_SHA=""
+          for i in 0 1 2 3 4; do
+            CAND=$(echo "$CANDIDATES_JSON" | jq -r ".[$i]")
+            [ "$CAND" = "null" ] && break
+            BRANCH=$(echo "$CAND" | jq -r '.head_branch')
+            RUN=$(echo "$CAND"   | jq -r '.run_number')
+            SHA7=$(echo "$CAND"  | jq -r '.head_sha[0:7]')
+            URL="${ARTIFACT_BASE}/${BRANCH}/pr-${RUN}-${SHA7}/Decentraland_windows64.zip"
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL")
+            if [ "$HTTP" = "200" ]; then
+              BUILD_URL="$URL"
+              PICKED_BRANCH="$BRANCH"
+              PICKED_RUN="$RUN"
+              PICKED_SHA="$SHA7"
+              break
+            fi
+            echo "::warning::Candidate ${BRANCH}/pr-${RUN}-${SHA7} returned HTTP ${HTTP} — trying next."
+          done
+
+          if [ -z "$BUILD_URL" ]; then
+            echo "::error::No reachable unity-explorer PR build found in the last 20 successful Unity Cloud Build runs."
+            exit 1
+          fi
+
+          echo "::notice::Using unity-explorer PR build: branch=${PICKED_BRANCH} run=${PICKED_RUN} sha=${PICKED_SHA}"
+          echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
 
   run:
     name: Runner validation (InWorld smoke)
