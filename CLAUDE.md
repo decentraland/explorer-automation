@@ -12,9 +12,8 @@ This repo hosts **two independent test stacks** that share a single test identit
 ### Shared at the root
 
 - **`.env`** — IMAP credentials for OTP retrieval; loaded by both stacks. Template in `.env.example`.
-- **`Makefile`** — repo-wide entry points (install, build, test wrappers). `make help` lists them.
-- **`scripts/setup-test-identity.sh`** — provisions the BIP39 wallet identity used by all in-world tests (both `@cross` Playwright tests and the C# `InWorld` category).
 - **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`. The `dcl-testing-playwright`, `playwright-best-practices`, and `dcl-testing` skills apply inside `web/` (auth + marketplace).
+- **`Makefile`** — repo-wide entry points (install, build, test wrappers). `make help` lists them.
 
 To provision the BIP39 wallet identity used by all in-world tests, use `metaforge account create <name>` directly. See each stack's README for details.
 

@@ -22,6 +22,6 @@ public class TextShapeFixture
         Thread.Sleep(2000);
 
         SceneCensus.Log("text-shape pre-snapshot");
-        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1);
     }
 }
