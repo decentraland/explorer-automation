@@ -50,7 +50,7 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: record
-      pr_number: '2'
+      pr_number: '14'
       build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22360-3a55381/Decentraland_macos.zip'
       tests_ref: chore/lower-visual-tests-tolerance
       # commit_sha + branch_label are cosmetic; let the reusable fall back
@@ -86,7 +86,7 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: test
-      pr_number: '2'
+      pr_number: '14'
       build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22360-3a55381/Decentraland_macos.zip'
       tests_ref: chore/lower-visual-tests-tolerance
     secrets: inherit
