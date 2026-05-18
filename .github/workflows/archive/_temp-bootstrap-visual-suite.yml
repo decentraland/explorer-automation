@@ -1,11 +1,6 @@
-name: TEMP — Bootstrap visual suite
+name: Test — Bootstrap visual suite
 
 # ════════════════════════════════════════════════════════════════════════
-# DELETE THIS FILE once `generate-baselines.yml`, `visual-regression.yml`,
-# and `run-visual-suite.yml` have been merged to the default branches of
-# explorer-automation and unity-explorer respectively, AND we've confirmed
-# the slash-command triggers fire end-to-end.
-#
 # Purpose:
 #   GitHub's `issue_comment` trigger only fires for workflow files that
 #   exist on the *default branch* of the repo. Until our workflows land
@@ -27,17 +22,21 @@ name: TEMP — Bootstrap visual suite
 #      validating the *system*, not visual drift, on the bootstrap run.
 # ════════════════════════════════════════════════════════════════════════
 
-on:
-  push:
-    branches: [feat/snapshots-comparison]
-    paths:
-      # Re-trigger when the bootstrap workflow itself changes, when the
-      # scenes/baselines code changes, or when the reusable workflow
-      # changes. Skip docs-only / unrelated commits to save runner minutes.
-      - '.github/workflows/_temp-bootstrap-visual-suite.yml'
-      - '.github/workflows/run-visual-suite.yml'
-      - 'explorer/scenes/**'
-      - 'explorer/Tests/**'
+# IMPORTANT: Uncomment the next block 👇 to enable trigger on push
+
+# ════════════════════════════════════════════════════════════════════════
+# on:
+#   push:
+#     branches: [feat/snapshots-comparison]
+#     paths:
+#       # Re-trigger when the bootstrap workflow itself changes, when the
+#       # scenes/baselines code changes, or when the reusable workflow
+#       # changes. Skip docs-only / unrelated commits to save runner minutes.
+#       - '.github/workflows/_temp-bootstrap-visual-suite.yml'
+#       - '.github/workflows/run-visual-suite.yml'
+#       - 'explorer/scenes/**'
+#       - 'explorer/Tests/**'
+# ════════════════════════════════════════════════════════════════════════
 
 permissions:
   contents: write
