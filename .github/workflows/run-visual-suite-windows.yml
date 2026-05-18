@@ -320,7 +320,7 @@ jobs:
           $dm.dmSize = [int16][System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DEVMODE])
 
           if (-not [Display]::EnumDisplaySettings($null, -1, [ref]$dm)) {
-            throw "EnumDisplaySettings(ENUM_CURRENT_SETTINGS) failed — no current display mode."
+            throw "EnumDisplaySettings(ENUM_CURRENT_SETTINGS) failed - no current display mode."
           }
           Write-Host ("Current mode: {0}x{1} @{2}Hz" -f $dm.dmPelsWidth, $dm.dmPelsHeight, $dm.dmDisplayFrequency)
 
@@ -329,7 +329,7 @@ jobs:
           # DM_PELSWIDTH (0x80000) | DM_PELSHEIGHT (0x100000)
           $dm.dmFields = 0x80000 -bor 0x100000
 
-          # flags = 0 → CDS_UPDATEREGISTRY (persist for current session).
+          # flags = 0 -> CDS_UPDATEREGISTRY (persist for current session).
           $rc = [Display]::ChangeDisplaySettings([ref]$dm, 0)
           $codes = @{
             0  = "DISP_CHANGE_SUCCESSFUL"
@@ -343,7 +343,7 @@ jobs:
           }
           $name = $codes[$rc]
           if (-not $name) { $name = "UNKNOWN" }
-          Write-Host ("ChangeDisplaySettings → {0} ({1})" -f $rc, $name)
+          Write-Host ("ChangeDisplaySettings -> {0} ({1})" -f $rc, $name)
           if ($rc -ne 0) {
             throw "ChangeDisplaySettings rejected 1920x1080 (rc=$rc / $name). Pixel-perfect snapshots cannot proceed."
           }
