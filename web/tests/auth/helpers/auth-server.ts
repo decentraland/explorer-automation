@@ -2,14 +2,18 @@ import { optionalEnv } from '../../../shared/helpers/env.js'
 import type { AuthChain } from '../../../shared/helpers/identity.js'
 
 /**
- * HTTP client for the Decentraland auth server (`https://auth-api.decentraland.org`).
+ * HTTP client for the Decentraland auth server (`auth-api.decentraland.<env>`).
  *
  * The auth server brokers signature requests between a desktop client (or any
  * out-of-band signer) and a wallet that lives in a browser session. The desktop
  * side POSTs a request describing what it wants signed and gets back a
- * `requestId`; it then surfaces a URL `https://decentraland.org/auth/requests/<id>`
- * to the user, who completes the signing in their browser. The desktop polls
+ * `requestId`; it then surfaces a URL `<WEB_BASE_URL>/auth/requests/<id>` to
+ * the user, who completes the signing in their browser. The desktop polls
  * the auth server for the outcome.
+ *
+ * Host resolution is in `authServerUrl()` below — derives from `WEB_BASE_URL`
+ * so a run against `decentraland.today` automatically talks to
+ * `auth-api.decentraland.today`.
  *
  * Used by the RequestPage tests (`auth-request-page.spec.ts`) to simulate the
  * desktop side of that handshake.
@@ -31,7 +35,28 @@ export interface RequestOutcome {
   error?: { code: number; message: string }
 }
 
-export const AUTH_SERVER_URL = optionalEnv('AUTH_SERVER_URL') ?? 'https://auth-api.decentraland.org'
+/**
+ * Resolves the auth-api host for the environment under test. Resolution rule:
+ *
+ *  1. `AUTH_SERVER_URL` env var — explicit override, used verbatim (trailing
+ *     slash stripped).
+ *  2. Otherwise derive `auth-api.<host>` from `WEB_BASE_URL` (or `BASE_URL`
+ *     as a fallback). So `WEB_BASE_URL=https://decentraland.today` →
+ *     `https://auth-api.decentraland.today`. Each dapp host has its own
+ *     paired auth-api.
+ *  3. Final fallback: `https://auth-api.decentraland.org`.
+ *
+ * Reads env vars at call time so tests that override env vars in `beforeAll`
+ * see the new value.
+ */
+export function authServerUrl(): string {
+  const explicit = optionalEnv('AUTH_SERVER_URL')
+  if (explicit) return explicit.replace(/\/+$/, '')
+
+  const baseUrl = optionalEnv('WEB_BASE_URL') ?? optionalEnv('BASE_URL') ?? 'https://decentraland.org'
+  const host = new URL(baseUrl).host
+  return `https://auth-api.${host}`
+}
 
 /**
  * Creates a new auth request on the server.
@@ -48,7 +73,7 @@ export async function createAuthRequest(
   const body: Record<string, unknown> = { method, params }
   if (authChain) body.authChain = authChain
 
-  const res = await fetch(`${AUTH_SERVER_URL}/requests`, {
+  const res = await fetch(`${authServerUrl()}/requests`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -67,7 +92,7 @@ export async function createAuthRequest(
 export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POLL_TIMEOUT_MS): Promise<RequestOutcome> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const res = await fetch(`${AUTH_SERVER_URL}/requests/${requestId}`)
+    const res = await fetch(`${authServerUrl()}/requests/${requestId}`)
     if (res.status === 204) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
       continue

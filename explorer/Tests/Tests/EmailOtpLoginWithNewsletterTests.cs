@@ -2,7 +2,8 @@ namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Email + OTP Login")]
 [Category("Auth")]
-[Order(2)]
+// MUST stay last — see comment on EmailOtpLoginTests.
+[Order(1001)]
 public class EmailOtpLoginWithNewsletterTests : LoggedOutAuthBaseTest
 {
     [Test]

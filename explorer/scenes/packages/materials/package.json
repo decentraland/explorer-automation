@@ -1,0 +1,14 @@
+{
+  "name": "@dcl-vrt/materials",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual-regression scene: materials",
+  "scripts": {
+    "build": "sdk-commands build --skip-install",
+    "start": "sdk-commands start"
+  },
+  "devDependencies": {
+    "@dcl/sdk": "latest",
+    "@dcl/js-runtime": "7.23.2"
+  }
+}

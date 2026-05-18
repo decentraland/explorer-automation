@@ -1,0 +1,13 @@
+{
+  "indent": "  ",
+  "sortFirst": ["name", "version", "private", "description", "scripts"],
+  "semverGroups": [
+    {
+      "label": "Pin @dcl/* across all scenes",
+      "packages": ["**"],
+      "dependencies": ["@dcl/**"],
+      "isIgnored": false,
+      "range": ""
+    }
+  ]
+}
