@@ -21,6 +21,7 @@ name: Test — Bootstrap visual suite
 #      and validate use the same render), but that's the point: we're
 #      validating the *system*, not visual drift, on the bootstrap run.
 # ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
 
 on:
  push:
