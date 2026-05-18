@@ -153,10 +153,7 @@ jobs:
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      # Iteration default: single-test smoke proves bootstrap (MinSpecs modal +
-      # splash + auth + loading + MainMenu) and one in-world interaction. Flip
-      # back to 'Category=InWorld' once the chassis is reliably green again.
-      TEST_FILTER: ${{ inputs.test_filter || 'Name=TestOpenPlacesWithShortcut' }}
+      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
