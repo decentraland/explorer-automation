@@ -71,7 +71,11 @@ public abstract class BaseTest
     [AllureStep("Ensure player is in-world")]
     protected virtual void EnsureInWorld()
     {
-        // MinimumSpecsScreen overlays the splash on hardware that doesn't meet the recommended specs (CI 4-vCPU runner).
+        // MinimumSpecsScreen overlays the splash on hardware that doesn't meet
+        // the recommended specs (CI 4-vCPU runner). The modal is instantiated
+        // late in MainSceneLoader bootstrap (VerifyMinimumHardwareRequirementMet),
+        // well after AltTester connects — so we must poll until either the modal
+        // appears or splash clears (which means specs were met / no modal coming).
         DismissMinimumSpecsModalIfPresent();
 
         // Wait for any splash to clear first — both the cached-account flow and the
@@ -133,7 +137,11 @@ public abstract class BaseTest
     [AllureStep("Dismiss the MinimumSpecs warning modal if present")]
     private void DismissMinimumSpecsModalIfPresent()
     {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
+        // The modal is instantiated late in bootstrap (after splash is up). Poll
+        // until either the modal appears (click Continue and exit) or splash
+        // clears (bootstrap passed the specs check without showing a modal).
+        // Hard cap at 90s so a stuck Explorer doesn't pin us here forever.
+        var deadline = DateTime.UtcNow.AddSeconds(90);
         while (DateTime.UtcNow < deadline)
         {
             if (Views.MinimumSpecsScreen.IsPresent())
@@ -142,9 +150,14 @@ public abstract class BaseTest
                 Views.MinimumSpecsScreen.ContinueButton.Click();
                 return;
             }
+            if (!Views.SplashScreen.IsPresent())
+            {
+                Reporter.Log("Splash cleared before MinimumSpecs modal appeared — specs met");
+                return;
+            }
             Thread.Sleep(500);
         }
-        Reporter.Log("No MinimumSpecs modal — hardware meets recommended specs");
+        Reporter.Log("Timed out (90s) waiting for either MinimumSpecs modal or splash to clear");
     }
 
     #endregion
