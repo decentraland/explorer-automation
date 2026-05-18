@@ -21,7 +21,6 @@ public class TextShapeFixture
         // capturing half-rasterised text.
         Thread.Sleep(2000);
 
-        SceneCensus.Log("text-shape pre-snapshot");
         Snapshot.AssertMatchesBaseline();
     }
 }
