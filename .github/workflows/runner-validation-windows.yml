@@ -132,44 +132,29 @@ jobs:
             exit 0
           fi
 
-          # ── Pinned to unity-explorer PR #8778 ──────────────────────────────
-          # Temporary override while validating runner chassis. PR #8778
-          # (head: temp/automation-instrumented-build, build commit 207d87d)
-          # is the dedicated automation-instrumented build — same SHA as the
-          # original PR #8736 pin but on a clean branch instead of the
-          # feat/nearby-voice-chat piggyback. Ships [BOOT NN] breadcrumbs in
-          # MainSceneLoader.InitializeFlowAsync + Bootstraper.cs, has the full
-          # log matrix enabled (every category at every severity), AND the
-          # TEMP-gut that bypasses MinimumSpecsScreen modal so the T4 runner
-          # (4 vCPU - fails MinimumSpecsGuard) doesn't hang on a screen awaiting
-          # a human click. To revert: delete this block and uncomment the
-          # "latest release" lookup below.
-          PINNED_BUILD_URL="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/temp/automation-instrumented-build/pr-22269-207d87d/Decentraland_windows64.zip"
-          echo "::notice::Using pinned unity-explorer PR #8778 build: ${PINNED_BUILD_URL}"
-          echo "build_url=${PINNED_BUILD_URL}" >> "$GITHUB_OUTPUT"
-          exit 0
+          # Latest published unity-explorer release. These ship with the AltTester
+          # SDK baked in; they're the same artifacts the team installs from the GH
+          # release page. Skipping prereleases/drafts.
+          RELEASE_JSON=$(gh api \
+            "repos/decentraland/unity-explorer/releases?per_page=20" \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
 
-          # ── Original "latest release" resolution (disabled, kept for revert) ──
-          # RELEASE_JSON=$(gh api \
-          #   "repos/decentraland/unity-explorer/releases?per_page=20" \
-          #   --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
-          #
-          # if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-          #   echo "::error::No published unity-explorer release found and no build_url override given."
-          #   exit 1
-          # fi
-          #
-          # RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-          # BUILD_URL=$(echo "$RELEASE_JSON" \
-          #   | jq -r '.assets[] | select(.name == "Decentraland_windows64.zip") | .browser_download_url')
-          #
-          # if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
-          #   echo "::error::Release ${RELEASE_TAG} has no Decentraland_windows64.zip asset attached."
-          #   exit 1
-          # fi
-          #
-          # echo "::notice::Using unity-explorer release ${RELEASE_TAG}."
-          # echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+            echo "::error::No published unity-explorer release found and no build_url override given."
+            exit 1
+          fi
+
+          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          BUILD_URL=$(echo "$RELEASE_JSON" \
+            | jq -r '.assets[] | select(.name == "Decentraland_windows64.zip") | .browser_download_url')
+
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+            echo "::error::Release ${RELEASE_TAG} has no Decentraland_windows64.zip asset attached."
+            exit 1
+          fi
+
+          echo "::notice::Using unity-explorer release ${RELEASE_TAG}."
+          echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
 
   run:
     name: Runner validation (InWorld smoke)

@@ -71,6 +71,9 @@ public abstract class BaseTest
     [AllureStep("Ensure player is in-world")]
     protected virtual void EnsureInWorld()
     {
+        // MinimumSpecsScreen overlays the splash on hardware that doesn't meet the recommended specs (CI 4-vCPU runner).
+        DismissMinimumSpecsModalIfPresent();
+
         // Wait for any splash to clear first — both the cached-account flow and the
         // auto-login (token-bridge) flow start with the splash, but they diverge after.
         if (Views.SplashScreen.IsPresent())
@@ -125,6 +128,23 @@ public abstract class BaseTest
         // it (the system is already warm) but the cost is small.
         Thread.Sleep(20_000);
         Reporter.Log("Player is in-world and main menu is ready");
+    }
+
+    [AllureStep("Dismiss the MinimumSpecs warning modal if present")]
+    private void DismissMinimumSpecsModalIfPresent()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (Views.MinimumSpecsScreen.IsPresent())
+            {
+                Reporter.Log("MinimumSpecs warning modal detected — clicking Continue");
+                Views.MinimumSpecsScreen.ContinueButton.Click();
+                return;
+            }
+            Thread.Sleep(500);
+        }
+        Reporter.Log("No MinimumSpecs modal — hardware meets recommended specs");
     }
 
     #endregion
