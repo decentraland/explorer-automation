@@ -59,11 +59,10 @@ jobs:
     with:
       mode: record
       pr_number: '13'
-      # Narrowed to TextShapeFixture so each push iterates in ~10 min instead of
-      # ~25. Widen back to Category=Visual (the workflow default) once the
-      # SceneCensus + tolerance approach is dialed in for one fixture and we're
-      # ready to validate the rest.
-      filter: FullyQualifiedName~TextShapeFixture
+      # Filter stays at the workflow default (Category=Visual): `mf explorer test`
+      # only spins up the host server + honors --record-baselines when it sees that
+      # exact filter — narrower selectors (FullyQualifiedName~…) skip those branches
+      # and VisualSuiteSetup.RequireHost throws in OneTimeSetUp.
       # Windows build from the same unity-explorer branch (`test/visual-tests`,
       # PR #22281) that the macOS bootstrap renders against. That branch carries
       # `SceneRunner.Scene.AlttesterSceneReadinessProbe`, which the Visual fixtures
@@ -105,7 +104,6 @@ jobs:
     with:
       mode: test
       pr_number: '13'
-      filter: FullyQualifiedName~TextShapeFixture
       build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
