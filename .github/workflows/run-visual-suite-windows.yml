@@ -255,6 +255,107 @@ jobs:
           $userPath    = [System.Environment]::GetEnvironmentVariable("PATH","User")
           $env:PATH = "$machinePath;$userPath"
 
+      # Azure NCasT4_v3 with no monitor attached defaults the virtual desktop
+      # to 1024x768. Unity launched windowed with `--resolution 1920x1080`
+      # gets clamped to the desktop size, AltTester's GetScreenshot captures
+      # whatever Screen has, and baselines end up 1024x768 instead of 1080p.
+      # Record and validate VMs are both provisioned from the same image, so
+      # they reproduce the wrong size bit-perfectly and snapshot diff goes
+      # green by accident. Force the desktop to 1920x1080 here, after the
+      # NVIDIA driver bind so the display adapter actually exists, but
+      # before any Unity launch.
+      - name: Set virtual desktop resolution to 1920x1080
+        shell: powershell
+        timeout-minutes: 2
+        run: |
+          $ErrorActionPreference = "Stop"
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+
+          public class Display {
+              [DllImport("user32.dll", CharSet = CharSet.Auto)]
+              public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
+
+              [DllImport("user32.dll", CharSet = CharSet.Auto)]
+              public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
+
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+              public struct DEVMODE {
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+                  public short dmSpecVersion;
+                  public short dmDriverVersion;
+                  public short dmSize;
+                  public short dmDriverExtra;
+                  public int   dmFields;
+                  public int   dmPositionX;
+                  public int   dmPositionY;
+                  public int   dmDisplayOrientation;
+                  public int   dmDisplayFixedOutput;
+                  public short dmColor;
+                  public short dmDuplex;
+                  public short dmYResolution;
+                  public short dmTTOption;
+                  public short dmCollate;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+                  public short dmLogPixels;
+                  public int   dmBitsPerPel;
+                  public int   dmPelsWidth;
+                  public int   dmPelsHeight;
+                  public int   dmDisplayFlags;
+                  public int   dmDisplayFrequency;
+                  public int   dmICMMethod;
+                  public int   dmICMIntent;
+                  public int   dmMediaType;
+                  public int   dmDitherType;
+                  public int   dmReserved1;
+                  public int   dmReserved2;
+                  public int   dmPanningWidth;
+                  public int   dmPanningHeight;
+              }
+          }
+          "@
+
+          $dm = New-Object Display+DEVMODE
+          $dm.dmSize = [int16][System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DEVMODE])
+
+          if (-not [Display]::EnumDisplaySettings($null, -1, [ref]$dm)) {
+            throw "EnumDisplaySettings(ENUM_CURRENT_SETTINGS) failed — no current display mode."
+          }
+          Write-Host ("Current mode: {0}x{1} @{2}Hz" -f $dm.dmPelsWidth, $dm.dmPelsHeight, $dm.dmDisplayFrequency)
+
+          $dm.dmPelsWidth  = 1920
+          $dm.dmPelsHeight = 1080
+          # DM_PELSWIDTH (0x80000) | DM_PELSHEIGHT (0x100000)
+          $dm.dmFields = 0x80000 -bor 0x100000
+
+          # flags = 0 → CDS_UPDATEREGISTRY (persist for current session).
+          $rc = [Display]::ChangeDisplaySettings([ref]$dm, 0)
+          $codes = @{
+            0  = "DISP_CHANGE_SUCCESSFUL"
+            1  = "DISP_CHANGE_RESTART"
+            -1 = "DISP_CHANGE_FAILED"
+            -2 = "DISP_CHANGE_BADMODE"
+            -3 = "DISP_CHANGE_NOTUPDATED"
+            -4 = "DISP_CHANGE_BADFLAGS"
+            -5 = "DISP_CHANGE_BADPARAM"
+            -6 = "DISP_CHANGE_BADDUALVIEW"
+          }
+          $name = $codes[$rc]
+          if (-not $name) { $name = "UNKNOWN" }
+          Write-Host ("ChangeDisplaySettings → {0} ({1})" -f $rc, $name)
+          if ($rc -ne 0) {
+            throw "ChangeDisplaySettings rejected 1920x1080 (rc=$rc / $name). Pixel-perfect snapshots cannot proceed."
+          }
+
+          $verify = New-Object Display+DEVMODE
+          $verify.dmSize = [int16][System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DEVMODE])
+          [void][Display]::EnumDisplaySettings($null, -1, [ref]$verify)
+          Write-Host ("Post-change mode: {0}x{1} @{2}Hz" -f $verify.dmPelsWidth, $verify.dmPelsHeight, $verify.dmDisplayFrequency)
+          if ($verify.dmPelsWidth -ne 1920 -or $verify.dmPelsHeight -ne 1080) {
+            throw "Display did not switch to 1920x1080 despite SUCCESSFUL return code (actual: $($verify.dmPelsWidth)x$($verify.dmPelsHeight))."
+          }
+
       # Unity Player .exe links MSVC runtime (msvcp140.dll). Probe registry
       # first — base image ships VC++ as a transitive dep, blind install
       # has hung 25 minutes on already-installed runners.
