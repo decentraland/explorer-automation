@@ -1,0 +1,109 @@
+name: Manual Visual Tests
+
+# Ad-hoc visual regression run, triggered manually from the Actions tab. For
+# QA / devs who want to validate against a specific Explorer build or
+# tests_ref combo without a PR.
+#
+# This is just a thin dispatcher; all the work happens in the reusable
+# `run-visual-suite.yml` workflow that the PR-comment paths also use.
+#
+# Inputs (all optional except mode):
+#   - tests_ref:  explorer-automation branch to use. Defaults to main.
+#   - build_url:  direct URL to a Decentraland_macos.zip. If empty, picks the
+#                 latest non-prerelease unity-explorer release.
+#   - mode:       "test" (default) to validate baselines, "record" to
+#                 regenerate them. Record-mode runs are not auto-committed
+#                 anywhere because there's no PR branch to push to — record
+#                 here only when you want to inspect what *would* be recorded
+#                 (the regenerated PNGs end up in the Allure report).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests_ref:
+        description: 'explorer-automation branch (tests + scenes + baselines). Empty = main.'
+        type: string
+        required: false
+        default: ''
+      build_url:
+        description: 'Direct URL to a Decentraland_macos.zip. Empty = latest unity-explorer release.'
+        type: string
+        required: false
+        default: ''
+      mode:
+        description: 'test = validate against baselines; record = render new baselines (NOT committed); bootstrap = only record missing baselines.'
+        type: choice
+        options: [test, record, bootstrap]
+        default: test
+      platform:
+        description: 'Target OS. Only macos works today; windows is wired in the reusable but install steps don''t exist yet.'
+        type: choice
+        options: [macos, windows]
+        default: macos
+      filter:
+        description: 'NUnit filter for `mf explorer test --filter`. Empty = Category=Visual (whole suite).'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: manual-visual-tests-${{ inputs.mode }}-${{ inputs.tests_ref || 'main' }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Resolve build URL
+    runs-on: ubuntu-latest
+    outputs:
+      build_url: ${{ steps.build.outputs.build_url }}
+    steps:
+      - name: Resolve Explorer build URL
+        id: build
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          OVERRIDE: ${{ inputs.build_url }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OVERRIDE:-}" ]; then
+            echo "::notice::Using user-supplied build URL."
+            echo "build_url=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Default: latest non-prerelease unity-explorer release
+          RELEASE_JSON=$(gh api \
+            "repos/decentraland/unity-explorer/releases?per_page=20" \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
+
+          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
+            echo "::error::No published unity-explorer release found and no build_url override given."
+            exit 1
+          fi
+
+          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          BUILD_URL=$(echo "$RELEASE_JSON" \
+            | jq -r '.assets[] | select(.name == "Decentraland_macos.zip") | .browser_download_url')
+
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+            echo "::error::Release ${RELEASE_TAG} has no Decentraland_macos.zip asset attached."
+            exit 1
+          fi
+
+          echo "::notice::Using unity-explorer release ${RELEASE_TAG}."
+          echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+
+  run-suite:
+    name: Run visual suite
+    needs: resolve
+    uses: ./.github/workflows/run-visual-suite.yml
+    with:
+      mode: ${{ inputs.mode }}
+      platform: ${{ inputs.platform }}
+      filter: ${{ inputs.filter }}
+      build_url: ${{ needs.resolve.outputs.build_url }}
+      tests_ref: ${{ inputs.tests_ref }}
+    secrets: inherit

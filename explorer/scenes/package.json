@@ -1,0 +1,28 @@
+{
+  "name": "explorer-automation-scenes",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual-regression test scenes for the Decentraland Explorer.",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsx scripts/build-all.ts",
+    "new-scene": "tsx scripts/new-scene.ts",
+    "format": "prettier --check \"**/*.{ts,tsx,json}\" --ignore-path .gitignore --ignore-path .prettierignore",
+    "format:fix": "prettier --write \"**/*.{ts,tsx,json}\" --ignore-path .gitignore --ignore-path .prettierignore",
+    "syncpack:list": "syncpack list-mismatches --config .syncpackrc.json --source \"packages/*/package.json\" --source \"package.json\"",
+    "syncpack:fix": "syncpack fix-mismatches --config .syncpackrc.json --source \"packages/*/package.json\" --source \"package.json\""
+  },
+  "devDependencies": {
+    "@dcl/sdk": "latest",
+    "prettier": "3.5.3",
+    "syncpack": "13.0.4",
+    "tsx": "4.19.2",
+    "typescript": "5.5.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "gltf",
+    "description": "Visual-regression scene"
+  },
+  "owner": "",
+  "contact": { "name": "explorer-automation", "email": "" },
+  "main": "bin/index.js",
+  "tags": [],
+  "scene": {
+    "parcels": ["0,0", "1,0", "0,1", "1,1", "0,2", "1,2"],
+    "base": "0,0"
+  },
+  "skyboxConfig": {
+    "fixedTime": 43200
+  },
+  "spawnPoints": [
+    {
+      "name": "default",
+      "default": true,
+      "position": { "x": [16], "y": [0], "z": [14] },
+      "cameraTarget": { "x": 16, "y": 1, "z": 4 }
+    }
+  ]
+}
