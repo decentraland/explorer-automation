@@ -132,3 +132,46 @@ jobs:
             echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
           fi
           echo "::endgroup::"
+
+  # When record fails, validate is skipped (needs: record). The validate-mode
+  # PR comment then keeps its ✅ result from the *previous* successful run,
+  # which is misleading at a glance — the PR appears to say "tests passed"
+  # even though the current pipeline is red. Rewrite that comment in place
+  # so it reflects the current pipeline state.
+  mark-validate-stale:
+    name: 2b. Mark stale validate comment (record failed)
+    needs: record
+    if: failure() && needs.record.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Find stale validate-mode comment
+        id: find
+        uses: peter-evans/find-comment@v3
+        with:
+          repository: ${{ github.repository }}
+          issue-number: '13'
+          comment-author: 'github-actions[bot]'
+          body-includes: '## Visual regression tests (windows)'
+
+      - name: Rewrite stale validate-mode comment
+        if: steps.find.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          repository: ${{ github.repository }}
+          issue-number: '13'
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            ## Visual regression tests (windows)
+
+            ⚠️ **Stale — pipeline did not reach the validate step.**
+
+            The baseline-regeneration step (mode `record`) failed in workflow run
+            [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}),
+            so the validate-mode job (`needs: record`) was skipped and the previous
+            ✅ result here is from an older run. See the
+            **Baseline regeneration (windows)** comment above for the current failure.
+
+            <sub>Auto-marked stale by `_temp-bootstrap-windows-visual-suite.yml`.</sub>
