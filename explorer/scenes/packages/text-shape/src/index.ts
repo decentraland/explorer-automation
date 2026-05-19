@@ -451,7 +451,7 @@ export function main() {
   // Pulled back to z=−2 and up to y=4.5 so the y=0.6..8.6 stack frames cleanly.
   setupVisualTest({
     lookAtPos: Vector3.create(8, 5, 8),
-    cameraPos: Vector3.create(8, 5, 0),
+    cameraPos: Vector3.create(8, 5, -0.5),
   })
 }
 

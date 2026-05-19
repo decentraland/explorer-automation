@@ -850,7 +850,7 @@ export function main() {
   // (x=3..28) both fit inside the default ~60° VirtualCamera FOV.
   setupVisualTest({
     lookAtPos: Vector3.create(15.5, 6, ROW_Z),
-    cameraPos: Vector3.create(15.5, 6, -6),
+    cameraPos: Vector3.create(15.5, 6, -10.5),
     // 2-parcel scene — widen the AvatarModifierArea to cover x=0..32, z=0..16.
     hideAreaCenter: Vector3.create(16, 8, 8),
     hideAreaSize: Vector3.create(32, 16, 16),

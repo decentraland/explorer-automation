@@ -141,7 +141,7 @@ export function main() {
       states: [{ clip: LEVER_IDLE_CLIP, playing: true, loop: true }],
     })
 
-    makeLabel(colX, 'Animator\n"main" playing\n(frame 0)')
+    makeLabel(colX + 1.5, 'Animator\n"main" playing\n(frame 0)')
   }
 
   // ── Col 1 — No Animator component ─────────────────────────────────────────
@@ -245,7 +245,7 @@ export function main() {
     })
 
     makeLabel(
-      colX,
+      colX - 1.5,
       'playSingleAnimation\nresetCursor=false\n("Close" / "deactivate")',
     )
   }
@@ -270,7 +270,7 @@ export function main() {
   // lever in the foreground.
   setupVisualTest({
     lookAtPos: Vector3.create(16, 2, DOOR_Z),
-    cameraPos: Vector3.create(16, 4, -9),
+    cameraPos: Vector3.create(16, 4, -10.5),
     hideAreaCenter: Vector3.create(16, 4, 9),
     hideAreaSize: Vector3.create(34, 16, 22),
   })

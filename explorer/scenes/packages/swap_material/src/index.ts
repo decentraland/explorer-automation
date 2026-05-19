@@ -260,7 +260,7 @@ export function main() {
   // scene center on z so the robots dominate the frame.
   setupVisualTest({
     lookAtPos: Vector3.create(8, 4, 9),
-    cameraPos: Vector3.create(8, 5, 2),
+    cameraPos: Vector3.create(8, 5, 1.5),
   })
 }
 
@@ -310,12 +310,7 @@ function attachLabel(text: string, x: number, z: number, y: number = 3.4) {
 
 const HINT_MAX_DISTANCE = 25
 
-// Flip to true to wire up hover tooltips while debugging the scene by hand.
-// Kept off for visual-test runs so the cursor never paints a hover outline.
-const DEBUG_HOVER_HINTS = false
-
 function attachHint(entity: Entity, text: string) {
-  if (!DEBUG_HOVER_HINTS) return
   pointerEventsSystem.onPointerDown(
     {
       entity,

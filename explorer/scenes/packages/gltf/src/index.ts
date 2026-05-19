@@ -59,7 +59,10 @@ export function main() {
 
 
   const sampleScene03 = engine.addEntity()
-  Transform.create(sampleScene03, { position: Vector3.create(14, 6, 2) })
+  Transform.create(sampleScene03, {
+    position: Vector3.create(14, 6, 2),
+    scale: Vector3.create(1.1, 1.1, 1.1)
+  })
   GltfContainer.create(sampleScene03, {
     src: 'assets/sdk7-models/SampleScene_03.glb',
   })
@@ -75,7 +78,7 @@ export function main() {
   // closer to camera at z=11.
   const tree = engine.addEntity()
   Transform.create(tree, {
-    position: Vector3.create(2, 0, 14),
+    position: Vector3.create(4, 0, 14),
     scale: Vector3.create(0.6, 0.6, 0.6),
   })
   GltfContainer.create(tree, { src: 'assets/genesis/tree.glb' })
@@ -154,7 +157,7 @@ export function main() {
   // treehouse at x=29) inside the HFOV. Aim raised to y=5 so the lifted
   // SampleScene_03 (y=8+) and the y=2 foreground accents both fit vertically.
   setupVisualTest({
-    lookAtPos: Vector3.create(12, 4, 6),
-    cameraPos: Vector3.create(12, 5, 25),
+    lookAtPos: Vector3.create(13, 4, 6),
+    cameraPos: Vector3.create(13, 5, 26.5),
   })
 }

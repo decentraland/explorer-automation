@@ -297,7 +297,7 @@ export function main() {
   // the parcel interior.
   setupVisualTest({
     lookAtPos: Vector3.create(8, 3, 8),
-    cameraPos: Vector3.create(8, 4, 1),
+    cameraPos: Vector3.create(8, 4, 0.5),
   })
 }
 

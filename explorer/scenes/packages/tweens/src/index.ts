@@ -185,7 +185,7 @@ export function main() {
       })
     })
 
-    makeLabel(2, 'after-tween\ncallback\n(yellow at y=3)')
+    makeLabel(3.5, 'after-tween\ncallback\n(yellow at y=3)')
   }
 
   // ── Col 1 — Tween sequence ─────────────────────────────────────────────────
@@ -435,7 +435,7 @@ export function main() {
       Transform.getMutable(matBox).position = matCallbackPos
     })
 
-    makeLabel(22, 'material-tween\ncallback\n(UV shift→y=1.5)')
+    makeLabel(20.3, 'material-tween\ncallback\n(UV shift→y=1.5)')
   }
 
   // ── scene title ───────────────────────────────────────────────────────────
@@ -456,7 +456,7 @@ export function main() {
   // of the layout.
   setupVisualTest({
     lookAtPos: Vector3.create(12, 3, Z_SUBJECT),
-    cameraPos: Vector3.create(12, 4, -5.5),
+    cameraPos: Vector3.create(12, 4, -7),
     hideAreaCenter: Vector3.create(12, 4, 8),
     hideAreaSize: Vector3.create(30, 16, 20),
   })

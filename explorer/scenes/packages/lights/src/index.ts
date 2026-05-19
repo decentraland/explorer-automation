@@ -190,7 +190,7 @@ export function main() {
   // 0-to-6 m vertical range of the booths.
   setupVisualTest({
     lookAtPos: Vector3.create(8, 0, 8),
-    cameraPos: Vector3.create(8, 3, 0),
+    cameraPos: Vector3.create(8, 2, 0),
     // 5-parcel L-shape — widen the AvatarModifierArea to cover the bounding
     // box (x=0..48, z=0..32). The box overlaps the unowned (2,1) parcel,
     // but AvatarModifierArea is clipped to the scene's parcels at runtime.

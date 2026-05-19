@@ -704,7 +704,7 @@ export function main() {
   // is balanced.
   setupVisualTest({
     lookAtPos: Vector3.create(8, 4, 8),
-    cameraPos: Vector3.create(8, 4.5, -3.5),
+    cameraPos: Vector3.create(8, 4.5, -4),
   })
 }
 

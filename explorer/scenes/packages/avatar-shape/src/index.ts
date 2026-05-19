@@ -16,10 +16,10 @@ import { setupVisualTest } from './visual-test-setup'
  *  Col  X    Body shape  Wearables          Rotation   Scale   Emote (local GLB)
  *  ────────────────────────────────────────────────────────────────────────────
  *   0   2    BaseMale    base only          180°       1.0     Friendliest_Player
- *   1   5    BaseFemale  base + NFT (ETH)   225°       1.0     Player_Of_Month
- *   2   8    BaseMale    base + NFT (POL)   180°       1.2     Top_Seller
- *   3  11    BaseFemale  base + NFT (POL)   180°       0.8     Wearable_Creator   ← PARENT
- *   4  13    BaseMale    base + NFT (ETH)   inherited  inh.    Friendliest_Player ← CHILD of col 3
+ *   1   3    BaseFemale  base + NFT (ETH)   225°       1.0     Player_Of_Month
+ *   2   4    BaseMale    base + NFT (POL)   180°       1.2     Top_Seller
+ *   3   5    BaseFemale  base + NFT (POL)   180°       0.8     Wearable_Creator   ← PARENT
+ *   4   6    BaseMale    base + NFT (ETH)   inherited  inh.    Friendliest_Player ← CHILD of col 3
  *
  * Axes covered per column (capitals = primary axis for that column):
  *   col 0: baseline — BASE-COLLECTION WEARABLES only, default scale, BaseMale
@@ -31,12 +31,12 @@ import { setupVisualTest } from './visual-test-setup'
  *          col 4's local transform (see math below).
  *
  * Parent-child math (col 3 = parent, col 4 = child):
- *   parent pos = (11, 0.05, 12), rot = 180°Y, scale = 0.8
- *   child local pos = (-2.5, 0, 0), local rot = 0°Y, local scale = 1.5
+ *   parent pos = (5, 0.05, 12), rot = 180°Y, scale = 0.8
+ *   child local pos = (-1.25, 0, 0), local rot = 0°Y, local scale = 1.5
  *     → parent's 180°Y rotation maps local +X to world -X, so child's local
- *       (-2.5, 0, 0) becomes world (+2.5, 0, 0) before scaling.
- *     → scaled by parent's 0.8: world offset = (+2, 0, 0).
- *     → world pos  = (13, 0.05, 12)
+ *       (-1.25, 0, 0) becomes world (+1.25, 0, 0) before scaling.
+ *     → scaled by parent's 0.8: world offset = (+1, 0, 0).
+ *     → world pos  = (6, 0.05, 12)
  *     → world rot  = 180° + 0° = 180° (faces camera)
  *     → world scale = 0.8 × 1.5 = 1.2
  *
@@ -80,7 +80,7 @@ export function main() {
 
   // ── col 1 — BaseFemale, base + NFT wearable (layer 1 ethereum) ───────────────────
   makeAvatar({
-    x: 5,
+    x: 3,
     rotationDeg: 225,
     scale: 1.0,
     id: 'npc-2',
@@ -105,7 +105,7 @@ export function main() {
 
   // ── col 2 — BaseMale, base + NFT wearable (polygon), scale 1.5 ───────────
   makeAvatar({
-    x: 8,
+    x: 4,
     rotationDeg: 180,
     scale: 1.2,
     id: 'npc-3',
@@ -130,7 +130,7 @@ export function main() {
 
   // ── col 3 — PARENT — BaseFemale + NFT, scale 0.8 ─────────────────────────
   const parent = makeAvatar({
-    x: 11,
+    x: 5,
     rotationDeg: 180,
     scale: 0.8,
     id: 'npc-4',
@@ -154,9 +154,9 @@ export function main() {
   })
 
   // ── col 4 — CHILD of col 3 — verifies parent transform inheritance ───────
-  // Local transform: -2.5 m on local X, identity rotation, scale 1.5.
+  // Local transform: -1.25 m on local X, identity rotation, scale 1.5.
   // The parent's 180°Y rotation flips local +X → world -X, scaled by 0.8,
-  // so the child ends up +2 m to the parent's right in world space. See
+  // so the child ends up +1 m to the parent's right in world space. See
   // the file-header math block for the full derivation.
   const child = engine.addEntity()
   AvatarShape.create(child, {
@@ -184,7 +184,7 @@ export function main() {
   })
   Transform.create(child, {
     parent,
-    position: Vector3.create(-2.5, 0, 0),
+    position: Vector3.create(-1.25, 0, 0),
     rotation: Quaternion.Identity(),
     scale: Vector3.create(1.5, 1.5, 1.5),
   })
@@ -194,8 +194,8 @@ export function main() {
   // z=12. lookAt Y=1.2 frames the avatars chest-up while still keeping their
   // feet inside the bottom of the shot.
   setupVisualTest({
-    lookAtPos: Vector3.create(7.5, 1.2, 12),
-    cameraPos: Vector3.create(7.5, 2, 5.5),
+    lookAtPos: Vector3.create(4, 1.2, 12),
+    cameraPos: Vector3.create(4, 2, 8),
   })
 }
 
