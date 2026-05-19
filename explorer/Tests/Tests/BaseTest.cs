@@ -4,21 +4,10 @@ namespace ExplorerAutomation.Tests.Tests;
 [AllureNUnit]
 public abstract class BaseTest
 {
-    // Decentraland Explorer's Application.persistentDataPath on Windows.
-    // Track B (Slice 4) sink writes perf-<UTC-timestamp>.json files here when
-    // launched with -perfRecord or -alttester (the latter applies to every
-    // chassis run, so the file is always present for these fixtures).
-    private static readonly string EXPLORER_PERSISTENT_DATA_PATH = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        "AppData", "LocalLow", "Decentraland", "Explorer");
-
     protected Exception ExceptionFromOneTimeSetUp;
 
     protected ViewContainer Views => ViewContainer.Instance;
     protected AltDriver AltDriver => CommonStuff.AltDriver;
-
-    private string _perfPayloadPath;
-    private long _perfPayloadStartOffset;
 
     #region Setup and Teardown
 
@@ -26,14 +15,6 @@ public abstract class BaseTest
     [AllureBefore("Ensure the player is in world")]
     public void OneTimeSetUp()
     {
-        // Snapshot the perf-payload sink offset BEFORE we drive any user flow, so
-        // OneTimeTearDown attaches only the slice emitted during this fixture's
-        // lifetime. One Explorer process services every fixture in a `dotnet test`
-        // run, so the file accumulates across fixtures; the offset trick gives us
-        // per-fixture slicing without requiring an extra timestamp field in the
-        // sink payload (would force a new unity-explorer build).
-        CapturePerfPayloadOffset();
-
         try
         {
             EnsureInWorld();
@@ -46,65 +27,6 @@ public abstract class BaseTest
             // [SetUp], each test gets its own entry marked as failed.
             ExceptionFromOneTimeSetUp = ex;
             throw;
-        }
-    }
-
-    [OneTimeTearDown]
-    [AllureAfter("Attach perf-payload slice")]
-    public void AttachPerfPayloadSlice()
-    {
-        if (_perfPayloadPath == null) return;
-        try
-        {
-            if (!File.Exists(_perfPayloadPath)) return;
-            var length = new FileInfo(_perfPayloadPath).Length;
-            if (length <= _perfPayloadStartOffset) return;
-
-            using var fs = new FileStream(_perfPayloadPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            fs.Seek(_perfPayloadStartOffset, SeekOrigin.Begin);
-            using var ms = new MemoryStream();
-            fs.CopyTo(ms);
-            var bytes = ms.ToArray();
-            if (bytes.Length == 0) return;
-
-            // application/x-ndjson is the conventional MIME type for newline-delimited JSON.
-            // Allure has no built-in renderer for it, but the file extension keeps it
-            // round-trippable through `jq -s` / `aggregate_inworld_cv.py` (Slice 5).
-            AllureApi.AddAttachment("perf-payloads.jsonl", "application/x-ndjson", bytes);
-            Reporter.Log($"Attached perf-payload slice ({bytes.Length} bytes) from {_perfPayloadPath}");
-        }
-        catch (Exception ex)
-        {
-            Reporter.Log($"Failed to attach perf-payload slice (non-fatal): {ex.Message}");
-        }
-    }
-
-    private void CapturePerfPayloadOffset()
-    {
-        try
-        {
-            if (!Directory.Exists(EXPLORER_PERSISTENT_DATA_PATH)) return;
-
-            // The sink names files perf-<UTC-timestamp>.json — one per Explorer launch.
-            // Track the most recently written one; if Explorer was restarted between
-            // fixtures, this picks up the new file automatically.
-            FileInfo latest = null;
-            foreach (var path in Directory.EnumerateFiles(EXPLORER_PERSISTENT_DATA_PATH, "perf-*.json"))
-            {
-                var info = new FileInfo(path);
-                if (latest == null || info.LastWriteTimeUtc > latest.LastWriteTimeUtc)
-                    latest = info;
-            }
-
-            if (latest == null) return;
-
-            _perfPayloadPath = latest.FullName;
-            _perfPayloadStartOffset = latest.Length;
-            Reporter.Log($"Perf-payload sink: tracking {_perfPayloadPath} from offset {_perfPayloadStartOffset}");
-        }
-        catch (Exception ex)
-        {
-            Reporter.Log($"Failed to locate perf-payload sink (non-fatal): {ex.Message}");
         }
     }
 

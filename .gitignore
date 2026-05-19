@@ -29,9 +29,6 @@ tmp
 # Personal helper scripts (not part of the test suite — kept untracked)
 local-scripts/
 
-# Local-only scratch (downloaded builds, ad-hoc probes — never committed)
-.local/
-
 # Workspace dir used by the alttester-explorer agent for transient .png captures.
 screenshots/
 
