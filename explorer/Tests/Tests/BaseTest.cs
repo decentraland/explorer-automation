@@ -4,7 +4,13 @@ namespace ExplorerAutomation.Tests.Tests;
 [AllureNUnit]
 public abstract class BaseTest
 {
+    private const string PERF_ENV = "EXPLORER_PERF_RECORD";
+
     protected Exception ExceptionFromOneTimeSetUp;
+
+    private string _perfCsvPath;
+    private string _perfSummaryPath;
+    private bool _perfStarted;
 
     protected ViewContainer Views => ViewContainer.Instance;
     protected AltDriver AltDriver => CommonStuff.AltDriver;
@@ -28,6 +34,53 @@ public abstract class BaseTest
             ExceptionFromOneTimeSetUp = ex;
             throw;
         }
+
+        // Opt-in fixture-level perf capture. Driven by EXPLORER_PERF_RECORD=1 set by
+        // the chassis workflow; local runs leave it unset and skip the AutoPilot
+        // PerfSampler call entirely so non-CI builds without the perf module loaded
+        // don't blow up.
+        if (Environment.GetEnvironmentVariable(PERF_ENV) != "1") return;
+
+        var fixtureName = TestContext.CurrentContext.Test.ClassName ?? "unknown-fixture";
+        var dir = Path.Combine(Path.GetTempPath(), "explorer-perf", fixtureName);
+        Directory.CreateDirectory(dir);
+        _perfCsvPath = Path.Combine(dir, "perf.csv");
+        _perfSummaryPath = Path.Combine(dir, "perf-summary.txt");
+
+        AltDriver.CallStaticMethod<string>(
+            "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "Begin",
+            "DCL.Diagnostics.AutoPilot",
+            new object[] { _perfCsvPath, _perfSummaryPath });
+
+        _perfStarted = true;
+        Reporter.Log($"PerfSampler.Begin -> {_perfSummaryPath}");
+    }
+
+    [OneTimeTearDown]
+    [AllureAfter("Attach perf summary")]
+    public void AttachPerf()
+    {
+        if (!_perfStarted) return;
+
+        try
+        {
+            AltDriver.CallStaticMethod<string>(
+                "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "End",
+                "DCL.Diagnostics.AutoPilot",
+                new object[] { });
+        }
+        catch (Exception ex)
+        {
+            Reporter.Log($"PerfSampler.End call failed (Player crash?): {ex.Message}");
+            return;
+        }
+
+        if (!File.Exists(_perfSummaryPath))
+            throw new AssertionException($"PerfSampler.End did not produce summary at {_perfSummaryPath}");
+
+        AllureApi.AddAttachment("perf-summary.txt", "text/plain", File.ReadAllBytes(_perfSummaryPath));
+        if (File.Exists(_perfCsvPath))
+            AllureApi.AddAttachment("perf.csv", "text/csv", File.ReadAllBytes(_perfCsvPath));
     }
 
     [SetUp]
