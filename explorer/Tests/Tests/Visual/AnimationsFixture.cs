@@ -22,6 +22,6 @@ public class AnimationsFixture
         // snapshot fires.
         Thread.Sleep(2500);
 
-        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
+        Snapshot.AssertMatchesBaseline();
     }
 }
