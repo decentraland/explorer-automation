@@ -274,11 +274,28 @@ jobs:
           using System.Runtime.InteropServices;
 
           public class Display {
+              public const int ENUM_CURRENT_SETTINGS = -1;
+              public const int ENUM_REGISTRY_SETTINGS = -2;
+              public const int CDS_UPDATEREGISTRY = 0x00000001;
+
               [DllImport("user32.dll", CharSet = CharSet.Auto)]
-              public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
+              public static extern int ChangeDisplaySettingsEx(string deviceName, ref DEVMODE devMode, IntPtr hwnd, int flags, IntPtr lParam);
 
               [DllImport("user32.dll", CharSet = CharSet.Auto)]
               public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
+
+              [DllImport("user32.dll", CharSet = CharSet.Auto)]
+              public static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+              public struct DISPLAY_DEVICE {
+                  public int   cb;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]  public string DeviceName;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
+                  public uint  StateFlags;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
+              }
 
               [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
               public struct DEVMODE {
@@ -316,21 +333,63 @@ jobs:
           }
           "@
 
-          $dm = New-Object Display+DEVMODE
-          $dm.dmSize = [int16][System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DEVMODE])
+          $devModeSize = [int16][System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DEVMODE])
+          $ddSize      = [System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DISPLAY_DEVICE])
 
-          if (-not [Display]::EnumDisplaySettings($null, -1, [ref]$dm)) {
-            throw "EnumDisplaySettings(ENUM_CURRENT_SETTINGS) failed - no current display mode."
+          # Walk EnumDisplayDevices until we find the device flagged ATTACHED_TO_DESKTOP (0x1).
+          # On headless Azure VMs with NVIDIA bound but no monitor, the primary device exists
+          # but EnumDisplaySettings(null, ...) refuses to report a "current" mode - the legacy
+          # API treats $null as "ask the calling-thread's window station's primary monitor",
+          # which on a session 0 worker resolves to nothing. Naming the device explicitly works.
+          $primary = $null
+          for ($i = 0; $i -lt 16; $i++) {
+            $dd = New-Object Display+DISPLAY_DEVICE
+            $dd.cb = $ddSize
+            if (-not [Display]::EnumDisplayDevices($null, $i, [ref]$dd, 0)) { break }
+            Write-Host ("Adapter[{0}] {1} ({2}) flags=0x{3:X}" -f $i, $dd.DeviceName, $dd.DeviceString, $dd.StateFlags)
+            # DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x1
+            if (($dd.StateFlags -band 0x1) -ne 0 -and -not $primary) {
+              $primary = $dd.DeviceName
+            }
           }
-          Write-Host ("Current mode: {0}x{1} @{2}Hz" -f $dm.dmPelsWidth, $dm.dmPelsHeight, $dm.dmDisplayFrequency)
+          # Fallback: first adapter, even if not attached. Better than $null.
+          if (-not $primary) {
+            $dd = New-Object Display+DISPLAY_DEVICE
+            $dd.cb = $ddSize
+            if ([Display]::EnumDisplayDevices($null, 0, [ref]$dd, 0)) { $primary = $dd.DeviceName }
+          }
+          if (-not $primary) { throw "EnumDisplayDevices: no display adapters present." }
+          Write-Host ("Primary display device: {0}" -f $primary)
 
-          $dm.dmPelsWidth  = 1920
-          $dm.dmPelsHeight = 1080
+          # Try CURRENT first, fall back to REGISTRY settings so we can log a "before" line
+          # even when the device has no active mode yet (headless boot).
+          $cur = New-Object Display+DEVMODE
+          $cur.dmSize = $devModeSize
+          $haveCurrent = [Display]::EnumDisplaySettings($primary, [Display]::ENUM_CURRENT_SETTINGS, [ref]$cur)
+          if (-not $haveCurrent) {
+            $cur = New-Object Display+DEVMODE
+            $cur.dmSize = $devModeSize
+            $haveRegistry = [Display]::EnumDisplaySettings($primary, [Display]::ENUM_REGISTRY_SETTINGS, [ref]$cur)
+            if ($haveRegistry) {
+              Write-Host ("Registry mode (no current): {0}x{1}" -f $cur.dmPelsWidth, $cur.dmPelsHeight)
+            } else {
+              Write-Host "EnumDisplaySettings returned false for both CURRENT and REGISTRY - proceeding without 'before' diagnostics."
+            }
+          } else {
+            Write-Host ("Current mode: {0}x{1} @{2}Hz" -f $cur.dmPelsWidth, $cur.dmPelsHeight, $cur.dmDisplayFrequency)
+          }
+
+          # Build a fresh DEVMODE that only requests the two fields we care about. Anything
+          # else stays zero/default - ChangeDisplaySettingsEx ignores fields not flagged in
+          # dmFields, so we don't need a fully-populated struct.
+          $target = New-Object Display+DEVMODE
+          $target.dmSize       = $devModeSize
+          $target.dmPelsWidth  = 1920
+          $target.dmPelsHeight = 1080
           # DM_PELSWIDTH (0x80000) | DM_PELSHEIGHT (0x100000)
-          $dm.dmFields = 0x80000 -bor 0x100000
+          $target.dmFields     = 0x80000 -bor 0x100000
 
-          # flags = 0 -> CDS_UPDATEREGISTRY (persist for current session).
-          $rc = [Display]::ChangeDisplaySettings([ref]$dm, 0)
+          $rc = [Display]::ChangeDisplaySettingsEx($primary, [ref]$target, [IntPtr]::Zero, [Display]::CDS_UPDATEREGISTRY, [IntPtr]::Zero)
           $codes = @{
             0  = "DISP_CHANGE_SUCCESSFUL"
             1  = "DISP_CHANGE_RESTART"
@@ -341,19 +400,27 @@ jobs:
             -5 = "DISP_CHANGE_BADPARAM"
             -6 = "DISP_CHANGE_BADDUALVIEW"
           }
-          $name = $codes[$rc]
-          if (-not $name) { $name = "UNKNOWN" }
-          Write-Host ("ChangeDisplaySettings -> {0} ({1})" -f $rc, $name)
+          $codeName = $codes[$rc]
+          if (-not $codeName) { $codeName = "UNKNOWN" }
+          Write-Host ("ChangeDisplaySettingsEx({0}) -> {1} ({2})" -f $primary, $rc, $codeName)
           if ($rc -ne 0) {
-            throw "ChangeDisplaySettings rejected 1920x1080 (rc=$rc / $name). Pixel-perfect snapshots cannot proceed."
+            throw "ChangeDisplaySettingsEx rejected 1920x1080 (rc=$rc / $codeName)."
           }
 
+          # Verify - EnumDisplaySettings should now report 1920x1080 for the same device.
           $verify = New-Object Display+DEVMODE
-          $verify.dmSize = [int16][System.Runtime.InteropServices.Marshal]::SizeOf([type][Display+DEVMODE])
-          [void][Display]::EnumDisplaySettings($null, -1, [ref]$verify)
-          Write-Host ("Post-change mode: {0}x{1} @{2}Hz" -f $verify.dmPelsWidth, $verify.dmPelsHeight, $verify.dmDisplayFrequency)
+          $verify.dmSize = $devModeSize
+          $verifyOk = [Display]::EnumDisplaySettings($primary, [Display]::ENUM_CURRENT_SETTINGS, [ref]$verify)
+          if (-not $verifyOk) {
+            $verify = New-Object Display+DEVMODE
+            $verify.dmSize = $devModeSize
+            [void][Display]::EnumDisplaySettings($primary, [Display]::ENUM_REGISTRY_SETTINGS, [ref]$verify)
+            Write-Host ("Post-change mode (registry): {0}x{1}" -f $verify.dmPelsWidth, $verify.dmPelsHeight)
+          } else {
+            Write-Host ("Post-change mode: {0}x{1} @{2}Hz" -f $verify.dmPelsWidth, $verify.dmPelsHeight, $verify.dmDisplayFrequency)
+          }
           if ($verify.dmPelsWidth -ne 1920 -or $verify.dmPelsHeight -ne 1080) {
-            throw "Display did not switch to 1920x1080 despite SUCCESSFUL return code (actual: $($verify.dmPelsWidth)x$($verify.dmPelsHeight))."
+            throw "Display did not switch to 1920x1080 (actual: $($verify.dmPelsWidth)x$($verify.dmPelsHeight))."
           }
 
       # Unity Player .exe links MSVC runtime (msvcp140.dll). Probe registry
