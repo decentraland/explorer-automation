@@ -64,6 +64,25 @@ on:
         required: false
         default: false
 
+  # workflow_call mirror of workflow_dispatch — lets thin per-purpose wrappers
+  # (e.g. runtime-perf-probe.yml) reuse this chassis with their own input
+  # defaults + triggers, instead of duplicating the ~800 lines of install
+  # logic below. Inputs are kept in lockstep with workflow_dispatch above.
+  workflow_call:
+    inputs:
+      build_url:
+        type: string
+        required: false
+        default: ''
+      test_filter:
+        type: string
+        required: false
+        default: 'Category=InWorld'
+      dry_run:
+        type: boolean
+        required: false
+        default: false
+
   push:
     branches: [feat/win-gpu-test-runner-workflow]
     paths:
