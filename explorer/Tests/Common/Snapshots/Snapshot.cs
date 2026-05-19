@@ -22,7 +22,7 @@ public static class Snapshot
     // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
     // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
     // runs from churning visually-identical files (and the surrounding commit/PR diff).
-    private const double RECORD_SKIP_TOLERANCE_PERCENT = 1.0;
+    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.5;
 
     public static void AssertMatchesBaseline(
         string name = "default",

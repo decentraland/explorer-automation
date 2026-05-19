@@ -58,7 +58,13 @@ let col1Done = false
 let col5Done = false
 
 // ── helper: attach a hover tooltip to any entity ────────────────────────────
+// Flip DEBUG_HOVER_HINTS to true to wire up hover tooltips while debugging the
+// scene by hand. Kept off for visual-test runs so the cursor never paints a
+// hover outline.
+const DEBUG_HOVER_HINTS = false
+
 function attachHint(entity: Entity, text: string): void {
+  if (!DEBUG_HOVER_HINTS) return
   pointerEventsSystem.onPointerDown(
     {
       entity,
