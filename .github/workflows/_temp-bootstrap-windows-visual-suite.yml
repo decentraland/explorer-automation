@@ -63,14 +63,16 @@ jobs:
       # only spins up the host server + honors --record-baselines when it sees that
       # exact filter — narrower selectors (FullyQualifiedName~…) skip those branches
       # and VisualSuiteSetup.RequireHost throws in OneTimeSetUp.
-      # Windows build from the same unity-explorer branch (`test/visual-tests`,
-      # PR #22281) that the macOS bootstrap renders against. That branch carries
-      # `SceneRunner.Scene.AlttesterSceneReadinessProbe`, which the Visual fixtures
-      # poll via SceneReady.WaitUntilReady; the chassis/InWorld build on
-      # `temp/automation-instrumented-build` does NOT contain it, hence the
-      # ComponentNotFoundException on the first run. Swap to a clean release
-      # once the visual probe lands on main.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_windows64.zip'
+      # unity-explorer PR #8814 (head: feat/test-automation/alttester-performance-instrumentation,
+      # build commit 5d024a6). Carries:
+      #   - SceneRunner.Scene.AlttesterSceneReadinessProbe (Visual fixtures poll it via
+      #     SceneReady.WaitUntilReady),
+      #   - NativeWindowManager fullscreen-mode fix: when --resolution is provided, switch
+      #     to FullScreenMode.ExclusiveFullScreen so the OS does a real DXGI mode-switch
+      #     instead of clamping the borderless window to the runner's 1024x768 desktop.
+      # The previous pin (`test/visual-tests` PR #22281, pr-22281-578d763) had the readiness
+      # probe but not the fullscreen fix, hence 1024x768 baselines.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/alttester-performance-instrumentation/pr-22390-5d024a6/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
@@ -104,7 +106,7 @@ jobs:
     with:
       mode: test
       pr_number: '13'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_windows64.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/alttester-performance-instrumentation/pr-22390-5d024a6/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
