@@ -63,16 +63,20 @@ jobs:
       # only spins up the host server + honors --record-baselines when it sees that
       # exact filter — narrower selectors (FullyQualifiedName~…) skip those branches
       # and VisualSuiteSetup.RequireHost throws in OneTimeSetUp.
-      # unity-explorer PR #8814 (head: feat/test-automation/alttester-performance-instrumentation,
-      # build commit 5d024a6). Carries:
+      # unity-explorer PR #8628 (head: chore/visual-test-app-args, build commit 4490a2a).
+      # Carries:
       #   - SceneRunner.Scene.AlttesterSceneReadinessProbe (Visual fixtures poll it via
-      #     SceneReady.WaitUntilReady),
-      #   - NativeWindowManager fullscreen-mode fix: when --resolution is provided, switch
-      #     to FullScreenMode.ExclusiveFullScreen so the OS does a real DXGI mode-switch
-      #     instead of clamping the borderless window to the runner's 1024x768 desktop.
-      # The previous pin (`test/visual-tests` PR #22281, pr-22281-578d763) had the readiness
-      # probe but not the fullscreen fix, hence 1024x768 baselines.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/alttester-performance-instrumentation/pr-22390-5d024a6/Decentraland_windows64.zip'
+      #     SceneReady.WaitUntilReady — this is what the PR was originally cut for),
+      #   - NativeWindowManager fullscreen-mode fix cherry-picked as commit 8c407e8: when
+      #     --resolution is provided, Initialize() switches to FullScreenMode.ExclusiveFullScreen
+      #     so the OS does a real DXGI mode-switch instead of clamping the borderless window to
+      #     the runner's 1024x768 desktop (see attached AssertFrameSize captures in earlier runs).
+      # Previous pins:
+      #   - test/visual-tests PR #22281 (pr-22281-578d763): had the readiness probe but not the
+      #     fullscreen fix, hence 1024x768 baselines.
+      #   - PR #8814 (pr-22390-5d024a6): had the fullscreen fix but not the readiness probe,
+      #     hence ComponentNotFoundException in OneTimeSetUp on every fixture.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22403-4490a2a/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
@@ -106,7 +110,7 @@ jobs:
     with:
       mode: test
       pr_number: '13'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/alttester-performance-instrumentation/pr-22390-5d024a6/Decentraland_windows64.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22403-4490a2a/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
