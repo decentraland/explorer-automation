@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@dcl/sdk": "latest",
+    "@dcl/js-runtime":"latest",
     "prettier": "3.5.3",
     "syncpack": "13.0.4",
     "tsx": "4.19.2",
