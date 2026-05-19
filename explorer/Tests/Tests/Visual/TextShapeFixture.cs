@@ -19,7 +19,7 @@ public class TextShapeFixture
         // TMP glyph atlases continue resolving after SceneReady (atlas generation runs
         // async even on a primed scene), so sleep a beat before snapshotting to avoid
         // capturing half-rasterised text.
-        Thread.Sleep(2000);
+        // Thread.Sleep(2000);
 
         Snapshot.AssertMatchesBaseline();
     }

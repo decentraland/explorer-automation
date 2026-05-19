@@ -203,7 +203,12 @@ export function main() {
 
 const HINT_MAX_DISTANCE = 100
 
+// Flip to true to wire up hover tooltips while debugging the scene by hand.
+// Kept off for visual-test runs so the cursor never paints a hover outline.
+const DEBUG_HOVER_HINTS = false
+
 function attachHint(entity: Entity, text: string): void {
+  if (!DEBUG_HOVER_HINTS) return
   pointerEventsSystem.onPointerDown(
     {
       entity,
