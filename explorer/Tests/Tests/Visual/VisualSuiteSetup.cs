@@ -8,15 +8,20 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 /// Today the host-server lifecycle is owned by metaforge (`mf explorer server start/stop`),
 /// not this fixture. We fail fast with a clear message when:
 ///   1. The visual run was invoked without orchestration that injects VISUAL_HOST_URL.
-///   2. The Explorer framebuffer is not 1920x1080 — without this guard, every fixture's
-///      OneTimeSetUp loads a scene (slow) before Snapshot.AssertFrameSize trips with the
-///      same root cause, multiplying the wait by however many fixtures are selected.
+///   2. The Explorer framebuffer is not the platform-native size (macOS=1920x1080,
+///      Windows=1024x768) — without this guard, every fixture's OneTimeSetUp loads a scene
+///      (slow) before Snapshot.AssertFrameSize trips with the same root cause, multiplying
+///      the wait by however many fixtures are selected.
 /// </summary>
 [SetUpFixture]
 public class VisualSuiteSetup
 {
-    private const int EXPECTED_FRAME_WIDTH = 1920;
-    private const int EXPECTED_FRAME_HEIGHT = 1080;
+    // Platform-native framebuffer size — see Snapshot.AssertFrameSize for the full rationale.
+    // macOS chassis renders at 1920x1080 (honors --resolution against attached display).
+    // Windows GH-hosted runner renders at 1024x768 (headless WDDM denies DXGI mode-switch and
+    // Unity falls back to FullScreenWindow at the desktop default).
+    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1024 : 1920;
+    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 768 : 1080;
 
     [OneTimeSetUp]
     public void RequireHost()
@@ -56,10 +61,9 @@ public class VisualSuiteSetup
         throw new InvalidOperationException(
             $"Visual suite aborted: captured framebuffer is {bmp.Width}x{bmp.Height}, " +
             $"expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}.\n\n" +
-            "Unity is rendering at the wrong resolution. On Windows headless CI this usually means " +
-            "the host desktop is at its 1024x768 default and the Explorer build was launched without " +
-            "ExclusiveFullScreen — the launch '--resolution' flag is silently clamped to desktop size " +
-            "when FullScreenMode.FullScreenWindow is used. Pin to a unity-explorer build that contains " +
-            "the NativeWindowManager fullscreen fix.");
+            "Per-OS native expectations: macOS=1920x1080, Windows=1024x768 (headless WDDM default — " +
+            "DXGI denies ExclusiveFullScreen, so Unity falls back to FullScreenWindow at desktop size). " +
+            "A drift from these values means something other than the known headless-fallback path broke " +
+            "(e.g. desktop resolution changed, virtual display driver was installed, runner SKU changed).");
     }
 }
