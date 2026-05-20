@@ -314,15 +314,47 @@ jobs:
               '</vdd_settings>'
             $vddSettings | Out-File -FilePath (Join-Path $vddDir 'vdd_settings.xml') -Encoding utf8 -Force
 
-            Write-Host "Loading driver package into store"
-            $pn = Start-Process -FilePath pnputil.exe `
-              -ArgumentList '/add-driver',(Join-Path $vddDir 'MttVDD.inf'),'/install' `
-              -Wait -PassThru -NoNewWindow
-            # 259 = ERROR_NO_MORE_ITEMS (expected for root-enum drivers — no matching
-            # hardware exists yet; we'll create it via nefconw next).
-            if ($pn.ExitCode -ne 0 -and $pn.ExitCode -ne 259) {
-              throw "pnputil /add-driver failed with exit $($pn.ExitCode)"
+            # Pre-trust the publisher cert from mttvdd.cat. Without this, pnputil
+            # pops an invisible "Trust this publisher?" GUI dialog on first
+            # install of an unknown publisher (MikeTheTech) and hangs forever on
+            # the headless runner. Adding the cert to TrustedPublisher\LocalMachine
+            # makes the install fully silent. Confirmed root cause: prior run
+            # printed "Adding driver package: MttVDD.inf" then hung 5 min.
+            Write-Host "Pre-trusting VDD publisher cert from mttvdd.cat"
+            $catPath = Join-Path $vddDir 'mttvdd.cat'
+            $sig = Get-AuthenticodeSignature -FilePath $catPath
+            if (-not $sig.SignerCertificate) { throw "mttvdd.cat has no signer certificate; aborting." }
+            Write-Host "Cert subject: $($sig.SignerCertificate.Subject)"
+            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(
+              [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher,
+              [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $store.Add($sig.SignerCertificate)
+            $store.Close()
+
+            # Helper: run a process with a hard timeout. If it doesn't exit
+            # within $TimeoutSec, kill it and throw — beats waiting for the
+            # job-level 5min timeout-minutes guillotine.
+            function Invoke-WithTimeout {
+              param([string]$FilePath, [string[]]$Arguments, [int]$TimeoutSec = 90, [string]$Label)
+              Write-Host "[$Label] starting: $FilePath $($Arguments -join ' ')"
+              $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -NoNewWindow
+              if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+                try { $p.Kill() } catch {}
+                throw "[$Label] hung > ${TimeoutSec}s; killed."
+              }
+              Write-Host "[$Label] exit code: $($p.ExitCode)"
+              return $p.ExitCode
             }
+
+            Write-Host "Loading driver package into store"
+            # /install dropped: for root-enum drivers there's no matching
+            # hardware yet, so /install only invites PnP-scan side-effects.
+            # nefconw will trigger driver bind from the store at device-create.
+            $rc = Invoke-WithTimeout -FilePath 'pnputil.exe' `
+              -Arguments @('/add-driver',(Join-Path $vddDir 'MttVDD.inf')) `
+              -TimeoutSec 90 -Label 'pnputil /add-driver'
+            if ($rc -ne 0) { throw "pnputil /add-driver failed with exit $rc" }
 
             if (-not (Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue)) {
               Write-Host "Downloading nefcon $nefTag from $nefUrl"
@@ -340,12 +372,13 @@ jobs:
             if (-not $nefconw) { throw "nefconw.exe not found under $nefDir" }
             Write-Host "Using nefconw at: $($nefconw.FullName)"
 
-            Write-Host "Creating root device node for Root\MttVDD"
-            & $nefconw.FullName --create-device-node `
-              --hardware-id 'Root\MttVDD' `
-              --class-name 'Display' `
-              --class-guid '4D36E968-E325-11CE-BFC1-08002BE10318'
-            if ($LASTEXITCODE -ne 0) { throw "nefconw create-device-node failed with exit $LASTEXITCODE" }
+            $rc = Invoke-WithTimeout -FilePath $nefconw.FullName `
+              -Arguments @('--create-device-node',
+                           '--hardware-id','Root\MttVDD',
+                           '--class-name','Display',
+                           '--class-guid','4D36E968-E325-11CE-BFC1-08002BE10318') `
+              -TimeoutSec 60 -Label 'nefconw create-device-node'
+            if ($rc -ne 0) { throw "nefconw create-device-node failed with exit $rc" }
 
             # PnP enumeration is async; wait up to 30s for the device to bind.
             $deadline = (Get-Date).AddSeconds(30)
