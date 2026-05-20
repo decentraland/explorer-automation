@@ -332,35 +332,16 @@ jobs:
             $store.Add($sig.SignerCertificate)
             $store.Close()
 
-            # Helper: run a process with a hard timeout. If it doesn't exit
-            # within $TimeoutSec, kill it and throw — beats waiting for the
-            # job-level 5min timeout-minutes guillotine.
-            #
-            # Note on the double WaitForExit: when WaitForExit(int) returns
-            # true the process has exited, but Process.ExitCode is not yet
-            # populated until the no-arg WaitForExit() finalizes I/O streams
-            # (documented .NET behavior). Without the second call $p.ExitCode
-            # returns $null and any -ne 0 comparison falsely fires.
-            function Invoke-WithTimeout {
-              param([string]$FilePath, [string[]]$Arguments, [int]$TimeoutSec = 90, [string]$Label)
-              Write-Host "[$Label] starting: $FilePath $($Arguments -join ' ')"
-              $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -NoNewWindow
-              if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-                try { $p.Kill() } catch {}
-                throw "[$Label] hung > ${TimeoutSec}s; killed."
-              }
-              $p.WaitForExit()
-              Write-Host "[$Label] exit code: $($p.ExitCode)"
-              return [int]$p.ExitCode
-            }
-
             Write-Host "Loading driver package into store"
             # /install dropped: for root-enum drivers there's no matching
             # hardware yet, so /install only invites PnP-scan side-effects.
             # nefconw will trigger driver bind from the store at device-create.
-            $rc = Invoke-WithTimeout -FilePath 'pnputil.exe' `
-              -Arguments @('/add-driver',(Join-Path $vddDir 'MttVDD.inf')) `
-              -TimeoutSec 90 -Label 'pnputil /add-driver'
+            # Direct & invocation + $LASTEXITCODE — Start-Process -PassThru
+            # has a documented quirk where Process.ExitCode is $null even after
+            # WaitForExit(int) returns true, falsely tripping comparisons.
+            & pnputil.exe /add-driver (Join-Path $vddDir 'MttVDD.inf') 2>&1 | Write-Host
+            $rc = $LASTEXITCODE
+            Write-Host "pnputil exit code: $rc"
             if ($rc -ne 0) { throw "pnputil /add-driver failed with exit $rc" }
 
             if (-not (Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue)) {
@@ -379,12 +360,20 @@ jobs:
             if (-not $nefconw) { throw "nefconw.exe not found under $nefDir" }
             Write-Host "Using nefconw at: $($nefconw.FullName)"
 
-            $rc = Invoke-WithTimeout -FilePath $nefconw.FullName `
-              -Arguments @('--create-device-node',
-                           '--hardware-id','Root\MttVDD',
-                           '--class-name','Display',
-                           '--class-guid','4D36E968-E325-11CE-BFC1-08002BE10318') `
-              -TimeoutSec 60 -Label 'nefconw create-device-node'
+            # Sanity check: vdd_settings.xml must be in place BEFORE the device
+            # is created — the driver reads it once at device-arrival.
+            $settingsPath = Join-Path $vddDir 'vdd_settings.xml'
+            if (-not (Test-Path $settingsPath)) { throw "vdd_settings.xml missing at $settingsPath" }
+            Write-Host "=== vdd_settings.xml as written ==="
+            Get-Content $settingsPath | Write-Host
+            Write-Host "==="
+
+            & $nefconw.FullName --create-device-node `
+              --hardware-id 'Root\MttVDD' `
+              --class-name 'Display' `
+              --class-guid '4D36E968-E325-11CE-BFC1-08002BE10318' 2>&1 | Write-Host
+            $rc = $LASTEXITCODE
+            Write-Host "nefconw exit code: $rc"
             if ($rc -ne 0) { throw "nefconw create-device-node failed with exit $rc" }
 
             # PnP enumeration is async; wait up to 30s for the device to bind.
@@ -405,12 +394,19 @@ jobs:
           $vddPnp | Format-List FriendlyName, Status, Class, HardwareID | Out-String | Write-Host
           if ($vddPnp.Status -ne 'OK') { throw "VDD device status is '$($vddPnp.Status)', expected 'OK'." }
 
+          # Dump full topology before/after to diagnose primary-display issues.
+          # 1280x800 from a previous run came from picking the wrong controller
+          # via "largest resolution wins" — the runner has multiple phantom
+          # adapters (Microsoft Basic Display + NVIDIA GRID virtual + VDD).
+          Write-Host "=== PNP display devices ==="
+          Get-PnpDevice -PresentOnly -Class Display -ErrorAction SilentlyContinue |
+            Format-Table Status, FriendlyName, InstanceId | Out-String | Write-Host
           Write-Host "=== Desktop monitors ==="
           Get-CimInstance Win32_DesktopMonitor -ErrorAction SilentlyContinue |
-            Format-Table Name, ScreenWidth, ScreenHeight, MonitorType | Out-String | Write-Host
+            Format-Table Name, ScreenWidth, ScreenHeight, MonitorType, PNPDeviceID | Out-String | Write-Host
           Write-Host "=== Video controllers (pre mode-switch) ==="
           Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
-            Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate |
+            Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, PNPDeviceID |
             Out-String | Write-Host
 
           # Force VDD as the only/primary display — Sunshine/Parsec convention.
@@ -421,21 +417,26 @@ jobs:
           Start-Process -FilePath "DisplaySwitch.exe" -ArgumentList "/external" -Wait
           Start-Sleep -Seconds 5
 
-          # vdd_settings.xml above declares ONLY 960x540@60, so once VDD is the
-          # primary display Windows has no other mode to pick. If the controller
-          # still reports something else, VDD is either not primary or the EDID
-          # didn't take — either way, the suite will fail downstream so fail
-          # here and save ~5 min of Explorer/MetaForge install.
-          $post = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
-            Where-Object { $_.CurrentHorizontalResolution -gt 0 } |
-            Sort-Object -Property CurrentHorizontalResolution -Descending |
-            Select-Object -First 1
-          if (-not $post) {
-            throw "No video controller reported a non-zero CurrentHorizontalResolution after DisplaySwitch /external."
+          Write-Host "=== Video controllers (post DisplaySwitch /external) ==="
+          $allControllers = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
+          $allControllers |
+            Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, PNPDeviceID |
+            Out-String | Write-Host
+
+          # Find VDD specifically by its PNPDeviceID (Root\MttVDD), not by
+          # "largest resolution wins" — the latter accidentally picks a phantom
+          # 1280x800 adapter when VDD is sitting next to it at 960x540.
+          $vddCtrl = $allControllers | Where-Object {
+            $_.PNPDeviceID -match 'MTTVDD' -or $_.Name -match 'Virtual Display'
+          } | Select-Object -First 1
+          if (-not $vddCtrl) {
+            throw "Could not locate VDD video controller (no PNPDeviceID matching MTTVDD nor Name matching 'Virtual Display'). See the table above."
           }
-          Write-Host ("Active display: {0} @ {1}x{2}@{3}" -f $post.Name, $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution, $post.CurrentRefreshRate)
-          if ($post.CurrentHorizontalResolution -ne 960 -or $post.CurrentVerticalResolution -ne 540) {
-            throw ("Active display reports {0}x{1}, expected 960x540. VDD is either not primary or its EDID didn't take." -f $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution)
+          Write-Host ("VDD controller: {0} @ {1}x{2}@{3}" -f $vddCtrl.Name, $vddCtrl.CurrentHorizontalResolution, $vddCtrl.CurrentVerticalResolution, $vddCtrl.CurrentRefreshRate)
+          # vdd_settings.xml declares ONLY 960x540@60 — anything else means the
+          # driver couldn't parse our XML and fell back to internal defaults.
+          if ($vddCtrl.CurrentHorizontalResolution -ne 960 -or $vddCtrl.CurrentVerticalResolution -ne 540) {
+            throw ("VDD reports {0}x{1}, expected 960x540. EDID didn't take — check vdd_settings.xml parse." -f $vddCtrl.CurrentHorizontalResolution, $vddCtrl.CurrentVerticalResolution)
           }
           Write-Host "::endgroup::"
 
