@@ -19,13 +19,14 @@ public static class Snapshot
 {
     private const string ENV_VAR = "SNAPSHOT_MODE";
 
-    // Canonical capture resolution. MetaForge v2.10.3+ defaults Visual runs to 960x540 — chosen
-    // to match Unity's own toon-shader test projects, sit in the middle of Unity-Technologies
-    // SRPTests' 512² → 1024×576 range, hold 16:9 (Unity GTF mandates 16:9 for back-buffer
-    // capture), and keep PNGs around 200-350 KB. Both platforms now baseline at the same size;
-    // tests that need a different one can override via `--resolution WxH` on the metaforge CLI.
-    private const int EXPECTED_FRAME_WIDTH = 960;
-    private const int EXPECTED_FRAME_HEIGHT = 540;
+    // Expected framebuffer size is platform-dependent. macOS chassis ship with an attached
+    // 1920x1080 display, so `--resolution 1920x1080` lands exactly. The Windows GitHub-hosted
+    // runner (Azure NCasT4_v3) has no monitor attached; DXGI denies ExclusiveFullScreen mode
+    // switch (HRESULT 0x887A0022) and Unity falls back to FullScreenWindow at the desktop
+    // default of 1024x768. We accept the native runner resolution per-OS and only fail when
+    // it drifts away from that expectation (which would mean *something else* broke).
+    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1024 : 1920;
+    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 768 : 1080;
 
     // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
     // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
@@ -200,7 +201,8 @@ public static class Snapshot
     {
         if (bmp.Width == EXPECTED_FRAME_WIDTH && bmp.Height == EXPECTED_FRAME_HEIGHT) return;
 
-        // Attach the wrong-size frame so the failure report shows what was actually rendered.
+        // Attach the wrong-size frame so the failure report shows what was actually rendered —
+        // useful for telling apart a headless-desktop fallback from Unity respecting a bogus flag.
         var wrongSizePng = ScreenshotCapture.EncodePng(bmp);
         Reporter.AttachPng("frame.wrong-size", wrongSizePng);
 
@@ -209,9 +211,9 @@ public static class Snapshot
         bmp.Dispose();
         Assert.Fail(
             $"Captured frame is {actualW}x{actualH}, expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}. " +
-            "MetaForge v2.10.3+ defaults Visual runs to 960x540. " +
-            "A drift means either an older MetaForge is in use, or an explicit `--resolution WxH` was " +
-            "passed without bumping the baselines.");
+            "Per-OS expectations: macOS=1920x1080 (chassis-attached display honors --resolution); " +
+            "Windows=1024x768 (headless WDDM falls back to desktop default — DXGI denies ExclusiveFullScreen). " +
+            "A drift from these values means something other than the known headless-fallback path broke.");
     }
 
     private static SnapshotMode ResolveMode(SnapshotMode? perCallMode)
