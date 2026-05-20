@@ -89,112 +89,16 @@ public abstract class BaseTest
         if (!File.Exists(_perfSummaryPath))
             throw new AssertionException($"PerfSampler.End did not produce summary at {_perfSummaryPath}");
 
-        LogInlinePerfTable(_perfCsvPath);
-
+        // Attach raw data only. The perf window is fixture-level
+        // (one OneTimeSetUp -> N test methods -> OneTimeTearDown) but Allure
+        // renders attachments per-test, so any inline rendering here would
+        // duplicate the same numbers across every test in the fixture and
+        // misleadingly imply per-test granularity. Downstream analysis
+        // (CV across runs, baseline comparison, custom dashboards) consumes
+        // perf.csv directly from the artifact bundle.
         AllureApi.AddAttachment("perf-summary.txt", "text/plain", File.ReadAllBytes(_perfSummaryPath));
         if (File.Exists(_perfCsvPath))
             AllureApi.AddAttachment("perf.csv", "text/csv", File.ReadAllBytes(_perfCsvPath));
-    }
-
-    private static void LogInlinePerfTable(string csvPath)
-    {
-        // Parse the raw per-frame CSV and emit avg + a percentile distribution
-        // as Allure steps so reviewers can read the shape of the run without
-        // opening the attachment. PerfSampler's 8-line perf-summary.txt
-        // (1%/0.1%/worst from the GamersNexus method) is still attached for
-        // byte-identical AutoPilot parity, but the chassis windows are too
-        // short (~50-500 samples) for sub-percent buckets to mean anything;
-        // a p5/p25/p50/p75/p95 spread describes the actual distribution.
-        if (!File.Exists(csvPath))
-        {
-            Reporter.Log("Perf: perf.csv missing on disk — skipping inline percentile table");
-            return;
-        }
-
-        var cpu = new List<double>();
-        var gpu = new List<double>();
-        using (var reader = new StreamReader(csvPath))
-        {
-            reader.ReadLine(); // discard "Frame","CPU Time","GPU Time" header
-            string line;
-            while ((line = reader.ReadLine()) != null)
-            {
-                var parts = line.Split(',');
-                if (parts.Length < 3) continue;
-                if (double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var c)) cpu.Add(c);
-                if (double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var g)) gpu.Add(g);
-            }
-        }
-
-        if (cpu.Count == 0 || gpu.Count == 0)
-        {
-            Reporter.Log($"Perf: perf.csv had no parseable rows (CPU={cpu.Count}, GPU={gpu.Count})");
-            return;
-        }
-
-        cpu.Sort();
-        gpu.Sort();
-        LogPerfTables(cpu, gpu);
-    }
-
-    private static void LogPerfTables(List<double> cpu, List<double> gpu)
-    {
-        // Two CPU/GPU tables emitted as 6 separate Allure steps (3 rows per
-        // table). One step per row keeps each line distinct in the report —
-        // Allure collapses '\n' inside a single step name into a space, so
-        // tables built with multi-line strings render as one mangled line.
-        // Cell padding uses U+00A0 (non-breaking space) which the HTML
-        // renderer doesn't collapse, unlike ASCII spaces.
-        var nLabel = $"N = {cpu.Count}";
-        var labelW = Math.Max(nLabel.Length, 3); // accommodate "CPU"/"GPU"
-
-        Reporter.Log(Row(labelW, nLabel, "avg (ms)", "p50 (ms)"));
-        Reporter.Log(Row(labelW, "CPU", Num(Avg(cpu)), Num(Percentile(cpu, 0.50))));
-        Reporter.Log(Row(labelW, "GPU", Num(Avg(gpu)), Num(Percentile(gpu, 0.50))));
-
-        Reporter.Log(Row(labelW, nLabel, "p5 (ms)", "p25 (ms)", "p75 (ms)", "p95 (ms)"));
-        Reporter.Log(Row(labelW, "CPU",
-            Num(Percentile(cpu, 0.05)), Num(Percentile(cpu, 0.25)),
-            Num(Percentile(cpu, 0.75)), Num(Percentile(cpu, 0.95))));
-        Reporter.Log(Row(labelW, "GPU",
-            Num(Percentile(gpu, 0.05)), Num(Percentile(gpu, 0.25)),
-            Num(Percentile(gpu, 0.75)), Num(Percentile(gpu, 0.95))));
-    }
-
-    private const char NBSP = ' ';
-    private const int CELL_WIDTH = 8;
-
-    private static string Row(int labelWidth, string label, params string[] cells)
-    {
-        var parts = new string[cells.Length + 1];
-        parts[0] = PadRight(label, labelWidth);
-        for (var i = 0; i < cells.Length; i++) parts[i + 1] = PadRight(cells[i], CELL_WIDTH);
-        return string.Join($"{NBSP}|{NBSP}", parts);
-    }
-
-    private static string Num(double v) =>
-        v.ToString("F2", CultureInfo.InvariantCulture);
-
-    private static string PadRight(string s, int width) =>
-        s.Length >= width ? s : s + new string(NBSP, width - s.Length);
-
-    private static double Avg(List<double> values)
-    {
-        double sum = 0;
-        for (var i = 0; i < values.Count; i++) sum += values[i];
-        return sum / values.Count;
-    }
-
-    private static double Percentile(List<double> sorted, double fraction)
-    {
-        // Linear interpolation between closest ranks (NumPy "linear" default).
-        if (sorted.Count == 1) return sorted[0];
-        var rank = fraction * (sorted.Count - 1);
-        var lo = (int)Math.Floor(rank);
-        var hi = (int)Math.Ceiling(rank);
-        return lo == hi
-            ? sorted[lo]
-            : sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
     }
 
     [SetUp]
