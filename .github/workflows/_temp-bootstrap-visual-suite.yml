@@ -22,9 +22,6 @@ name: Test — Bootstrap visual suite
 #      validating the *system*, not visual drift, on the bootstrap run.
 # ════════════════════════════════════════════════════════════════════════
 
-# IMPORTANT: Uncomment the next block 👇 to enable trigger on push
-
-# ════════════════════════════════════════════════════════════════════════
 on:
  push:
    branches: [feat/snapshots-comparison]
@@ -36,7 +33,6 @@ on:
      - '.github/workflows/run-visual-suite.yml'
      - 'explorer/scenes/**'
      - 'explorer/Tests/**'
-# ════════════════════════════════════════════════════════════════════════
 
 permissions:
   contents: write
