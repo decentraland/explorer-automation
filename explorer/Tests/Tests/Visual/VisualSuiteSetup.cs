@@ -8,20 +8,19 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 /// Today the host-server lifecycle is owned by metaforge (`mf explorer server start/stop`),
 /// not this fixture. We fail fast with a clear message when:
 ///   1. The visual run was invoked without orchestration that injects VISUAL_HOST_URL.
-///   2. The Explorer framebuffer is not the platform-native size (macOS=1920x1080,
-///      Windows=1024x768) — without this guard, every fixture's OneTimeSetUp loads a scene
-///      (slow) before Snapshot.AssertFrameSize trips with the same root cause, multiplying
-///      the wait by however many fixtures are selected.
+///   2. The Explorer framebuffer is not 960x540 — without this guard, every fixture's
+///      OneTimeSetUp loads a scene (slow) before Snapshot.AssertFrameSize trips with the
+///      same root cause, multiplying the wait by however many fixtures are selected.
 /// </summary>
 [SetUpFixture]
 public class VisualSuiteSetup
 {
-    // Platform-native framebuffer size — see Snapshot.AssertFrameSize for the full rationale.
-    // macOS chassis renders at 1920x1080 (honors --resolution against attached display).
-    // Windows GH-hosted runner renders at 1024x768 (headless WDDM denies DXGI mode-switch and
-    // Unity falls back to FullScreenWindow at the desktop default).
-    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1024 : 1920;
-    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 768 : 1080;
+    // Canonical capture resolution — see Snapshot.AssertFrameSize for the full rationale.
+    // MetaForge v2.10.3+ defaults Visual runs to 960x540 (16:9, matches Unity's own toon-shader
+    // test projects; sits in the middle of Unity-Technologies SRPTests' 512²→1024×576 range).
+    // Both platforms now baseline at the same size.
+    private const int EXPECTED_FRAME_WIDTH = 960;
+    private const int EXPECTED_FRAME_HEIGHT = 540;
 
     [OneTimeSetUp]
     public void RequireHost()
@@ -61,9 +60,8 @@ public class VisualSuiteSetup
         throw new InvalidOperationException(
             $"Visual suite aborted: captured framebuffer is {bmp.Width}x{bmp.Height}, " +
             $"expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}.\n\n" +
-            "Per-OS native expectations: macOS=1920x1080, Windows=1024x768 (headless WDDM default — " +
-            "DXGI denies ExclusiveFullScreen, so Unity falls back to FullScreenWindow at desktop size). " +
-            "A drift from these values means something other than the known headless-fallback path broke " +
-            "(e.g. desktop resolution changed, virtual display driver was installed, runner SKU changed).");
+            "MetaForge v2.10.3+ defaults Visual runs to 960x540. A drift means either an older " +
+            "MetaForge is in use (check `mf --version`), or an explicit `--resolution WxH` was " +
+            "passed without bumping the baselines.");
     }
 }
