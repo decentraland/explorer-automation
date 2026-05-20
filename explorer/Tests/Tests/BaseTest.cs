@@ -139,26 +139,44 @@ public abstract class BaseTest
 
     private static void LogPerfTables(List<double> cpu, List<double> gpu)
     {
-        // Two CPU/GPU tables: headline (avg + p50) and distribution (p5-p95).
-        // Step text preserves the fixed-width layout via \n; Allure renders
-        // it as a multi-line block in the report.
+        // Two CPU/GPU tables emitted as 6 separate Allure steps (3 rows per
+        // table). One step per row keeps each line distinct in the report —
+        // Allure collapses '\n' inside a single step name into a space, so
+        // tables built with multi-line strings render as one mangled line.
+        // Cell padding uses U+00A0 (non-breaking space) which the HTML
+        // renderer doesn't collapse, unlike ASCII spaces.
         var nLabel = $"N = {cpu.Count}";
-        var avgCpu = Avg(cpu);
-        var avgGpu = Avg(gpu);
+        var labelW = Math.Max(nLabel.Length, 3); // accommodate "CPU"/"GPU"
 
-        Reporter.Log(string.Join("\n",
-            $"{nLabel,-8} | {"avg (ms)",-8} | {"p50 (ms)",-8}",
-            $"{"CPU",-8} | {Cell(avgCpu)} | {Cell(Percentile(cpu, 0.50))}",
-            $"{"GPU",-8} | {Cell(avgGpu)} | {Cell(Percentile(gpu, 0.50))}"));
+        Reporter.Log(Row(labelW, nLabel, "avg (ms)", "p50 (ms)"));
+        Reporter.Log(Row(labelW, "CPU", Num(Avg(cpu)), Num(Percentile(cpu, 0.50))));
+        Reporter.Log(Row(labelW, "GPU", Num(Avg(gpu)), Num(Percentile(gpu, 0.50))));
 
-        Reporter.Log(string.Join("\n",
-            $"{nLabel,-8} | {"p5 (ms)",-8} | {"p25 (ms)",-8} | {"p75 (ms)",-8} | {"p95 (ms)",-8}",
-            $"{"CPU",-8} | {Cell(Percentile(cpu, 0.05))} | {Cell(Percentile(cpu, 0.25))} | {Cell(Percentile(cpu, 0.75))} | {Cell(Percentile(cpu, 0.95))}",
-            $"{"GPU",-8} | {Cell(Percentile(gpu, 0.05))} | {Cell(Percentile(gpu, 0.25))} | {Cell(Percentile(gpu, 0.75))} | {Cell(Percentile(gpu, 0.95))}"));
+        Reporter.Log(Row(labelW, nLabel, "p5 (ms)", "p25 (ms)", "p75 (ms)", "p95 (ms)"));
+        Reporter.Log(Row(labelW, "CPU",
+            Num(Percentile(cpu, 0.05)), Num(Percentile(cpu, 0.25)),
+            Num(Percentile(cpu, 0.75)), Num(Percentile(cpu, 0.95))));
+        Reporter.Log(Row(labelW, "GPU",
+            Num(Percentile(gpu, 0.05)), Num(Percentile(gpu, 0.25)),
+            Num(Percentile(gpu, 0.75)), Num(Percentile(gpu, 0.95))));
     }
 
-    private static string Cell(double v) =>
-        v.ToString("F2", CultureInfo.InvariantCulture).PadRight(8);
+    private const char NBSP = ' ';
+    private const int CELL_WIDTH = 8;
+
+    private static string Row(int labelWidth, string label, params string[] cells)
+    {
+        var parts = new string[cells.Length + 1];
+        parts[0] = PadRight(label, labelWidth);
+        for (var i = 0; i < cells.Length; i++) parts[i + 1] = PadRight(cells[i], CELL_WIDTH);
+        return string.Join($"{NBSP}|{NBSP}", parts);
+    }
+
+    private static string Num(double v) =>
+        v.ToString("F2", CultureInfo.InvariantCulture);
+
+    private static string PadRight(string s, int width) =>
+        s.Length >= width ? s : s + new string(NBSP, width - s.Length);
 
     private static double Avg(List<double> values)
     {
