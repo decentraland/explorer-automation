@@ -116,7 +116,7 @@ jobs:
             auth-onchain)         echo "pw=--project=auth-onchain --workers=1" ;;
             landing)              echo "pw=--project=web --grep @landing" ;;
             marketplace)          echo "pw=--project=marketplace" ;;
-            marketplace-onchain)  echo "pw=--project=marketplace-onchain" ;;
+            marketplace-onchain)  echo "pw=--project=marketplace-onchain --workers=1" ;;
             cross)                echo "pw=--project=cross" ;;
           esac >> "$GITHUB_OUTPUT"
 
