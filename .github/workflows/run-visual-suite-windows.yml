@@ -379,18 +379,28 @@ jobs:
 
           # Pick the best supported 16:9 target. Preferred: 960x540 (canonical).
           # Fallback: 1280x720 (also 16:9, fits inside the 1280x800 native).
-          # Both are pre-approved as visual-baseline targets — MetaForge config
+          # Both are pre-approved as visual-baseline targets - MetaForge config
           # can be adjusted if we land on 1280x720.
+          #
+          # NOTE: do not hardcode refresh_rate=60. The Microsoft Hyper-V Video
+          # adapter (which is DISPLAY1/primary on this runner) advertises ALL
+          # of its modes at 64 Hz, not 60. Filter by any >= 50 Hz, then pick
+          # the highest frequency available for the chosen W x H.
           $targets = @(
             [PSCustomObject]@{ W = 960;  H = 540; Label = '960x540 (preferred)' },
             [PSCustomObject]@{ W = 1280; H = 720; Label = '1280x720 (fallback)' }
           )
           $chosen = $null
+          $chosenFreq = 0
           foreach ($t in $targets) {
-            $match = $modeList | Where-Object { $_.W -eq $t.W -and $_.H -eq $t.H -and $_.F -eq 60 -and $_.B -ge 24 } | Select-Object -First 1
-            if ($match) {
+            $bestMatch = $modeList |
+              Where-Object { $_.W -eq $t.W -and $_.H -eq $t.H -and $_.F -ge 50 -and $_.B -ge 24 } |
+              Sort-Object F -Descending |
+              Select-Object -First 1
+            if ($bestMatch) {
               $chosen = $t
-              Write-Host "Target accepted: $($t.Label) found in mode list."
+              $chosenFreq = $bestMatch.F
+              Write-Host "Target accepted: $($t.Label) at $chosenFreq Hz."
               break
             }
             Write-Host "Target $($t.Label) NOT in mode list."
@@ -406,7 +416,7 @@ jobs:
           Write-Host ("Current mode on '{0}': {1}x{2}@{3} {4}bpp" -f $primaryDevice, $dm.dmPelsWidth, $dm.dmPelsHeight, $dm.dmDisplayFrequency, $dm.dmBitsPerPel)
           $dm.dmPelsWidth = [uint32]$chosen.W
           $dm.dmPelsHeight = [uint32]$chosen.H
-          $dm.dmDisplayFrequency = 60
+          $dm.dmDisplayFrequency = [uint32]$chosenFreq
           # DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY
           $dm.dmFields = 0x80000 -bor 0x100000 -bor 0x400000
 
