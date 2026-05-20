@@ -1,5 +1,5 @@
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import {
   setupMockedWallet,
@@ -23,7 +23,6 @@ import { createAuthRequest, pollAuthOutcome } from '../helpers/auth-server.js'
  */
 
 const REDIRECT_TO = `${getBaseUrl()}/`
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 const { expect } = test
 
@@ -66,4 +65,3 @@ test('@web @auth RequestPage login (dcl_personal_sign) — decline', async ({ pa
   // returns an `error` field instead).
   expect(outcome.result).toBeFalsy()
 })
-

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
@@ -22,7 +22,6 @@ import { getBaseUrl } from '../../../shared/helpers/env.js'
  */
 
 const REDIRECT_TARGET = `${getBaseUrl()}/marketplace`
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 test('@web @auth OTP login respects redirectTo (lands on /marketplace)', async ({ page }) => {
   const email = generateFreshEmail()

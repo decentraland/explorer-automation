@@ -31,8 +31,30 @@ export class AuthPage {
     await btn.click()
   }
 
+  /**
+   * Wait for the dapp to transition into the OTP entry screen.
+   *
+   * Races the `otp-input-0` testid against the inline "Rate limit exceeded"
+   * error on the email screen — Thirdweb's per-IP OTP-send bucket is the
+   * common cause of this method timing out. When it fires, throw with a
+   * descriptive message so the failure is immediate and obvious in CI logs
+   * rather than a generic 30s `waitFor` timeout.
+   *
+   * Thirdweb does not expose remaining quota via API; the only signal is the
+   * UI text. Wait ~10-60 minutes before retrying, or run from a different
+   * egress IP / Thirdweb project.
+   */
   async waitForOtpScreen(timeoutMs = 30_000): Promise<void> {
-    await this.page.getByTestId('otp-input-0').waitFor({ state: 'visible', timeout: timeoutMs })
+    const otpInput = this.page.getByTestId('otp-input-0')
+    const rateLimitError = this.page.getByText(/rate limit exceeded/i)
+    await otpInput.or(rateLimitError).waitFor({ state: 'visible', timeout: timeoutMs })
+    if (await rateLimitError.isVisible()) {
+      throw new Error(
+        'Thirdweb OTP rate limit exceeded (per-IP-per-hour bucket). ' +
+          'Wait ~10-60 minutes before retrying OTP specs, or run from a different egress IP. ' +
+          'TEST_EMAIL_PREFIX does not bypass this limit — each unique address only side-steps the per-email bucket.'
+      )
+    }
   }
 
   async enterOtp(code: string): Promise<void> {

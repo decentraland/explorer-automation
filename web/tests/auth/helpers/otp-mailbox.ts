@@ -6,14 +6,15 @@ import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
 const SIX_DIGIT_CODE = /\d{6}/
 
 /**
- * Generate a fresh test email of the form `qa-<hash>@<EMAIL_DOMAIN>`. Each
- * call returns a distinct local-part so every signup looks like a brand-new
- * recipient to Thirdweb (its own per-address rate-limit bucket — no curated
- * fallback list needed).
+ * Generate a fresh test email of the form `<prefix><hash>@<EMAIL_DOMAIN>`.
+ * Each call returns a distinct local-part so every signup looks like a
+ * brand-new recipient to Thirdweb (its own per-address rate-limit bucket —
+ * no curated fallback list needed).
  *
- * Defaults to `e2e.decentraland.org`, a Workspace catch-all whose deliveries
- * route to the inbox at `IMAP_USER`. Override with `EMAIL_DOMAIN` if you've
- * pointed the suite at a different inbox or domain.
+ * The prefix defaults to `qa-` and is overridable via `TEST_EMAIL_PREFIX`.
+ * The domain defaults to `e2e.decentraland.org`, a Workspace catch-all whose
+ * deliveries route to the inbox at `IMAP_USER`. Override the domain with
+ * `EMAIL_DOMAIN` if you've pointed the suite at a different inbox.
  */
 export function generateFreshEmail(): string {
   // Trim + strip a stray leading '@' so a slightly-malformed EMAIL_DOMAIN
@@ -21,7 +22,8 @@ export function generateFreshEmail(): string {
   // a valid recipient.
   const raw = optionalEnv('EMAIL_DOMAIN') ?? 'e2e.decentraland.org'
   const domain = raw.trim().replace(/^@/, '')
-  const local = `qa-${randomBytes(4).toString('hex')}`
+  const prefix = optionalEnv('TEST_EMAIL_PREFIX') ?? 'qa-'
+  const local = `${prefix}${randomBytes(4).toString('hex')}`
   return `${local}@${domain}`
 }
 

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
@@ -16,8 +16,6 @@ import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
  *   - resend: trigger the "resend code" affordance and confirm the second
  *     IMAP-delivered OTP completes signup.
  */
-
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 test('@web @auth OTP wrong code surfaces the inline error', async ({ page }) => {
   const email = generateFreshEmail()
