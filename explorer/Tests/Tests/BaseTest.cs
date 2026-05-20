@@ -71,7 +71,18 @@ public abstract class BaseTest
         }
         catch (Exception ex)
         {
-            Reporter.Log($"PerfSampler.End call failed (Player crash?): {ex.Message}");
+            // AltTester wraps the Player-side exception in a TargetInvocationException;
+            // ex.Message is the unhelpful "Exception has been thrown by the target of an
+            // invocation." Log ToString() so the inner trace from AltTester's error
+            // payload makes it into the Allure report.
+            Reporter.Log($"PerfSampler.End call failed (Player crash?):\n{ex}");
+
+            // Best-effort: PerfSampler closes the CSV BEFORE writing the summary, so a
+            // summary-side crash still leaves a complete perf.csv on disk. Attach what
+            // we have so a chassis run with a broken summary writer is still
+            // post-mortemable.
+            if (File.Exists(_perfCsvPath))
+                AllureApi.AddAttachment("perf.csv", "text/csv", File.ReadAllBytes(_perfCsvPath));
             return;
         }
 

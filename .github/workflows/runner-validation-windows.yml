@@ -52,7 +52,7 @@ on:
         # at every severity), AND the TEMP-gut that bypasses MinimumSpecsScreen modal
         # so the T4 runner (4 vCPU - fails MinimumSpecsGuard) doesn't hang awaiting
         # a human click. Revert to '' to fall back to "latest non-prerelease release".
-        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22429-d800d89/Decentraland_windows64.zip'
+        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22430-3a0b8d5/Decentraland_windows64.zip'
       test_filter:
         description: 'NUnit --filter expression. Default runs the full InWorld category (~17 tests).'
         type: string
