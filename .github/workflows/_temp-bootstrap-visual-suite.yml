@@ -24,7 +24,7 @@ name: Test — Bootstrap visual suite
 
 on:
  push:
-   branches: [feat/snapshots-comparison]
+   branches: [adjust-visual-tests]
    paths:
      # Re-trigger when the bootstrap workflow itself changes, when the
      # scenes/baselines code changes, or when the reusable workflow
