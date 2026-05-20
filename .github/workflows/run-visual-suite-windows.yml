@@ -436,7 +436,7 @@ jobs:
           # vdd_settings.xml declares ONLY 960x540@60 — anything else means the
           # driver couldn't parse our XML and fell back to internal defaults.
           if ($vddCtrl.CurrentHorizontalResolution -ne 960 -or $vddCtrl.CurrentVerticalResolution -ne 540) {
-            throw ("VDD reports {0}x{1}, expected 960x540. EDID didn't take — check vdd_settings.xml parse." -f $vddCtrl.CurrentHorizontalResolution, $vddCtrl.CurrentVerticalResolution)
+            throw ("VDD reports {0}x{1}, expected 960x540. EDID didn't take - check vdd_settings.xml parse." -f $vddCtrl.CurrentHorizontalResolution, $vddCtrl.CurrentVerticalResolution)
           }
           Write-Host "::endgroup::"
 
