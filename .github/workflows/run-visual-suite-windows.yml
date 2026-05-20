@@ -328,33 +328,27 @@ jobs:
             Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, PNPDeviceID |
             Out-String | Write-Host
 
-          # Enumerate ALL display devices via EnumDisplayDevices(null, i)
-          # to find the primary device name. Last run's BADPARAM (-5) on
-          # null lpszDeviceName + multi-adapter topology (NVIDIA + ROOT\DISPLAY\0000)
-          # suggests we need an EXPLICIT device name.
-          Write-Host "=== EnumDisplayDevices ==="
-          $primaryDevice = $null
-          $i = 0
-          while ($true) {
-            $dd = New-Object Disp+DISPLAY_DEVICE
-            $dd.cb = [uint32][System.Runtime.InteropServices.Marshal]::SizeOf($dd)
-            $ok = [Disp]::EnumDisplayDevices($null, [uint32]$i, [ref]$dd, 0)
-            if (-not $ok) { break }
-            $isPrimary = ($dd.StateFlags -band 0x4) -ne 0  # DISPLAY_DEVICE_PRIMARY_DEVICE
-            $isAttached = ($dd.StateFlags -band 0x1) -ne 0  # DISPLAY_DEVICE_ACTIVE
-            Write-Host ("  [{0}] {1}  ({2})  flags=0x{3:X} primary={4} attached={5}" -f $i, $dd.DeviceName, $dd.DeviceString, $dd.StateFlags, $isPrimary, $isAttached)
-            if ($isPrimary -and -not $primaryDevice) {
-              $primaryDevice = $dd.DeviceName
-            }
-            $i++
-            if ($i -gt 16) { break }
+          # Get primary device name via System.Windows.Forms. Last run tried
+          # EnumDisplayDevices P/Invoke which silently returned false on i=0
+          # (likely a PowerShell-to-CLR-marshaling quirk with the ref struct
+          # containing ByValTStr fields). Forms.Screen.PrimaryScreen.DeviceName
+          # bypasses that entirely and gives us '\\.\DISPLAY1' style name.
+          Add-Type -AssemblyName System.Windows.Forms
+          $primaryDevice = [System.Windows.Forms.Screen]::PrimaryScreen.DeviceName
+          Write-Host "Primary device (via Forms): '$primaryDevice'"
+          Write-Host "All screens visible to Forms:"
+          [System.Windows.Forms.Screen]::AllScreens | ForEach-Object {
+            Write-Host ("  {0}  primary={1}  bounds={2}" -f $_.DeviceName, $_.Primary, $_.Bounds)
           }
-          Write-Host "Primary device: $primaryDevice"
+          if (-not $primaryDevice) {
+            throw "Forms.Screen.PrimaryScreen.DeviceName is empty. No primary display detected."
+          }
 
           # Enumerate ALL supported modes for the primary device. This is the
-          # ground truth for what NVIDIA GRID will accept — anything not in
+          # ground truth for what the GPU driver advertises - anything not in
           # this list will return BADMODE (-2) at ChangeDisplaySettingsEx.
           Write-Host "=== Supported modes (EnumDisplaySettings iteration) ==="
+          $modeList = New-Object System.Collections.ArrayList
           $modeSet = New-Object System.Collections.Generic.HashSet[string]
           $i = 0
           while ($true) {
@@ -363,34 +357,62 @@ jobs:
             $ok = [Disp]::EnumDisplaySettings($primaryDevice, $i, [ref]$dmi)
             if (-not $ok) { break }
             $key = ("{0}x{1}@{2} {3}bpp" -f $dmi.dmPelsWidth, $dmi.dmPelsHeight, $dmi.dmDisplayFrequency, $dmi.dmBitsPerPel)
-            [void]$modeSet.Add($key)
+            if ($modeSet.Add($key)) {
+              [void]$modeList.Add([PSCustomObject]@{
+                W = [int]$dmi.dmPelsWidth
+                H = [int]$dmi.dmPelsHeight
+                F = [int]$dmi.dmDisplayFrequency
+                B = [int]$dmi.dmBitsPerPel
+              })
+            }
             $i++
-            if ($i -gt 1000) { break }
+            if ($i -gt 2000) { break }
           }
-          Write-Host "Total unique modes: $($modeSet.Count)"
-          $modeSet | Sort-Object | ForEach-Object { Write-Host "  $_" }
-
-          $has960x540 = ($modeSet | Where-Object { $_ -match '^960x540@' }).Count -gt 0
-          if (-not $has960x540) {
-            Write-Host "INFO: 960x540 NOT in supported mode list. Will attempt anyway to capture the exact rejection code."
+          Write-Host "Total unique modes: $($modeList.Count)"
+          $modeList | Sort-Object W,H,F | ForEach-Object {
+            Write-Host ("  {0}x{1}@{2} {3}bpp" -f $_.W, $_.H, $_.F, $_.B)
           }
 
-          # Build DEVMODE seeded with CURRENT settings of the primary device,
-          # then override w/h/freq.
+          if ($modeList.Count -eq 0) {
+            throw "EnumDisplaySettings returned zero modes for '$primaryDevice'. Driver may not be reporting modes properly."
+          }
+
+          # Pick the best supported 16:9 target. Preferred: 960x540 (canonical).
+          # Fallback: 1280x720 (also 16:9, fits inside the 1280x800 native).
+          # Both are pre-approved as visual-baseline targets — MetaForge config
+          # can be adjusted if we land on 1280x720.
+          $targets = @(
+            [PSCustomObject]@{ W = 960;  H = 540; Label = '960x540 (preferred)' },
+            [PSCustomObject]@{ W = 1280; H = 720; Label = '1280x720 (fallback)' }
+          )
+          $chosen = $null
+          foreach ($t in $targets) {
+            $match = $modeList | Where-Object { $_.W -eq $t.W -and $_.H -eq $t.H -and $_.F -eq 60 -and $_.B -ge 24 } | Select-Object -First 1
+            if ($match) {
+              $chosen = $t
+              Write-Host "Target accepted: $($t.Label) found in mode list."
+              break
+            }
+            Write-Host "Target $($t.Label) NOT in mode list."
+          }
+          if (-not $chosen) {
+            throw "Neither 960x540 nor 1280x720 found in the supported-mode list above. Pick a different target from that list."
+          }
+
+          # Build DEVMODE seeded with CURRENT settings, then override w/h/freq.
           $dm = New-Object Disp+DEVMODE
           $dm.dmSize = [uint16][System.Runtime.InteropServices.Marshal]::SizeOf($dm)
           [void][Disp]::EnumDisplaySettings($primaryDevice, -1, [ref]$dm)  # ENUM_CURRENT_SETTINGS = -1
           Write-Host ("Current mode on '{0}': {1}x{2}@{3} {4}bpp" -f $primaryDevice, $dm.dmPelsWidth, $dm.dmPelsHeight, $dm.dmDisplayFrequency, $dm.dmBitsPerPel)
-          $dm.dmPelsWidth = 960
-          $dm.dmPelsHeight = 540
+          $dm.dmPelsWidth = [uint32]$chosen.W
+          $dm.dmPelsHeight = [uint32]$chosen.H
           $dm.dmDisplayFrequency = 60
           # DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY
           $dm.dmFields = 0x80000 -bor 0x100000 -bor 0x400000
 
           # CDS_TEST (0x02) first: validates mode without committing.
-          # Pass EXPLICIT primary device name (last run got -5 BADPARAM on null).
           $rcTest = [Disp]::ChangeDisplaySettingsEx($primaryDevice, [ref]$dm, [IntPtr]::Zero, 2, [IntPtr]::Zero)
-          Write-Host "ChangeDisplaySettingsEx('$primaryDevice', 960x540, CDS_TEST) -> $rcTest (0 = mode supported)"
+          Write-Host ("ChangeDisplaySettingsEx('{0}', {1}x{2}, CDS_TEST) -> {3}" -f $primaryDevice, $chosen.W, $chosen.H, $rcTest)
           # Return codes (WinUser.h):
           #   DISP_CHANGE_SUCCESSFUL =  0
           #   DISP_CHANGE_RESTART    =  1  (would need reboot)
@@ -401,11 +423,11 @@ jobs:
           #   DISP_CHANGE_BADPARAM   = -5
           #   DISP_CHANGE_BADDUALVIEW= -6
           if ($rcTest -ne 0) {
-            throw "CDS_TEST for 960x540 returned $rcTest. See the supported-modes list above for what NVIDIA GRID actually advertises. Aborting before downloading Explorer."
+            throw "CDS_TEST returned $rcTest even though the mode is in the EnumDisplaySettings list. Driver inconsistency."
           }
 
           $rcSet = [Disp]::ChangeDisplaySettingsEx($primaryDevice, [ref]$dm, [IntPtr]::Zero, 1, [IntPtr]::Zero)
-          Write-Host "ChangeDisplaySettingsEx('$primaryDevice', 960x540, CDS_UPDATEREGISTRY) -> $rcSet"
+          Write-Host ("ChangeDisplaySettingsEx('{0}', {1}x{2}, CDS_UPDATEREGISTRY) -> {3}" -f $primaryDevice, $chosen.W, $chosen.H, $rcSet)
           if ($rcSet -ne 0) {
             throw "Mode-set returned $rcSet despite CDS_TEST=0; should not happen."
           }
@@ -418,10 +440,17 @@ jobs:
             Select-Object -First 1
           if (-not $post) { throw "No video controller reports a non-zero resolution after mode switch." }
           Write-Host ("Active primary: {0} @ {1}x{2}@{3}" -f $post.Name, $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution, $post.CurrentRefreshRate)
-          if ($post.CurrentHorizontalResolution -ne 960 -or $post.CurrentVerticalResolution -ne 540) {
-            throw ("Mode-set reported success but display still at {0}x{1}, expected 960x540." -f $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution)
+          if ($post.CurrentHorizontalResolution -ne $chosen.W -or $post.CurrentVerticalResolution -ne $chosen.H) {
+            throw ("Mode-set reported success but display still at {0}x{1}, expected {2}x{3}." -f $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution, $chosen.W, $chosen.H)
           }
-          Write-Host "Primary display set to 960x540 successfully."
+          Write-Host "============================================================"
+          Write-Host "Primary display set to $($chosen.W)x$($chosen.H)@60 successfully."
+          if ($chosen.W -ne 960) {
+            Write-Host "NOTE: Used FALLBACK $($chosen.W)x$($chosen.H), NOT canonical 960x540."
+            Write-Host "      MetaForge default-resolution + C# EXPECTED_FB_WIDTH/HEIGHT constants"
+            Write-Host "      and baselines need updating to match."
+          }
+          Write-Host "============================================================"
 
       # Unity Player .exe links MSVC runtime (msvcp140.dll). Probe registry
       # first — base image ships VC++ as a transitive dep, blind install
