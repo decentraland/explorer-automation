@@ -40,7 +40,7 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
 
         Views.ExplorePanel.Backpack.SearchBar.SetText("Fist Pump");
-        
+
         Wait(2);
 
         // Unequip slot 0 if it has an emote

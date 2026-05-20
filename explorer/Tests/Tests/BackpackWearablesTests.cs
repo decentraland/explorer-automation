@@ -5,19 +5,40 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(16)]
 public class BackpackWearablesTests : BaseTest
 {
+    // // [Test]
+    // // public void TestEquipFirstWearable()
+    // // {
+    // // Open backpack via the keyboard shortcut: more reliable than the sidebar click
+    // // for the very first interaction post-warmup. The dedicated TestOpenBackpackFromSidebar
+    // // exercises the click path.
+    // PressKey(AltKeyCode.I);
+    // Views.ExplorePanel.WaitFor();
+    //     // Views.ExplorePanel.Backpack.WearablesTabButton.Click();
+
+    //     //Views.ExplorePanel.Backpack.Wearables.ClickGridItemEquip(0);
+
+    //     // Reporter.Log("First wearable equipped");
+
+    //     Views.ExplorePanel.Close();
+    // } //
+
     [Test]
-    public void TestEquipFirstWearable()
+    public void TestSearchAndEquipWearable()
     {
+        // Open backpack via the keyboard shortcut: more reliable than the sidebar click
+        // for the very first interaction post-warmup. The dedicated TestOpenBackpackFromSidebar
+        // exercises the click path.
         PressKey(AltKeyCode.I);
         Views.ExplorePanel.WaitFor();
         Views.ExplorePanel.Backpack.WearablesTabButton.Click();
 
-        // Verify the wearable grid has loaded at least one item before interacting
-        Views.ExplorePanel.Backpack.Wearables.GridItems[0].WaitFor();
-        Reporter.Log("Wearable grid visible — hovering first item to reveal equip button");
+        Views.ExplorePanel.Backpack.SearchBar.SetText("Baggy");
+
+        Wait(2);
 
         Views.ExplorePanel.Backpack.Wearables.ClickGridItemEquip(0);
-        Reporter.Log("First wearable equipped");
+
+        Reporter.Log("Wearable equipped from search results");
 
         Views.ExplorePanel.Close();
     }
