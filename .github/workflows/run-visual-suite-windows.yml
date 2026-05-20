@@ -281,10 +281,10 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Build a tiny C# helper for ChangeDisplaySettingsEx. Written to a
-          # temp .cs file via string array because PowerShell here-strings
-          # (@'...'@) close at column 0, which breaks YAML literal-block
-          # indentation. Set-Content with an array bypasses that entirely.
+          # Build a tiny C# helper for ChangeDisplaySettingsEx + EnumDisplay*.
+          # Written to a temp .cs file via string array because PowerShell
+          # here-strings (@'...'@) close at column 0, which breaks YAML
+          # literal-block indentation. Set-Content with an array bypasses that.
           $csPath = Join-Path $env:TEMP 'DisplayPInvoke.cs'
           @(
             'using System;',
@@ -303,35 +303,94 @@ jobs:
             '    public uint dmICMMethod, dmICMIntent, dmMediaType, dmDitherType;',
             '    public uint dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;',
             '  }',
+            '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]',
+            '  public struct DISPLAY_DEVICE {',
+            '    public uint cb;',
+            '    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]  public string DeviceName;',
+            '    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;',
+            '    public uint StateFlags;',
+            '    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;',
+            '    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;',
+            '  }',
             '  [DllImport("user32.dll", CharSet = CharSet.Unicode)]',
             '  public static extern int ChangeDisplaySettingsEx(string lpszDeviceName, ref DEVMODE lpDevMode, IntPtr hwnd, uint dwFlags, IntPtr lParam);',
             '  [DllImport("user32.dll", CharSet = CharSet.Unicode)]',
             '  public static extern bool EnumDisplaySettings(string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);',
+            '  [DllImport("user32.dll", CharSet = CharSet.Unicode)]',
+            '  public static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);',
             '}'
           ) | Set-Content -Path $csPath -Encoding ASCII
           Add-Type -Path $csPath
 
-          Write-Host "=== Pre-switch ==="
+          Write-Host "=== Pre-switch (Win32_VideoController) ==="
           Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
             Where-Object { $_.CurrentHorizontalResolution -gt 0 } |
             Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, PNPDeviceID |
             Out-String | Write-Host
 
-          # Build DEVMODE seeded with current settings, then override w/h/freq.
+          # Enumerate ALL display devices via EnumDisplayDevices(null, i)
+          # to find the primary device name. Last run's BADPARAM (-5) on
+          # null lpszDeviceName + multi-adapter topology (NVIDIA + ROOT\DISPLAY\0000)
+          # suggests we need an EXPLICIT device name.
+          Write-Host "=== EnumDisplayDevices ==="
+          $primaryDevice = $null
+          $i = 0
+          while ($true) {
+            $dd = New-Object Disp+DISPLAY_DEVICE
+            $dd.cb = [uint32][System.Runtime.InteropServices.Marshal]::SizeOf($dd)
+            $ok = [Disp]::EnumDisplayDevices($null, [uint32]$i, [ref]$dd, 0)
+            if (-not $ok) { break }
+            $isPrimary = ($dd.StateFlags -band 0x4) -ne 0  # DISPLAY_DEVICE_PRIMARY_DEVICE
+            $isAttached = ($dd.StateFlags -band 0x1) -ne 0  # DISPLAY_DEVICE_ACTIVE
+            Write-Host ("  [{0}] {1}  ({2})  flags=0x{3:X} primary={4} attached={5}" -f $i, $dd.DeviceName, $dd.DeviceString, $dd.StateFlags, $isPrimary, $isAttached)
+            if ($isPrimary -and -not $primaryDevice) {
+              $primaryDevice = $dd.DeviceName
+            }
+            $i++
+            if ($i -gt 16) { break }
+          }
+          Write-Host "Primary device: $primaryDevice"
+
+          # Enumerate ALL supported modes for the primary device. This is the
+          # ground truth for what NVIDIA GRID will accept — anything not in
+          # this list will return BADMODE (-2) at ChangeDisplaySettingsEx.
+          Write-Host "=== Supported modes (EnumDisplaySettings iteration) ==="
+          $modeSet = New-Object System.Collections.Generic.HashSet[string]
+          $i = 0
+          while ($true) {
+            $dmi = New-Object Disp+DEVMODE
+            $dmi.dmSize = [uint16][System.Runtime.InteropServices.Marshal]::SizeOf($dmi)
+            $ok = [Disp]::EnumDisplaySettings($primaryDevice, $i, [ref]$dmi)
+            if (-not $ok) { break }
+            $key = ("{0}x{1}@{2} {3}bpp" -f $dmi.dmPelsWidth, $dmi.dmPelsHeight, $dmi.dmDisplayFrequency, $dmi.dmBitsPerPel)
+            [void]$modeSet.Add($key)
+            $i++
+            if ($i -gt 1000) { break }
+          }
+          Write-Host "Total unique modes: $($modeSet.Count)"
+          $modeSet | Sort-Object | ForEach-Object { Write-Host "  $_" }
+
+          $has960x540 = ($modeSet | Where-Object { $_ -match '^960x540@' }).Count -gt 0
+          if (-not $has960x540) {
+            Write-Host "INFO: 960x540 NOT in supported mode list. Will attempt anyway to capture the exact rejection code."
+          }
+
+          # Build DEVMODE seeded with CURRENT settings of the primary device,
+          # then override w/h/freq.
           $dm = New-Object Disp+DEVMODE
           $dm.dmSize = [uint16][System.Runtime.InteropServices.Marshal]::SizeOf($dm)
-          [void][Disp]::EnumDisplaySettings($null, -1, [ref]$dm)  # ENUM_CURRENT_SETTINGS = -1
+          [void][Disp]::EnumDisplaySettings($primaryDevice, -1, [ref]$dm)  # ENUM_CURRENT_SETTINGS = -1
+          Write-Host ("Current mode on '{0}': {1}x{2}@{3} {4}bpp" -f $primaryDevice, $dm.dmPelsWidth, $dm.dmPelsHeight, $dm.dmDisplayFrequency, $dm.dmBitsPerPel)
           $dm.dmPelsWidth = 960
           $dm.dmPelsHeight = 540
           $dm.dmDisplayFrequency = 60
           # DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY
           $dm.dmFields = 0x80000 -bor 0x100000 -bor 0x400000
 
-          # CDS_TEST (0x02) first: validates mode without committing — reveals
-          # OS rejection clearly. Then CDS_UPDATEREGISTRY (0x01) to apply.
-          # null lpszDeviceName means "primary display".
-          $rcTest = [Disp]::ChangeDisplaySettingsEx($null, [ref]$dm, [IntPtr]::Zero, 2, [IntPtr]::Zero)
-          Write-Host "ChangeDisplaySettingsEx(960x540, CDS_TEST) -> $rcTest (0 = mode supported)"
+          # CDS_TEST (0x02) first: validates mode without committing.
+          # Pass EXPLICIT primary device name (last run got -5 BADPARAM on null).
+          $rcTest = [Disp]::ChangeDisplaySettingsEx($primaryDevice, [ref]$dm, [IntPtr]::Zero, 2, [IntPtr]::Zero)
+          Write-Host "ChangeDisplaySettingsEx('$primaryDevice', 960x540, CDS_TEST) -> $rcTest (0 = mode supported)"
           # Return codes (WinUser.h):
           #   DISP_CHANGE_SUCCESSFUL =  0
           #   DISP_CHANGE_RESTART    =  1  (would need reboot)
@@ -342,11 +401,11 @@ jobs:
           #   DISP_CHANGE_BADPARAM   = -5
           #   DISP_CHANGE_BADDUALVIEW= -6
           if ($rcTest -ne 0) {
-            throw "CDS_TEST for 960x540 returned $rcTest. -2 (DISP_CHANGE_BADMODE) means NVIDIA GRID's EDID does not advertise this mode; would need EDID injection or a different target resolution. Aborting before downloading Explorer."
+            throw "CDS_TEST for 960x540 returned $rcTest. See the supported-modes list above for what NVIDIA GRID actually advertises. Aborting before downloading Explorer."
           }
 
-          $rcSet = [Disp]::ChangeDisplaySettingsEx($null, [ref]$dm, [IntPtr]::Zero, 1, [IntPtr]::Zero)
-          Write-Host "ChangeDisplaySettingsEx(960x540, CDS_UPDATEREGISTRY) -> $rcSet"
+          $rcSet = [Disp]::ChangeDisplaySettingsEx($primaryDevice, [ref]$dm, [IntPtr]::Zero, 1, [IntPtr]::Zero)
+          Write-Host "ChangeDisplaySettingsEx('$primaryDevice', 960x540, CDS_UPDATEREGISTRY) -> $rcSet"
           if ($rcSet -ne 0) {
             throw "Mode-set returned $rcSet despite CDS_TEST=0; should not happen."
           }
