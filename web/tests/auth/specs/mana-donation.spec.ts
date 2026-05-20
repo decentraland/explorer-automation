@@ -1,57 +1,47 @@
 import { walletTest as test } from '../../marketplace/fixtures/wallet-fixture.js'
-import {
-  encodeFunctionData,
-  createWalletClient,
-  http,
-  parseEther,
-  parseEventLogs,
-  type TransactionReceipt
-} from 'viem'
+import { encodeFunctionData, parseEther, parseEventLogs, type TransactionReceipt } from 'viem'
 import { polygonAmoy } from 'viem/chains'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { MANA_AMOY } from '../../marketplace/helpers/wallet-pool.js'
 import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { setupBroadcastWallet } from '../../../shared/helpers/broadcast-wallet.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
-import { installAutoWalletMockInitScript } from '../helpers/wallet.js'
-import { createAuthRequest, pollAuthOutcome, requireTxHash } from '../helpers/auth-server.js'
+import {
+  authPairedServiceUrl,
+  createAuthRequest,
+  dappEnvQuery,
+  pollAuthOutcome,
+  requireTxHash
+} from '../helpers/auth-server.js'
+import { sendManaMetaTransfer } from '../helpers/mana-meta-tx.js'
 import { buildAuthChain } from '../../../shared/helpers/identity.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
 import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
+import { withEnv } from '../../../shared/helpers/url.js'
 
 /**
- * MANA donation round-trip via the Explorer → auth-site flow.
+ * MANA tip round-trip via the auth-site RequestPage flow.
  *
- * Explorer's "tip a place owner" feature hands an `eth_sendTransaction`
- * (MANA `transfer` on Polygon Amoy) off to the user's browser wallet via
- * the auth-server RequestPage. This spec simulates Explorer's role by
- * minting the request directly against the auth-api, drives the real
- * /auth/requests/<id> UI to approve, and lets the broadcast layer fire a
- * real Polygon Amoy transaction.
+ * The auth-site dapp recognises `eth_sendTransaction` requests with MANA
+ * `transfer(to, amount)` calldata, renders the "MANA Tip" UI, and routes
+ * the approval through transactions-server (EIP-712 sign + relayer
+ * broadcast on Polygon Amoy). The user wallet signs typed-data only — no
+ * direct broadcast, no POL required.
  *
- * Round-trip shape:
- *   • Half 1 (E2E)            — walletA tips walletB via RequestPage.
- *   • Half 2 (direct viem)    — walletB returns the same amount on-chain,
- *                               restoring pool balance. No UI replay.
+ *   • Half 1 — drive `/auth/requests/<id>` in the browser, click
+ *     "CONFIRM & SEND". The dapp handles the meta-tx.
+ *   • Half 2 — `sendManaMetaTransfer` runs the same meta-tx flow in Node
+ *     to return the MANA, restoring pool balance over many runs.
  *
- * Verification strategy: assert the ERC-20 `Transfer` event emitted by
- * THIS spec's tx receipt — never read `balanceOf`. A receipt's `logs`
- * contain only what its own tx emitted, so the assertion is immune to
- * concurrent activity on the same wallets (other marketplace specs, manual
- * top-ups, etc.). The only remaining concurrency constraint is the EOA
- * nonce: two `eth_sendTransaction` calls from the SAME wallet in flight
- * at once race on the nonce. That's still enforced via the `auth-onchain`
- * project's `workers: 1`. For multi-CI-run parallelism, provision separate
- * `WALLET_A/B_PRIVATE_KEY` pairs per concurrent run.
+ * Verification: assert the ERC-20 `Transfer` event in each tx's own
+ * receipt — concurrency-safe; no `balanceOf` reads. The single concurrency
+ * constraint that remains is "one in-flight meta-tx per EOA" (the
+ * contract serializes via `nonces[user]`), enforced by `workers: 1`.
  *
- * Both pool wallets must hold MANA (covered by the existing wallet-pool
- * MIN_WALLET_MANA precheck) AND POL on Polygon Amoy — POL pays gas because
- * this flow is a direct broadcast, not a meta-transaction.
- *
- * Tagged `@on-chain`; tagged `@web @auth` so it sits alongside other
- * auth-site specs. Project routing in playwright.config.ts excludes
- * `@on-chain` from the default `web` project so this spec runs only via
- * the dedicated `auth-onchain` project (workers=1).
+ * Originator: Explorer has a `DonationsButton` on its place panel
+ * (`explorer/Tests/Views/ExplorePanelSections/ExplorePanelNavmapView.cs`)
+ * believed to use this same RequestPage primitive, but this spec doesn't
+ * exercise Explorer — it mints the request directly against auth-api.
  */
 
 const erc20TransferAbi = [
@@ -161,17 +151,25 @@ test.describe('@web @auth @on-chain MANA donation round-trip (RequestPage)', () 
     const { requestId } = await createAuthRequest('eth_sendTransaction', [txParams], authChain)
     expect(requestId).toBeTruthy()
 
-    await installAutoWalletMockInitScript(page, sender.address)
-    await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' })
+    await page.goto(withEnv(`/auth/requests/${requestId}`, dappEnvQuery()), { waitUntil: 'load' })
 
-    const allowBtn = page.locator('[data-testid="wallet-interaction-allow-button"]')
-    await allowBtn.waitFor({ state: 'visible', timeout: 30_000 })
-    await allowBtn.click()
+    // The dapp renders one of two UIs for `eth_sendTransaction`:
+    //   - Generic wallet-interaction UI → [data-testid="wallet-interaction-allow-button"]
+    //   - "MANA Tip" rich UI (when `to` is the MANA contract and calldata is
+    //     `transfer(address,uint256)`) → no testid; button label "CONFIRM & SEND"
+    // Match either; whichever appears first is the right approval control.
+    const allowBtn = page
+      .locator('[data-testid="wallet-interaction-allow-button"]')
+      .or(page.getByRole('button', { name: /confirm\s*&\s*send/i }))
+    await allowBtn.first().waitFor({ state: 'visible', timeout: 30_000 })
+    await allowBtn.first().click()
 
-    // The broadcast layer waits for the receipt before resolving
-    // __sendTransaction (see broadcast-wallet.ts), so the dapp won't post
-    // the outcome to auth-api until the Amoy tx is mined. Amoy receipts
-    // have been observed up to ~3 min — use a 240s polling timeout.
+    // The dapp posts the outcome (relayer-returned txHash) to auth-api as
+    // soon as `/v1/transactions` resolves — it does NOT wait for the Amoy
+    // receipt. Receipt waiting is done explicitly below via
+    // `waitForAmoyReceipt`. Amoy receipts have been observed up to ~3 min;
+    // the 240s outcome-poll timeout covers transactions-server latency
+    // (sign+POST is normally well under 30s).
     const outcome = await pollAuthOutcome(requestId, 240_000)
     expect(outcome.sender.toLowerCase()).toBe(sender.address.toLowerCase())
     const txHash = requireTxHash(outcome)
@@ -184,18 +182,18 @@ test.describe('@web @auth @on-chain MANA donation round-trip (RequestPage)', () 
       value: tipAmount
     })
 
-    // ─── Half 2: direct chain reset — walletB → walletA via viem ────────
-    const receiverWallet = createWalletClient({
-      account: privateKeyToAccount(receiver.privateKey),
-      chain: polygonAmoy,
-      transport: http(amoyRpc)
-    })
-    const resetHash = await receiverWallet.writeContract({
-      address: MANA_AMOY,
-      abi: erc20TransferAbi,
-      functionName: 'transfer',
-      args: [sender.address, tipAmount],
-      chain: polygonAmoy
+    // ─── Half 2: chain reset via meta-tx — walletB → walletA ────────────
+    // Route Half 2 through transactions-server (MANA `executeMetaTransaction`
+    // → relayer broadcasts on Amoy) so wallet B doesn't need POL for gas.
+    // No UI replay; this is a pure off-chain sign + HTTP POST.
+    const resetHash = await sendManaMetaTransfer({
+      signerPrivateKey: receiver.privateKey,
+      to: sender.address as `0x${string}`,
+      amount: tipAmount,
+      manaAddress: MANA_AMOY,
+      chainId: polygonAmoy.id,
+      rpcUrl: amoyRpc,
+      transactionsApiUrl: `${authPairedServiceUrl('transactions-api')}/v1/transactions`
     })
     const resetReceipt = await waitForAmoyReceipt({ txHash: resetHash, rpcUrl: amoyRpc })
     assertManaTransferInReceipt(resetReceipt, {

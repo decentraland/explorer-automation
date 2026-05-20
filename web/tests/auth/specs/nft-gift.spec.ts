@@ -12,7 +12,6 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { setupBroadcastWallet } from '../../../shared/helpers/broadcast-wallet.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
-import { installAutoWalletMockInitScript } from '../helpers/wallet.js'
 import { createAuthRequest, pollAuthOutcome, requireTxHash } from '../helpers/auth-server.js'
 import { buildAuthChain } from '../../../shared/helpers/identity.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
@@ -205,7 +204,6 @@ test.describe('@web @auth @on-chain NFT gift round-trip (RequestPage)', () => {
     const { requestId } = await createAuthRequest('eth_sendTransaction', [txParams], authChain)
     expect(requestId).toBeTruthy()
 
-    await installAutoWalletMockInitScript(page, sender.address)
     await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' })
 
     const allowBtn = page.locator('[data-testid="wallet-interaction-allow-button"]')
