@@ -335,6 +335,12 @@ jobs:
             # Helper: run a process with a hard timeout. If it doesn't exit
             # within $TimeoutSec, kill it and throw — beats waiting for the
             # job-level 5min timeout-minutes guillotine.
+            #
+            # Note on the double WaitForExit: when WaitForExit(int) returns
+            # true the process has exited, but Process.ExitCode is not yet
+            # populated until the no-arg WaitForExit() finalizes I/O streams
+            # (documented .NET behavior). Without the second call $p.ExitCode
+            # returns $null and any -ne 0 comparison falsely fires.
             function Invoke-WithTimeout {
               param([string]$FilePath, [string[]]$Arguments, [int]$TimeoutSec = 90, [string]$Label)
               Write-Host "[$Label] starting: $FilePath $($Arguments -join ' ')"
@@ -343,8 +349,9 @@ jobs:
                 try { $p.Kill() } catch {}
                 throw "[$Label] hung > ${TimeoutSec}s; killed."
               }
+              $p.WaitForExit()
               Write-Host "[$Label] exit code: $($p.ExitCode)"
-              return $p.ExitCode
+              return [int]$p.ExitCode
             }
 
             Write-Host "Loading driver package into store"
