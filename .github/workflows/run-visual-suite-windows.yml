@@ -255,6 +255,150 @@ jobs:
           $userPath    = [System.Environment]::GetEnvironmentVariable("PATH","User")
           $env:PATH = "$machinePath;$userPath"
 
+      # Virtual Display Driver — creates a phantom WDDM monitor with a configurable
+      # EDID so DXGI's SetFullscreenState stops returning 0x887A0022 (no monitor
+      # attached → mode switch denied). Without this, Unity falls back to
+      # FullScreenWindow at the desktop default 1024x768 regardless of what
+      # --resolution we pass.
+      #
+      # MttVDD (VirtualDrivers/Virtual-Display-Driver, attestation-signed by maintainer)
+      # ships without a [DefaultInstall] section, so pnputil /add-driver only loads the
+      # package into the driver store. We instantiate the root device via nefconw
+      # (nefarius/nefcon — modern devcon, MIT). Both binaries are tiny (131 KB + 2 MB).
+      #
+      # Idempotent — persistent self-hosted runner means one-time install; subsequent
+      # jobs see the device already OK and short-circuit straight to the fast-fail
+      # probe. Sub-second on the hot path.
+      #
+      # The fast-fail probe runs whether we installed or skipped — confirms the
+      # device is bound + user32 can actually mode-switch to 960x540 NOW. If OS
+      # refuses here, OS will also refuse DXGI fullscreen later → throw before
+      # downloading Explorer/MetaForge (saves ~5 min of doomed work).
+      - name: Install Virtual Display Driver (idempotent)
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $bound = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.HardwareID -match 'Root\\MttVDD' -and $_.Status -eq 'OK' }
+          if ($bound) {
+            Write-Host "VDD already installed and bound; skipping driver install."
+          } else {
+            $vddTag = '24.12.24'
+            $vddUrl = "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/$vddTag/Signed-Driver-v$vddTag-x64.zip"
+            $nefTag = 'v1.17.40'
+            $nefUrl = "https://github.com/nefarius/nefcon/releases/download/$nefTag/nefcon_$nefTag.zip"
+            $vddDir = 'C:\VirtualDisplayDriver'
+            $nefDir = Join-Path $env:USERPROFILE 'nefcon'
+
+            if (Test-Path $vddDir) { Remove-Item $vddDir -Recurse -Force -ErrorAction SilentlyContinue }
+            New-Item -Path $vddDir -ItemType Directory -Force | Out-Null
+            $vddZip = Join-Path $env:TEMP 'vdd.zip'
+            Write-Host "Downloading VDD $vddTag from $vddUrl"
+            Invoke-WebRequest -UseBasicParsing -Uri $vddUrl -OutFile $vddZip
+            Expand-Archive -Path $vddZip -DestinationPath $vddDir -Force
+
+            # Advertise ONLY 960x540@60 — a single-mode EDID makes Windows pick
+            # exactly the size we want at hotplug, no ambiguity. Bump width/height
+            # here when we eventually upsize baselines.
+            # (Concatenated rather than here-string'd because PowerShell here-string
+            # closers must sit at column 0, which breaks YAML literal-block indent.)
+            $vddSettings = '<?xml version="1.0" encoding="utf-8"?>' +
+              '<vdd_settings>' +
+                '<monitors><count>1</count></monitors>' +
+                '<gpu><friendlyname>default</friendlyname></gpu>' +
+                '<global><g_refresh_rate>60</g_refresh_rate></global>' +
+                '<resolutions><resolution><width>960</width><height>540</height><refresh_rate>60</refresh_rate></resolution></resolutions>' +
+                '<options><CustomEdid>false</CustomEdid><HardwareCursor>true</HardwareCursor></options>' +
+              '</vdd_settings>'
+            $vddSettings | Out-File -FilePath (Join-Path $vddDir 'vdd_settings.xml') -Encoding utf8 -Force
+
+            Write-Host "Loading driver package into store"
+            $pn = Start-Process -FilePath pnputil.exe `
+              -ArgumentList '/add-driver',(Join-Path $vddDir 'MttVDD.inf'),'/install' `
+              -Wait -PassThru -NoNewWindow
+            # 259 = ERROR_NO_MORE_ITEMS (expected for root-enum drivers — no matching
+            # hardware exists yet; we'll create it via nefconw next).
+            if ($pn.ExitCode -ne 0 -and $pn.ExitCode -ne 259) {
+              throw "pnputil /add-driver failed with exit $($pn.ExitCode)"
+            }
+
+            if (-not (Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue)) {
+              Write-Host "Downloading nefcon $nefTag from $nefUrl"
+              $nefZip = Join-Path $env:TEMP 'nefcon.zip'
+              Invoke-WebRequest -UseBasicParsing -Uri $nefUrl -OutFile $nefZip
+              if (Test-Path $nefDir) { Remove-Item $nefDir -Recurse -Force }
+              Expand-Archive -Path $nefZip -DestinationPath $nefDir -Force
+            }
+            # Prefer x64 build; fall back to whatever's there.
+            $nefconw = Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1
+            if (-not $nefconw) {
+              $nefconw = Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if (-not $nefconw) { throw "nefconw.exe not found under $nefDir" }
+            Write-Host "Using nefconw at: $($nefconw.FullName)"
+
+            Write-Host "Creating root device node for Root\MttVDD"
+            & $nefconw.FullName --create-device-node `
+              --hardware-id 'Root\MttVDD' `
+              --class-name 'Display' `
+              --class-guid '4D36E968-E325-11CE-BFC1-08002BE10318'
+            if ($LASTEXITCODE -ne 0) { throw "nefconw create-device-node failed with exit $LASTEXITCODE" }
+
+            # PnP enumeration is async; wait up to 30s for the device to bind.
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $deadline) {
+              $now = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+                Where-Object { $_.HardwareID -match 'Root\\MttVDD' }
+              if ($now -and $now.Status -eq 'OK') { break }
+              Start-Sleep -Seconds 2
+            }
+          }
+
+          # ── FAST-FAIL PROBE — abort before downloading Explorer / MetaForge ──
+          Write-Host "::group::VDD probe"
+          $vddPnp = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.HardwareID -match 'Root\\MttVDD' } | Select-Object -First 1
+          if (-not $vddPnp) { throw "VDD device not enumerated after install. Aborting." }
+          $vddPnp | Format-List FriendlyName, Status, Class, HardwareID | Out-String | Write-Host
+          if ($vddPnp.Status -ne 'OK') { throw "VDD device status is '$($vddPnp.Status)', expected 'OK'." }
+
+          Write-Host "=== Desktop monitors ==="
+          Get-CimInstance Win32_DesktopMonitor -ErrorAction SilentlyContinue |
+            Format-Table Name, ScreenWidth, ScreenHeight, MonitorType | Out-String | Write-Host
+          Write-Host "=== Video controllers (pre mode-switch) ==="
+          Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
+            Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate |
+            Out-String | Write-Host
+
+          # Force VDD as the only/primary display — Sunshine/Parsec convention.
+          # Without this, Windows may keep the phantom default adapter as primary
+          # and Unity's later mode-switch hits the wrong device. /external is
+          # silent on Win10/11 (equivalent to Win+P -> External, no UI pop).
+          Write-Host "Promoting VDD to primary via DisplaySwitch.exe /external"
+          Start-Process -FilePath "DisplaySwitch.exe" -ArgumentList "/external" -Wait
+          Start-Sleep -Seconds 5
+
+          # vdd_settings.xml above declares ONLY 960x540@60, so once VDD is the
+          # primary display Windows has no other mode to pick. If the controller
+          # still reports something else, VDD is either not primary or the EDID
+          # didn't take — either way, the suite will fail downstream so fail
+          # here and save ~5 min of Explorer/MetaForge install.
+          $post = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
+            Where-Object { $_.CurrentHorizontalResolution -gt 0 } |
+            Sort-Object -Property CurrentHorizontalResolution -Descending |
+            Select-Object -First 1
+          if (-not $post) {
+            throw "No video controller reported a non-zero CurrentHorizontalResolution after DisplaySwitch /external."
+          }
+          Write-Host ("Active display: {0} @ {1}x{2}@{3}" -f $post.Name, $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution, $post.CurrentRefreshRate)
+          if ($post.CurrentHorizontalResolution -ne 960 -or $post.CurrentVerticalResolution -ne 540) {
+            throw ("Active display reports {0}x{1}, expected 960x540. VDD is either not primary or its EDID didn't take." -f $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution)
+          }
+          Write-Host "::endgroup::"
+
       # Unity Player .exe links MSVC runtime (msvcp140.dll). Probe registry
       # first — base image ships VC++ as a transitive dep, blind install
       # has hung 25 minutes on already-installed runners.
