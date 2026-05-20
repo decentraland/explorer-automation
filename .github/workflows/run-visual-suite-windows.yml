@@ -255,206 +255,114 @@ jobs:
           $userPath    = [System.Environment]::GetEnvironmentVariable("PATH","User")
           $env:PATH = "$machinePath;$userPath"
 
-      # Virtual Display Driver — creates a phantom WDDM monitor with a configurable
-      # EDID so DXGI's SetFullscreenState stops returning 0x887A0022 (no monitor
-      # attached → mode switch denied). Without this, Unity falls back to
-      # FullScreenWindow at the desktop default 1024x768 regardless of what
-      # --resolution we pass.
+      # Set primary display to 960x540 via ChangeDisplaySettingsEx on the
+      # NVIDIA Tesla T4 phantom display.
       #
-      # MttVDD (VirtualDrivers/Virtual-Display-Driver, attestation-signed by maintainer)
-      # ships without a [DefaultInstall] section, so pnputil /add-driver only loads the
-      # package into the driver store. We instantiate the root device via nefconw
-      # (nefarius/nefcon — modern devcon, MIT). Both binaries are tiny (131 KB + 2 MB).
+      # Backstory: with the NVIDIA GRID driver installed (previous step),
+      # Win32_DesktopMonitor reports "Default Monitor 1280x800" — that's a
+      # real WDDM monitor backed by GRID's virtual display capability, not
+      # the bare 1024x768 Microsoft Basic Display Adapter we had before.
+      # Real WDDM monitor = ChangeDisplaySettingsEx can switch its mode,
+      # giving us 960x540 framebuffer without needing IDD/VDD virtual
+      # monitor injection.
       #
-      # Idempotent — persistent self-hosted runner means one-time install; subsequent
-      # jobs see the device already OK and short-circuit straight to the fast-fail
-      # probe. Sub-second on the hot path.
+      # We previously tried VDD (VirtualDrivers/Virtual-Display-Driver,
+      # commits 14eec4e..62a39b9). It bound at PnP level (Status: OK) but
+      # silently failed to call IddCxMonitorArrival() on this Hyper-V/NVIDIA
+      # vGPU combo, so no virtual monitor ever appeared in WDDM. Leaving
+      # the driver registered in the store is harmless (no-op).
       #
-      # The fast-fail probe runs whether we installed or skipped — confirms the
-      # device is bound + user32 can actually mode-switch to 960x540 NOW. If OS
-      # refuses here, OS will also refuse DXGI fullscreen later → throw before
+      # If NVIDIA GRID rejects 960x540 here (DISP_CHANGE_BADMODE=-2), the OS
+      # will also reject Unity's later --resolution arg, so throw before
       # downloading Explorer/MetaForge (saves ~5 min of doomed work).
-      - name: Install Virtual Display Driver (idempotent)
+      - name: Set primary display to 960x540
         shell: powershell
-        timeout-minutes: 5
+        timeout-minutes: 3
         run: |
           $ErrorActionPreference = "Stop"
 
-          $bound = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
-            Where-Object { $_.HardwareID -match 'Root\\MttVDD' -and $_.Status -eq 'OK' }
-          if ($bound) {
-            Write-Host "VDD already installed and bound; skipping driver install."
-          } else {
-            $vddTag = '24.12.24'
-            $vddUrl = "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/$vddTag/Signed-Driver-v$vddTag-x64.zip"
-            $nefTag = 'v1.17.40'
-            $nefUrl = "https://github.com/nefarius/nefcon/releases/download/$nefTag/nefcon_$nefTag.zip"
-            $vddDir = 'C:\VirtualDisplayDriver'
-            $nefDir = Join-Path $env:USERPROFILE 'nefcon'
+          # Build a tiny C# helper for ChangeDisplaySettingsEx. Written to a
+          # temp .cs file via string array because PowerShell here-strings
+          # (@'...'@) close at column 0, which breaks YAML literal-block
+          # indentation. Set-Content with an array bypasses that entirely.
+          $csPath = Join-Path $env:TEMP 'DisplayPInvoke.cs'
+          @(
+            'using System;',
+            'using System.Runtime.InteropServices;',
+            'public static class Disp {',
+            '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]',
+            '  public struct DEVMODE {',
+            '    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;',
+            '    public ushort dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;',
+            '    public uint dmFields;',
+            '    public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;',
+            '    public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;',
+            '    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;',
+            '    public ushort dmLogPixels;',
+            '    public uint dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;',
+            '    public uint dmICMMethod, dmICMIntent, dmMediaType, dmDitherType;',
+            '    public uint dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;',
+            '  }',
+            '  [DllImport("user32.dll", CharSet = CharSet.Unicode)]',
+            '  public static extern int ChangeDisplaySettingsEx(string lpszDeviceName, ref DEVMODE lpDevMode, IntPtr hwnd, uint dwFlags, IntPtr lParam);',
+            '  [DllImport("user32.dll", CharSet = CharSet.Unicode)]',
+            '  public static extern bool EnumDisplaySettings(string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);',
+            '}'
+          ) | Set-Content -Path $csPath -Encoding ASCII
+          Add-Type -Path $csPath
 
-            if (Test-Path $vddDir) { Remove-Item $vddDir -Recurse -Force -ErrorAction SilentlyContinue }
-            New-Item -Path $vddDir -ItemType Directory -Force | Out-Null
-            $vddZip = Join-Path $env:TEMP 'vdd.zip'
-            Write-Host "Downloading VDD $vddTag from $vddUrl"
-            Invoke-WebRequest -UseBasicParsing -Uri $vddUrl -OutFile $vddZip
-            Expand-Archive -Path $vddZip -DestinationPath $vddDir -Force
-
-            # DELIBERATELY KEEP the default vdd_settings.xml that ships in
-            # the zip (5 resolutions, 800x600 to 3840x2160). Previous run
-            # confirmed VDD device binds (Status: OK) but produces NO virtual
-            # monitor (missing from Win32_VideoController, missing from
-            # Win32_DesktopMonitor). Strongly suggests our custom 1-resolution
-            # XML failed to parse and the driver exited without calling
-            # IddCxMonitorArrival(). By using the stock settings we eliminate
-            # the schema variable. If VDD now produces ANY monitor we know our
-            # XML was the problem; if not, deeper driver-bind issue.
-            # Resolution will be set via ChangeDisplaySettingsEx later once
-            # we know VDD's monitor is alive.
-
-            # Pre-trust the publisher cert from mttvdd.cat. Without this, pnputil
-            # pops an invisible "Trust this publisher?" GUI dialog on first
-            # install of an unknown publisher (MikeTheTech) and hangs forever on
-            # the headless runner. Adding the cert to TrustedPublisher\LocalMachine
-            # makes the install fully silent. Confirmed root cause: prior run
-            # printed "Adding driver package: MttVDD.inf" then hung 5 min.
-            Write-Host "Pre-trusting VDD publisher cert from mttvdd.cat"
-            $catPath = Join-Path $vddDir 'mttvdd.cat'
-            $sig = Get-AuthenticodeSignature -FilePath $catPath
-            if (-not $sig.SignerCertificate) { throw "mttvdd.cat has no signer certificate; aborting." }
-            Write-Host "Cert subject: $($sig.SignerCertificate.Subject)"
-            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(
-              [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher,
-              [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
-            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $store.Add($sig.SignerCertificate)
-            $store.Close()
-
-            Write-Host "Loading driver package into store"
-            # /install dropped: for root-enum drivers there's no matching
-            # hardware yet, so /install only invites PnP-scan side-effects.
-            # nefconw will trigger driver bind from the store at device-create.
-            # Direct & invocation + $LASTEXITCODE — Start-Process -PassThru
-            # has a documented quirk where Process.ExitCode is $null even after
-            # WaitForExit(int) returns true, falsely tripping comparisons.
-            & pnputil.exe /add-driver (Join-Path $vddDir 'MttVDD.inf') 2>&1 | Write-Host
-            $rc = $LASTEXITCODE
-            Write-Host "pnputil exit code: $rc"
-            if ($rc -ne 0) { throw "pnputil /add-driver failed with exit $rc" }
-
-            if (-not (Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue)) {
-              Write-Host "Downloading nefcon $nefTag from $nefUrl"
-              $nefZip = Join-Path $env:TEMP 'nefcon.zip'
-              Invoke-WebRequest -UseBasicParsing -Uri $nefUrl -OutFile $nefZip
-              if (Test-Path $nefDir) { Remove-Item $nefDir -Recurse -Force }
-              Expand-Archive -Path $nefZip -DestinationPath $nefDir -Force
-            }
-            # Prefer x64 build; fall back to whatever's there.
-            $nefconw = Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1
-            if (-not $nefconw) {
-              $nefconw = Get-ChildItem -Path $nefDir -Recurse -Filter 'nefconw.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-            }
-            if (-not $nefconw) { throw "nefconw.exe not found under $nefDir" }
-            Write-Host "Using nefconw at: $($nefconw.FullName)"
-
-            # Sanity check: vdd_settings.xml must be in place BEFORE the device
-            # is created — the driver reads it once at device-arrival.
-            $settingsPath = Join-Path $vddDir 'vdd_settings.xml'
-            if (-not (Test-Path $settingsPath)) { throw "vdd_settings.xml missing at $settingsPath" }
-            Write-Host "=== vdd_settings.xml as written ==="
-            Get-Content $settingsPath | Write-Host
-            Write-Host "==="
-
-            & $nefconw.FullName --create-device-node `
-              --hardware-id 'Root\MttVDD' `
-              --class-name 'Display' `
-              --class-guid '4D36E968-E325-11CE-BFC1-08002BE10318' 2>&1 | Write-Host
-            $rc = $LASTEXITCODE
-            Write-Host "nefconw exit code: $rc"
-            if ($rc -ne 0) { throw "nefconw create-device-node failed with exit $rc" }
-
-            # Force PnP rescan so Windows binds the driver from the store to
-            # the newly-created root device, and the IDD has a chance to
-            # IddCxMonitorArrival.
-            Write-Host "Triggering pnputil /scan-devices"
-            & pnputil.exe /scan-devices 2>&1 | Write-Host
-
-            # Wait up to 60s for VDD to (a) be PnP-OK AND (b) appear as a
-            # Win32_VideoController. Step (b) is the real signal — it means
-            # the driver created its virtual monitor. Without (b), Windows
-            # cannot route any framebuffer to VDD.
-            $deadline = (Get-Date).AddSeconds(60)
-            $sawCtrl = $false
-            while ((Get-Date) -lt $deadline) {
-              $now = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
-                Where-Object { $_.HardwareID -match 'Root\\MttVDD' }
-              $ctrl = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
-                Where-Object { $_.PNPDeviceID -match 'MTTVDD' -or $_.Name -match 'Virtual Display' }
-              if ($now -and $now.Status -eq 'OK' -and $ctrl) {
-                Write-Host "VDD video controller appeared after $([int]((Get-Date) - ($deadline.AddSeconds(-60))).TotalSeconds)s"
-                $sawCtrl = $true
-                break
-              }
-              Start-Sleep -Seconds 3
-            }
-            if (-not $sawCtrl) {
-              Write-Host "WARNING: 60s elapsed and VDD did not appear in Win32_VideoController. Proceeding to diagnostic dump."
-            }
-          }
-
-          # ── FAST-FAIL PROBE — abort before downloading Explorer / MetaForge ──
-          Write-Host "::group::VDD probe"
-          $vddPnp = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
-            Where-Object { $_.HardwareID -match 'Root\\MttVDD' } | Select-Object -First 1
-          if (-not $vddPnp) { throw "VDD device not enumerated after install. Aborting." }
-          $vddPnp | Format-List FriendlyName, Status, Class, HardwareID | Out-String | Write-Host
-          if ($vddPnp.Status -ne 'OK') { throw "VDD device status is '$($vddPnp.Status)', expected 'OK'." }
-
-          # Dump full topology before/after to diagnose primary-display issues.
-          # 1280x800 from a previous run came from picking the wrong controller
-          # via "largest resolution wins" — the runner has multiple phantom
-          # adapters (Microsoft Basic Display + NVIDIA GRID virtual + VDD).
-          Write-Host "=== PNP display devices ==="
-          Get-PnpDevice -PresentOnly -Class Display -ErrorAction SilentlyContinue |
-            Format-Table Status, FriendlyName, InstanceId | Out-String | Write-Host
-          Write-Host "=== Desktop monitors ==="
-          Get-CimInstance Win32_DesktopMonitor -ErrorAction SilentlyContinue |
-            Format-Table Name, ScreenWidth, ScreenHeight, MonitorType, PNPDeviceID | Out-String | Write-Host
-          Write-Host "=== Video controllers (pre mode-switch) ==="
+          Write-Host "=== Pre-switch ==="
           Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
+            Where-Object { $_.CurrentHorizontalResolution -gt 0 } |
             Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, PNPDeviceID |
             Out-String | Write-Host
 
-          # Force VDD as the only/primary display — Sunshine/Parsec convention.
-          # Without this, Windows may keep the phantom default adapter as primary
-          # and Unity's later mode-switch hits the wrong device. /external is
-          # silent on Win10/11 (equivalent to Win+P -> External, no UI pop).
-          Write-Host "Promoting VDD to primary via DisplaySwitch.exe /external"
-          Start-Process -FilePath "DisplaySwitch.exe" -ArgumentList "/external" -Wait
-          Start-Sleep -Seconds 5
+          # Build DEVMODE seeded with current settings, then override w/h/freq.
+          $dm = New-Object Disp+DEVMODE
+          $dm.dmSize = [uint16][System.Runtime.InteropServices.Marshal]::SizeOf($dm)
+          [void][Disp]::EnumDisplaySettings($null, -1, [ref]$dm)  # ENUM_CURRENT_SETTINGS = -1
+          $dm.dmPelsWidth = 960
+          $dm.dmPelsHeight = 540
+          $dm.dmDisplayFrequency = 60
+          # DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY
+          $dm.dmFields = 0x80000 -bor 0x100000 -bor 0x400000
 
-          Write-Host "=== Video controllers (post DisplaySwitch /external) ==="
-          $allControllers = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
-          $allControllers |
-            Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate, PNPDeviceID |
-            Out-String | Write-Host
+          # CDS_TEST (0x02) first: validates mode without committing — reveals
+          # OS rejection clearly. Then CDS_UPDATEREGISTRY (0x01) to apply.
+          # null lpszDeviceName means "primary display".
+          $rcTest = [Disp]::ChangeDisplaySettingsEx($null, [ref]$dm, [IntPtr]::Zero, 2, [IntPtr]::Zero)
+          Write-Host "ChangeDisplaySettingsEx(960x540, CDS_TEST) -> $rcTest (0 = mode supported)"
+          # Return codes (WinUser.h):
+          #   DISP_CHANGE_SUCCESSFUL =  0
+          #   DISP_CHANGE_RESTART    =  1  (would need reboot)
+          #   DISP_CHANGE_FAILED     = -1
+          #   DISP_CHANGE_BADMODE    = -2  (mode not in EDID)
+          #   DISP_CHANGE_NOTUPDATED = -3
+          #   DISP_CHANGE_BADFLAGS   = -4
+          #   DISP_CHANGE_BADPARAM   = -5
+          #   DISP_CHANGE_BADDUALVIEW= -6
+          if ($rcTest -ne 0) {
+            throw "CDS_TEST for 960x540 returned $rcTest. -2 (DISP_CHANGE_BADMODE) means NVIDIA GRID's EDID does not advertise this mode; would need EDID injection or a different target resolution. Aborting before downloading Explorer."
+          }
 
-          # Find VDD specifically by its PNPDeviceID (Root\MttVDD), not by
-          # "largest resolution wins" — the latter accidentally picks a phantom
-          # 1280x800 adapter when VDD is sitting next to it at 960x540.
-          $vddCtrl = $allControllers | Where-Object {
-            $_.PNPDeviceID -match 'MTTVDD' -or $_.Name -match 'Virtual Display'
-          } | Select-Object -First 1
-          if (-not $vddCtrl) {
-            throw "Could not locate VDD video controller (no PNPDeviceID matching MTTVDD nor Name matching 'Virtual Display'). See the table above."
+          $rcSet = [Disp]::ChangeDisplaySettingsEx($null, [ref]$dm, [IntPtr]::Zero, 1, [IntPtr]::Zero)
+          Write-Host "ChangeDisplaySettingsEx(960x540, CDS_UPDATEREGISTRY) -> $rcSet"
+          if ($rcSet -ne 0) {
+            throw "Mode-set returned $rcSet despite CDS_TEST=0; should not happen."
           }
-          Write-Host ("VDD controller: {0} @ {1}x{2}@{3}" -f $vddCtrl.Name, $vddCtrl.CurrentHorizontalResolution, $vddCtrl.CurrentVerticalResolution, $vddCtrl.CurrentRefreshRate)
-          # vdd_settings.xml declares ONLY 960x540@60 — anything else means the
-          # driver couldn't parse our XML and fell back to internal defaults.
-          if ($vddCtrl.CurrentHorizontalResolution -ne 960 -or $vddCtrl.CurrentVerticalResolution -ne 540) {
-            throw ("VDD reports {0}x{1}, expected 960x540. EDID didn't take - check vdd_settings.xml parse." -f $vddCtrl.CurrentHorizontalResolution, $vddCtrl.CurrentVerticalResolution)
+
+          Start-Sleep -Seconds 3
+          Write-Host "=== Post-switch ==="
+          $post = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
+            Where-Object { $_.CurrentHorizontalResolution -gt 0 } |
+            Sort-Object -Property CurrentHorizontalResolution -Descending |
+            Select-Object -First 1
+          if (-not $post) { throw "No video controller reports a non-zero resolution after mode switch." }
+          Write-Host ("Active primary: {0} @ {1}x{2}@{3}" -f $post.Name, $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution, $post.CurrentRefreshRate)
+          if ($post.CurrentHorizontalResolution -ne 960 -or $post.CurrentVerticalResolution -ne 540) {
+            throw ("Mode-set reported success but display still at {0}x{1}, expected 960x540." -f $post.CurrentHorizontalResolution, $post.CurrentVerticalResolution)
           }
-          Write-Host "::endgroup::"
+          Write-Host "Primary display set to 960x540 successfully."
 
       # Unity Player .exe links MSVC runtime (msvcp140.dll). Probe registry
       # first — base image ships VC++ as a transitive dep, blind install
