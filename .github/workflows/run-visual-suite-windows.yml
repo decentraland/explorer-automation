@@ -299,20 +299,17 @@ jobs:
             Invoke-WebRequest -UseBasicParsing -Uri $vddUrl -OutFile $vddZip
             Expand-Archive -Path $vddZip -DestinationPath $vddDir -Force
 
-            # Advertise ONLY 960x540@60 — a single-mode EDID makes Windows pick
-            # exactly the size we want at hotplug, no ambiguity. Bump width/height
-            # here when we eventually upsize baselines.
-            # (Concatenated rather than here-string'd because PowerShell here-string
-            # closers must sit at column 0, which breaks YAML literal-block indent.)
-            $vddSettings = '<?xml version="1.0" encoding="utf-8"?>' +
-              '<vdd_settings>' +
-                '<monitors><count>1</count></monitors>' +
-                '<gpu><friendlyname>default</friendlyname></gpu>' +
-                '<global><g_refresh_rate>60</g_refresh_rate></global>' +
-                '<resolutions><resolution><width>960</width><height>540</height><refresh_rate>60</refresh_rate></resolution></resolutions>' +
-                '<options><CustomEdid>false</CustomEdid><HardwareCursor>true</HardwareCursor></options>' +
-              '</vdd_settings>'
-            $vddSettings | Out-File -FilePath (Join-Path $vddDir 'vdd_settings.xml') -Encoding utf8 -Force
+            # DELIBERATELY KEEP the default vdd_settings.xml that ships in
+            # the zip (5 resolutions, 800x600 to 3840x2160). Previous run
+            # confirmed VDD device binds (Status: OK) but produces NO virtual
+            # monitor (missing from Win32_VideoController, missing from
+            # Win32_DesktopMonitor). Strongly suggests our custom 1-resolution
+            # XML failed to parse and the driver exited without calling
+            # IddCxMonitorArrival(). By using the stock settings we eliminate
+            # the schema variable. If VDD now produces ANY monitor we know our
+            # XML was the problem; if not, deeper driver-bind issue.
+            # Resolution will be set via ChangeDisplaySettingsEx later once
+            # we know VDD's monitor is alive.
 
             # Pre-trust the publisher cert from mttvdd.cat. Without this, pnputil
             # pops an invisible "Trust this publisher?" GUI dialog on first
@@ -376,13 +373,32 @@ jobs:
             Write-Host "nefconw exit code: $rc"
             if ($rc -ne 0) { throw "nefconw create-device-node failed with exit $rc" }
 
-            # PnP enumeration is async; wait up to 30s for the device to bind.
-            $deadline = (Get-Date).AddSeconds(30)
+            # Force PnP rescan so Windows binds the driver from the store to
+            # the newly-created root device, and the IDD has a chance to
+            # IddCxMonitorArrival.
+            Write-Host "Triggering pnputil /scan-devices"
+            & pnputil.exe /scan-devices 2>&1 | Write-Host
+
+            # Wait up to 60s for VDD to (a) be PnP-OK AND (b) appear as a
+            # Win32_VideoController. Step (b) is the real signal — it means
+            # the driver created its virtual monitor. Without (b), Windows
+            # cannot route any framebuffer to VDD.
+            $deadline = (Get-Date).AddSeconds(60)
+            $sawCtrl = $false
             while ((Get-Date) -lt $deadline) {
               $now = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
                 Where-Object { $_.HardwareID -match 'Root\\MttVDD' }
-              if ($now -and $now.Status -eq 'OK') { break }
-              Start-Sleep -Seconds 2
+              $ctrl = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
+                Where-Object { $_.PNPDeviceID -match 'MTTVDD' -or $_.Name -match 'Virtual Display' }
+              if ($now -and $now.Status -eq 'OK' -and $ctrl) {
+                Write-Host "VDD video controller appeared after $([int]((Get-Date) - ($deadline.AddSeconds(-60))).TotalSeconds)s"
+                $sawCtrl = $true
+                break
+              }
+              Start-Sleep -Seconds 3
+            }
+            if (-not $sawCtrl) {
+              Write-Host "WARNING: 60s elapsed and VDD did not appear in Win32_VideoController. Proceeding to diagnostic dump."
             }
           }
 
