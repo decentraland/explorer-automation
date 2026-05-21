@@ -18,8 +18,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 
     #region Views
 
-    public WearablesTab    Wearables    { get; } = new();
-    public EmotesTab       Emotes       { get; } = new();
+    public WearablesTab Wearables { get; } = new();
+    public EmotesTab Emotes { get; } = new();
     public SavedOutfitsTab SavedOutfits { get; } = new();
 
     /// <summary>
@@ -34,6 +34,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         private const int GRID_ITEM_COUNT = 16;
 
         public WearableGridItem[] GridItems { get; }
+
+        public readonly Clickable AvatarSlotHair = new(By.PATH, "//SlotsContainer/AvatarSlotHair");
 
         #endregion
 
@@ -90,6 +92,41 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             Thread.Sleep(300);
             GridItems[index].EquipButton.Click();
             Reporter.Log($"Hovered and clicked equip on wearable grid item {index}");
+        }
+
+        [AllureStep("Click search result wearable and equip")]
+        public void ClickSearchResultAndEquip(int index)
+        {
+            // When search filters to a single visible item, AltTester sees no siblings so
+            // the object has no index suffix. With multiple visible results, [n] applies.
+            var basePath = index == 0
+                ? "//BackpackGrid/BackpackWearableGridItem(Clone)"
+                : $"//BackpackGrid/BackpackWearableGridItem(Clone)[{index}]";
+            var result = new WearableGridItem(
+                new(By.PATH, basePath),
+                new(By.PATH, $"{basePath}/FullBackpack/HoverBackground/Equip"));
+            result.WaitFor();
+            result.Click();
+            Thread.Sleep(300);
+            result.EquipButton.Click();
+            Reporter.Log($"Clicked search result {index} and equipped");
+        }
+
+        [AllureStep("Click first item in BackpackGrid after slot filter and equip")]
+        public void ClickFirstBackpackItem()
+        {
+            var item = new Clickable(By.PATH, "//BackpackGrid/BackpackItem(Clone)[15]");
+            var equip = new Clickable(By.PATH, "//BackpackGrid/BackpackItem(Clone)[15]/FullBackpack/HoverBackground/Equip");
+            var unequip = new Clickable(By.PATH, "//BackpackGrid/BackpackItem(Clone)[15]/FullBackpack/HoverBackground/Unequip");
+            item.Click();
+            Reporter.Log("Clicked first BackpackItem in grid");
+            equip.WaitFor();
+            equip.Click();
+            Reporter.Log("Equip button clicked");
+            unequip.WaitFor();
+            unequip.Click();
+            Reporter.Log("Unequip button clicked");
+
         }
 
         #endregion
