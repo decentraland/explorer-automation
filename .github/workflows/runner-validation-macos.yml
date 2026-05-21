@@ -355,10 +355,14 @@ jobs:
           # bootstrap; one sample is ~50-300 KB on disk.
           mkdir -p "$HOME/explorer-samples"
           (
+            # NB: CFBundleExecutable inside Decentraland.app is "Explorer",
+            # not "Decentraland" — Player.log line is `Explorer[PID:TID] ...`.
+            # Searching for `Decentraland.app/Contents/MacOS/Decentraland`
+            # never matches and we silently wait out the 2-min deadline.
             WAIT_DEADLINE=$(( $(date +%s) + 120 ))
             PID=""
             while [ "$(date +%s)" -lt "$WAIT_DEADLINE" ]; do
-              PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Decentraland" 2>/dev/null | head -1 || true)
+              PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null | head -1 || true)
               if [ -n "$PID" ]; then break; fi
               sleep 2
             done
@@ -472,7 +476,7 @@ jobs:
           # This is best-effort — if the process is already gone (cleanup ran or
           # Player crashed), we just print a notice and move on.
           echo "::group::Decentraland post-mortem sample (10s)"
-          PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Decentraland" 2>/dev/null | head -1 || true)
+          PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null | head -1 || true)
           if [ -n "$PID" ]; then
             mkdir -p "$HOME/explorer-samples"
             POSTMORTEM="$HOME/explorer-samples/sample-postmortem.txt"
@@ -493,13 +497,19 @@ jobs:
           # these waiting. Filenames follow `Decentraland-YYYY-MM-DD-HHMMSS.ips`.
           # Surface filenames inline so the diagnosis is visible without
           # downloading; the .ips files themselves go to the artifact bundle.
-          echo "::group::macOS DiagnosticReports (Decentraland*)"
+          echo "::group::macOS DiagnosticReports (Decentraland*/Explorer*)"
           DR_DIR="$HOME/Library/Logs/DiagnosticReports"
           if [ -d "$DR_DIR" ]; then
-            ls -la "$DR_DIR"/Decentraland* 2>/dev/null || echo "(no Decentraland* reports in $DR_DIR)"
-            # Inline the most recent .ips so a quick triage doesn't need the
-            # artifact. .ips files are JSON-prefixed plain text, ~5-50 KB.
-            LATEST=$(ls -1t "$DR_DIR"/Decentraland*.ips 2>/dev/null | head -1)
+            # Bundle is Decentraland.app but CFBundleExecutable is "Explorer",
+            # and macOS names .ips reports after the binary, not the bundle —
+            # so on a real crash the file is Explorer-YYYY-MM-DD-HHMMSS.ips.
+            # Also list anything else for full visibility (ReportCrash may
+            # log helper processes like Sentry CrashpadHandler too).
+            echo "--- Full directory listing ---"
+            ls -la "$DR_DIR" 2>/dev/null | head -50 || echo "(directory unreadable)"
+            echo "--- Decentraland*/Explorer* matches ---"
+            ls -la "$DR_DIR"/Decentraland* "$DR_DIR"/Explorer* 2>/dev/null || echo "(no matches)"
+            LATEST=$(ls -1t "$DR_DIR"/Decentraland*.ips "$DR_DIR"/Explorer*.ips 2>/dev/null | head -1)
             if [ -n "$LATEST" ]; then
               echo "--- latest report: $LATEST ---"
               head -200 "$LATEST"
@@ -533,6 +543,7 @@ jobs:
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
             ~/explorer-samples/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
+            ~/Library/Logs/DiagnosticReports/Explorer*
 
       - name: Summarize report URL
         if: always() && steps.s3.outcome == 'success'
