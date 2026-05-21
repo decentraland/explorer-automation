@@ -224,6 +224,37 @@ jobs:
           allure --version
           gh --version
 
+      # Install a virtual audio device so coreaudiod has something to enumerate.
+      # Diagnosis from run 26258559596: rust_audio (com.decentraland.livekit-sdk)
+      # calls cpal::supports_input on every HAL device during VoiceChatPlugin
+      # init; on GH-hosted macos-14 paravirt the only audio HAL is broken and
+      # AudioUnitSetProperty → mach_msg to coreaudiod blocks indefinitely,
+      # hanging the Unity main thread (see ~/explorer-samples/sample-*.txt).
+      #
+      # BlackHole-2ch is an AudioServerPlugin (no kext → no SIP, no reboot),
+      # MIT-licensed, and registers as a regular input+output device. Installing
+      # it gives cpal a device that actually completes its CoreAudio handshake.
+      # If the paravirt HAL is still in the enumeration path AND still broken,
+      # this step alone won't fix the hang — the diagnostic dump after the
+      # next failure will show via `system_profiler SPAudioDataType` whether
+      # the bad device is still present.
+      - name: Install virtual audio device (BlackHole-2ch)
+        run: |
+          set -euo pipefail
+          brew install --cask blackhole-2ch
+          # AudioServerPlugin is loaded by coreaudiod on demand. Restarting
+          # the daemon forces it to rescan /Library/Audio/Plug-Ins/HAL so the
+          # device is visible to the Explorer process started later.
+          sudo killall coreaudiod 2>/dev/null || true
+          sleep 3
+          echo "::group::system_profiler SPAudioDataType"
+          system_profiler SPAudioDataType
+          echo "::endgroup::"
+          system_profiler SPAudioDataType | grep -qi blackhole || {
+            echo "::error::BlackHole did not register with coreaudiod"
+            exit 1
+          }
+
       - name: Verify MetaForge access
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
