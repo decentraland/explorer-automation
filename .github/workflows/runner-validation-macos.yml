@@ -37,13 +37,10 @@ on:
         description: 'Direct URL to a Decentraland_macos.zip. Empty = latest reachable unity-explorer PR build.'
         type: string
         required: false
-        # Pinned to the latest known-good Decentraland_macos.zip on the
-        # automation branch (probed 2026-05-21: pr-22547-ed80a74 returns
-        # HTTP 200 for both macOS and Windows artifacts). The Windows
-        # workflow stays pinned to pr-22430-3a0b8d5 because the macOS
-        # artifact under that PR was garbage-collected from the CDN (404),
-        # so cross-platform parity isn't possible without bumping both.
-        # Revert to '' to fall back to the candidate-probing logic.
+        # Pinned to unity-explorer PR #8826 (PerfSampler extraction for AltTester reuse,
+        # latest build pr-22547-ed80a74). Same pin as the Windows workflow so the perf
+        # hook in BaseTest.OneTimeSetUp resolves DCL.PerformanceAndDiagnostics.AutoPilot
+        # .PerfSampler on both platforms. Revert to '' to fall back to candidate probing.
         default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
       test_filter:
         description: 'NUnit --filter expression. Default runs InWorld + Auth categories (Auth fixtures sign out at the end of the run — Order=1000+ keeps them last).'

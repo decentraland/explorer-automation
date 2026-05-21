@@ -44,15 +44,16 @@ on:
         description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest non-prerelease unity-explorer release.'
         type: string
         required: false
-        # Pinned to unity-explorer PR #8778 (head: temp/automation-instrumented-build,
-        # build commit 207d87d) - same SHA as the original PR #8736 pin but on a
-        # dedicated automation branch instead of the feat/nearby-voice-chat piggyback.
-        # That build ships the [BOOT NN] breadcrumbs in MainSceneLoader.InitializeFlowAsync
-        # + Bootstraper.cs, has the full log matrix enabled at source (every category
-        # at every severity), AND the TEMP-gut that bypasses MinimumSpecsScreen modal
-        # so the T4 runner (4 vCPU - fails MinimumSpecsGuard) doesn't hang awaiting
-        # a human click. Revert to '' to fall back to "latest non-prerelease release".
-        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22430-3a0b8d5/Decentraland_windows64.zip'
+        # Pinned to unity-explorer PR #8826 (PerfSampler extraction for AltTester reuse,
+        # head: feat/test-automation/autopilot-alttester, latest build pr-22547-ed80a74).
+        # This is the build that ships DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler
+        # with the static Begin/End entry points that BaseTest.OneTimeSetUp calls when
+        # EXPLORER_PERF_RECORD=1. Older pins on the same branch (e.g. pr-22430-3a0b8d5)
+        # predate the extraction and blow up with ComponentNotFoundException on the
+        # PerfSampler.Begin call. Build also retains the [BOOT NN] breadcrumbs + full
+        # log matrix + MinimumSpecsScreen TEMP-gut from earlier autopilot-alttester
+        # builds. Revert to '' to fall back to "latest non-prerelease release".
+        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_windows64.zip'
       test_filter:
         description: 'NUnit --filter expression. Default runs InWorld + Auth categories (Auth fixtures sign out at the end of the run — Order=1000+ keeps them last).'
         type: string
