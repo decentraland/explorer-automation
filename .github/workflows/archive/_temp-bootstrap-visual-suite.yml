@@ -22,17 +22,21 @@ name: Test — Bootstrap visual suite
 #      validating the *system*, not visual drift, on the bootstrap run.
 # ════════════════════════════════════════════════════════════════════════
 
-on:
- push:
-   branches: [chore/macos-visual-test-baselines-update]
-   paths:
-     # Re-trigger when the bootstrap workflow itself changes, when the
-     # scenes/baselines code changes, or when the reusable workflow
-     # changes. Skip docs-only / unrelated commits to save runner minutes.
-     - '.github/workflows/_temp-bootstrap-visual-suite.yml'
-     - '.github/workflows/run-visual-suite.yml'
-     - 'explorer/scenes/**'
-     - 'explorer/Tests/**'
+# IMPORTANT: Uncomment the next block 👇 to enable trigger on push
+
+# ════════════════════════════════════════════════════════════════════════
+# on:
+#   push:
+#     branches: [feat/snapshots-comparison]
+#     paths:
+#       # Re-trigger when the bootstrap workflow itself changes, when the
+#       # scenes/baselines code changes, or when the reusable workflow
+#       # changes. Skip docs-only / unrelated commits to save runner minutes.
+#       - '.github/workflows/_temp-bootstrap-visual-suite.yml'
+#       - '.github/workflows/run-visual-suite.yml'
+#       - 'explorer/scenes/**'
+#       - 'explorer/Tests/**'
+# ════════════════════════════════════════════════════════════════════════
 
 permissions:
   contents: write
@@ -50,9 +54,9 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: record
-      pr_number: '16'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22497-2d2d841/Decentraland_macos.zip'
-      tests_ref: chore/macos-visual-test-baselines-update
+      pr_number: '2'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_macos.zip'
+      tests_ref: feat/snapshots-comparison
       # commit_sha + branch_label are cosmetic; let the reusable fall back
       # to its run-id default for the bootstrap run.
     secrets: inherit
@@ -86,9 +90,9 @@ jobs:
     uses: ./.github/workflows/run-visual-suite.yml
     with:
       mode: test
-      pr_number: '16'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22497-2d2d841/Decentraland_macos.zip'
-      tests_ref: chore/macos-visual-test-baselines-update
+      pr_number: '2'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/test/visual-tests/pr-22281-578d763/Decentraland_macos.zip'
+      tests_ref: feat/snapshots-comparison
     secrets: inherit
 
   print-validate-log:
