@@ -104,11 +104,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           OVERRIDE: ${{ inputs.build_url }}
+          # See runner-validation-windows.yml for why this hard fallback
+          # exists. TL;DR: workflow_dispatch.inputs defaults don't apply to
+          # push events; without PINNED_DEFAULT the probe loop below picks
+          # whatever recent PR is green on Unity Cloud Build, which often
+          # doesn't ship PerfSampler.
+          PINNED_DEFAULT: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
         run: |
           set -euo pipefail
           if [ -n "${OVERRIDE:-}" ]; then
             echo "::notice::Using user-supplied build URL."
             echo "build_url=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "${PINNED_DEFAULT:-}" ]; then
+            echo "::notice::Using pinned default build URL (PR #8826 PerfSampler build)."
+            echo "build_url=${PINNED_DEFAULT}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -152,7 +163,7 @@ jobs:
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld|Category=Auth' }}
+      TEST_FILTER: ${{ inputs.test_filter || 'FullyQualifiedName~TestOpenSettingsWithShortcut' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}

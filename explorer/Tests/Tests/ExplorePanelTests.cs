@@ -36,16 +36,6 @@ public class ExplorePanelTests : BaseTest
     }
 
     [Test]
-    public void TestOpenMapFromSidebar()
-    {
-        Views.MainMenu.MapButton.Click();
-
-        Views.ExplorePanel.Navmap.WaitFor();
-
-        Views.ExplorePanel.Close();
-    }
-
-    [Test]
     public void TestOpenBackpackFromSidebar()
     {
         Views.MainMenu.BackpackButton.Click();

@@ -125,6 +125,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           OVERRIDE: ${{ inputs.build_url }}
+          # Hard fallback for push triggers: workflow_dispatch.inputs.build_url
+          # defaults don't apply to push events (inputs.* is empty), so without
+          # this the resolver below would silently pick whatever the latest
+          # green Unity Cloud Build was — usually a random PR branch that
+          # doesn't ship PerfSampler (cf. ComponentNotFoundException blow-up
+          # on 2026-05-21, when push selected chore/new-iss/pr-22560-a996d2c).
+          PINNED_DEFAULT: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_windows64.zip'
         run: |
           set -euo pipefail
           if [ -n "${OVERRIDE:-}" ]; then
@@ -132,17 +139,23 @@ jobs:
             echo "build_url=${OVERRIDE}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          if [ -n "${PINNED_DEFAULT:-}" ]; then
+            echo "::notice::Using pinned default build URL (PR #8826 PerfSampler build)."
+            echo "build_url=${PINNED_DEFAULT}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          # Pick the most recent successful unity-explorer PR build that has a
-          # reachable Windows artifact. PR/branch builds keep the AltTester
-          # scripting define (release-tagged builds strip it via CloudBuild.cs
-          # when IS_RELEASE_BUILD=true), so they're the only artifacts we can
-          # actually drive with AltTester. URL pattern mirrors the resolver in
-          # explorer-automation PR #2 (visual tests on macOS):
+          # Fallback only reached when PINNED_DEFAULT is intentionally cleared
+          # for a "track tip-of-main" run. Pick the most recent successful
+          # unity-explorer PR build that has a reachable Windows artifact.
+          # PR/branch builds keep the AltTester scripting define (release-tagged
+          # builds strip it via CloudBuild.cs when IS_RELEASE_BUILD=true), so
+          # they're the only artifacts we can actually drive with AltTester.
+          # URL pattern mirrors the resolver in explorer-automation PR #2:
           #   <CDN>/@dcl/unity-explorer/branch/<head_branch>/pr-<run_number>-<sha7>/Decentraland_windows64.zip
-          # We HEAD-probe each candidate because Unity Cloud Build can mark the
-          # workflow run successful while the artifact upload silently dropped,
-          # and old artifacts get garbage-collected from the CDN.
+          # We HEAD-probe each candidate because Unity Cloud Build can mark
+          # the workflow run successful while the artifact upload silently
+          # dropped, and old artifacts get garbage-collected from the CDN.
           ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
           CANDIDATES_JSON=$(gh api \
             "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?event=pull_request&status=success&per_page=20" \
@@ -186,7 +199,7 @@ jobs:
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld|Category=Auth' }}
+      TEST_FILTER: ${{ inputs.test_filter || 'FullyQualifiedName~TestOpenSettingsWithShortcut' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}

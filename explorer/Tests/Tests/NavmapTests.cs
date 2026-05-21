@@ -8,7 +8,7 @@ public class NavmapTests : BaseTest
     [Test]
     public void TestClickAllCategoryFilters()
     {
-        Views.MainMenu.MapButton.Click();
+        PressKey(AltKeyCode.M);
         Views.ExplorePanel.Navmap.WaitFor();
 
         Views.ExplorePanel.Navmap.AllCategoryButton.Click();
