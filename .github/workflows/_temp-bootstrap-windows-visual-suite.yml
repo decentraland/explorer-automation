@@ -76,7 +76,7 @@ jobs:
       #     fullscreen fix, hence 1024x768 baselines.
       #   - PR #8814 (pr-22390-5d024a6): had the fullscreen fix but not the readiness probe,
       #     hence ComponentNotFoundException in OneTimeSetUp on every fixture.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22403-4490a2a/Decentraland_windows64.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22497-2d2d841/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
@@ -110,7 +110,7 @@ jobs:
     with:
       mode: test
       pr_number: '13'
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22403-4490a2a/Decentraland_windows64.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22497-2d2d841/Decentraland_windows64.zip'
       tests_ref: feat/snapshots-comparison-win
     secrets: inherit
 
