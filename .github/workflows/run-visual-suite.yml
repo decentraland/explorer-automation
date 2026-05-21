@@ -121,6 +121,24 @@ jobs:
             *) echo "::error::Unknown platform '$TARGET_OS'. Expected 'macos' or 'windows'."; exit 1 ;;
           esac
 
+          for v_name in TESTS_REF BRANCH_LABEL; do
+            v_val="${!v_name}"
+            if [ -z "$v_val" ]; then continue; fi
+            if ! printf '%s' "$v_val" | grep -Eq '^[A-Za-z0-9._/-]+$' \
+               || [ "${v_val#-}" != "$v_val" ]; then
+              echo "::error::$v_name='$v_val' contains characters that are not allowed. Allowed: A-Z a-z 0-9 . _ / -, and must not start with '-'."
+              exit 1
+            fi
+          done
+
+          case "$BUILD_URL" in
+            https://explorer-artifacts.decentraland.org/*|https://explorer-artifacts.decentraland.zone/*|https://github.com/decentraland/*|https://objects.githubusercontent.com/*) ;;
+            *)
+              echo "::error::BUILD_URL='$BUILD_URL' is not from a trusted host (decentraland artifact bucket or GitHub release)."
+              exit 1
+              ;;
+          esac
+
       - name: Compute identifiers
         id: ids
         run: |
@@ -270,7 +288,7 @@ jobs:
 
       - name: Configure AWS credentials
         if: always() && steps.report.outputs.report_path != ''
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
@@ -292,7 +310,7 @@ jobs:
 
       - name: Upload Allure artifact (fallback if S3 fails)
         if: always() && steps.report.outputs.report_path != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: allure-report-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
           path: ${{ steps.report.outputs.report_path }}
@@ -344,7 +362,7 @@ jobs:
 
       - name: Find existing PR comment
         if: always() && env.PR_NUMBER != ''
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
         id: find-comment
         with:
           repository: ${{ env.PR_REPO }}
@@ -354,7 +372,7 @@ jobs:
 
       - name: Comment results on PR
         if: always() && env.PR_NUMBER != ''
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           repository: ${{ env.PR_REPO }}
           issue-number: ${{ env.PR_NUMBER }}
@@ -381,7 +399,7 @@ jobs:
       # Upload the Explorer's Player.log so callers can download and print it
       - name: Upload Explorer Player.log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: player-log-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
           path: /Users/runner/Library/Logs/Decentraland/Explorer/Player.log
