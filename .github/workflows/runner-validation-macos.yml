@@ -321,12 +321,33 @@ jobs:
           EMAIL_DOMAIN: ${{ vars.EMAIL_DOMAIN || secrets.EMAIL_DOMAIN }}
         run: |
           set -euo pipefail
+          # Explorer launch args forwarded via mf v2.12.0+ --app-args:
+          #   --landscape-terrain-enabled false : the LandscapePlugin renderer
+          #     registration (BushOptimized/Rock/TreeOptimized) is where the
+          #     macos-14 paravirt freezes; cutting terrain entirely sidesteps
+          #     the GPU stall we saw on PR #12 runs.
+          #   --skybox-time-enabled false : mirrors what Visual passes; the
+          #     time-of-day skybox simulation isn't load-bearing for InWorld
+          #     smoke and saves a bit of paravirt headroom.
+          #   --graphics low : on macos-14 this is redundant because
+          #     EnforceLowPreset() already fires when MinimumSpecs fails
+          #     (which it does on the paravirt GPU/VRAM/RAM), but it makes
+          #     the intent explicit and reuses cleanly on Windows T4 (where
+          #     specs may pass and the override actually wins).
+          #   --skip-minimum-specs-screen : pairs with --graphics so the
+          #     EnforceLowPreset path doesn't clobber an explicit higher
+          #     preset on adequate hardware; also skips the modal that
+          #     BaseTest.DismissMinimumSpecsModalIfPresent polls for.
+          # '=' form is mandatory — Spectre.Console parses the space form
+          # ("--app-args ...") as a new option starting at --landscape...
+          # See MetaForge ExplorerTestSettings.AppArgs description.
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
             --report-type SingleFile \
             --skip-allure-open \
+            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen" \
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
