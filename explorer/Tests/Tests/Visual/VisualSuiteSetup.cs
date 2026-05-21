@@ -8,19 +8,18 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 /// Today the host-server lifecycle is owned by metaforge (`mf explorer server start/stop`),
 /// not this fixture. We fail fast with a clear message when:
 ///   1. The visual run was invoked without orchestration that injects VISUAL_HOST_URL.
-///   2. The Explorer framebuffer is not 960x540 — without this guard, every fixture's
-///      OneTimeSetUp loads a scene (slow) before Snapshot.AssertFrameSize trips with the
-///      same root cause, multiplying the wait by however many fixtures are selected.
+///   2. The Explorer framebuffer is not the platform-expected size — without this guard, every
+///      fixture's OneTimeSetUp loads a scene (slow) before Snapshot.AssertFrameSize trips with
+///      the same root cause, multiplying the wait by however many fixtures are selected.
 /// </summary>
 [SetUpFixture]
 public class VisualSuiteSetup
 {
-    // Canonical capture resolution — see Snapshot.AssertFrameSize for the full rationale.
-    // MetaForge v2.10.3+ defaults Visual runs to 960x540 (16:9, matches Unity's own toon-shader
-    // test projects; sits in the middle of Unity-Technologies SRPTests' 512²→1024×576 range).
-    // Both platforms now baseline at the same size.
-    private const int EXPECTED_FRAME_WIDTH = 960;
-    private const int EXPECTED_FRAME_HEIGHT = 540;
+    // Canonical capture resolution — see Snapshot for the full rationale.
+    // Mac: 960x540 (MetaForge default). Windows: 1280x720 (Hyper-V vGPU on the GPU runner won't
+    // honor 960x540; pipeline injects `--resolution 1280x720` into the metaforge CLI).
+    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1280 : 960;
+    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 720 : 540;
 
     [OneTimeSetUp]
     public void RequireHost()
@@ -60,8 +59,8 @@ public class VisualSuiteSetup
         throw new InvalidOperationException(
             $"Visual suite aborted: captured framebuffer is {bmp.Width}x{bmp.Height}, " +
             $"expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}.\n\n" +
-            "MetaForge v2.10.3+ defaults Visual runs to 960x540. A drift means either an older " +
-            "MetaForge is in use (check `mf --version`), or an explicit `--resolution WxH` was " +
+            "Defaults are 960x540 on Mac and 1280x720 on Windows. A drift means either an older " +
+            "MetaForge is in use (check `mf --version`), or the wrong `--resolution WxH` was " +
             "passed without bumping the baselines.");
     }
 }

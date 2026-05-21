@@ -19,13 +19,15 @@ public static class Snapshot
 {
     private const string ENV_VAR = "SNAPSHOT_MODE";
 
-    // Canonical capture resolution. MetaForge v2.10.3+ defaults Visual runs to 960x540 — chosen
-    // to match Unity's own toon-shader test projects, sit in the middle of Unity-Technologies
-    // SRPTests' 512² → 1024×576 range, hold 16:9 (Unity GTF mandates 16:9 for back-buffer
-    // capture), and keep PNGs around 200-350 KB. Both platforms now baseline at the same size;
-    // tests that need a different one can override via `--resolution WxH` on the metaforge CLI.
-    private const int EXPECTED_FRAME_WIDTH = 960;
-    private const int EXPECTED_FRAME_HEIGHT = 540;
+    // Canonical capture resolution.
+    // Mac: 960x540 — MetaForge v2.10.3+ default for Visual runs (16:9, matches Unity toon-shader
+    // test projects, sits in SRPTests' 512²→1024×576 range, ~200-350 KB PNGs).
+    // Windows: 1280x720 — the self-hosted GPU runner (Hyper-V vGPU on Tesla T4) can't honor a
+    // 960x540 back-buffer reliably; 720p is the smallest 16:9 Unity will open at on that host.
+    // Windows pipeline injects `--resolution 1280x720` into the metaforge CLI; both sides baseline
+    // independently (BaselineStore writes `.windows.png` / `.macos.png` suffixes).
+    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1280 : 960;
+    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 720 : 540;
 
     // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
     // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
@@ -209,9 +211,9 @@ public static class Snapshot
         bmp.Dispose();
         Assert.Fail(
             $"Captured frame is {actualW}x{actualH}, expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}. " +
-            "MetaForge v2.10.3+ defaults Visual runs to 960x540. " +
-            "A drift means either an older MetaForge is in use, or an explicit `--resolution WxH` was " +
-            "passed without bumping the baselines.");
+            "Defaults are 960x540 on Mac and 1280x720 on Windows. " +
+            "A drift means either an older MetaForge is in use, or the wrong `--resolution WxH` " +
+            "was passed without bumping the baselines.");
     }
 
     private static SnapshotMode ResolveMode(SnapshotMode? perCallMode)
