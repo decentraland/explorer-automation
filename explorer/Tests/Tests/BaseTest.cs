@@ -151,10 +151,15 @@ public abstract class BaseTest
 
         // Wait for any splash to clear first — both the cached-account flow and the
         // auto-login (token-bridge) flow start with the splash, but they diverge after.
+        // 180s ceiling (was 60s): GH-hosted macos-14 is a 3-core Apple Paravirtual VM
+        // that fails all three MinimumSpecs checks (GPU/VRAM/RAM); Catalyst→realm→
+        // first-frame on that hardware reliably takes 50-90s vs ~5-15s on real DevBox.
+        // Local runs on adequate hardware return well before the cap, so the bump is
+        // free for normal use; only the CI VM ever actually waits this long.
         if (Views.SplashScreen.IsPresent())
         {
             Reporter.Log("Splash screen detected — waiting for it to clear");
-            Views.SplashScreen.WaitForGone(60);
+            Views.SplashScreen.WaitForGone(180);
         }
 
         // After splash, three legitimate states are possible:
@@ -192,7 +197,11 @@ public abstract class BaseTest
             Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
         }
 
-        Views.MainMenu.WaitFor(120);
+        // 240s (was 120s): same reason as the SplashScreen bump above — bootstrap
+        // tail on GH-hosted macos-14 paravirt can drag well past 2 min on a cold
+        // load (asset bundle warmup, comms handshake, profile fetch). Real
+        // hardware hits MainMenu in ~10-30s and never approaches this ceiling.
+        Views.MainMenu.WaitFor(240);
 
         // The SidebarController subscribes its onClick listeners in OnViewInstantiated,
         // which fires asynchronously after the SidebarView GameObject appears in the scene.
