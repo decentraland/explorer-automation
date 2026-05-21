@@ -103,6 +103,18 @@ jobs:
           PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}")
           HEAD_SHA=$(echo "$PR_JSON" | jq -r '.head.sha')
           HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
+
+          if ! printf '%s' "$HEAD_REF" | grep -Eq '^[A-Za-z0-9._/-]+$' \
+             || [ "${HEAD_REF#-}" != "$HEAD_REF" ]; then
+            echo "::error::PR head ref '$HEAD_REF' contains characters that are not allowed in this pipeline. Allowed: A-Z a-z 0-9 . _ / -, and must not start with '-'."
+            exit 1
+          fi
+
+          if ! printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::PR head SHA '$HEAD_SHA' is not a valid 40-char hex SHA."
+            exit 1
+          fi
+
           {
             echo "number=${PR_NUMBER}"
             echo "head_sha=${HEAD_SHA}"
@@ -174,6 +186,16 @@ jobs:
             PAIRED_HEAD_REF=$(echo "$PAIRED_PR_JSON" | jq -r '.head.ref')
             PAIRED_PR_NUMBER=$(echo "$PAIRED_PR_JSON" | jq -r '.number')
             SHORT_SHA="${PAIRED_HEAD_SHA:0:7}"
+
+            if ! printf '%s' "$PAIRED_HEAD_REF" | grep -Eq '^[A-Za-z0-9._/-]+$' \
+               || [ "${PAIRED_HEAD_REF#-}" != "$PAIRED_HEAD_REF" ] \
+               || ! printf '%s' "$PAIRED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} has a ref/SHA outside the allowed character set; falling back to release."
+              PAIRED_PR_JSON='null'
+            fi
+          fi
+
+          if [ "$PAIRED_PR_JSON" != "null" ] && [ -n "$PAIRED_PR_JSON" ]; then
 
             # Find the latest successful Unity Cloud Build for that SHA
             RUN_JSON=$(gh api \
