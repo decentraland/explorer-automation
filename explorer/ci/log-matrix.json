@@ -1,7 +1,7 @@
 {
   "_comment_purpose": "Explorer log matrix override for the CI test runs. Applied by the runner-validation-windows workflow (copied to %LOCALAPPDATA%\\Decentraland\\MetaForge\\log-matrix.json before mf explorer test). REPLACES the build's source-side matrix (ReportsHandlingSettingsProduction/Development) for the duration of the run.",
   "_comment_semantics": "isOverride=true -> this matrix is the sole source of truth for the CI run, independent of whatever the build's source-side matrix has enabled. EACH entry is one (category, severity) cell as enabled - matches the 2D inspector grid in unity-explorer (ReportsHandlingSettings asset). Categories NOT listed are FULLY silenced. When adding a new category to DCL.Diagnostics.ReportCategory, add 5 entries here (Log+Warning+Error+Exception+Assert) - or use `mf explorer log-matrix` interactively, which writes the same expanded form.",
-  "_comment_tiers": "Default: full 5-severity coverage (Log+Warning+Error+Exception+Assert) for every category in DCL.Diagnostics.ReportCategory. Spammers observed in prior runs are demoted by 1 step - their Log severity is dropped, leaving Warning+Error+Exception+Assert (4 entries). Demoted: PROFILE, LIVEKIT, AUDIO, ANALYTICS, MULTIPLAYER_MOVEMENT, UNSPECIFIED (caught on 25917112690), ASSET_BUNDLES, STREAMABLE_LOADING, COMMS_SCENE_HANDLER (caught on 25933539060 - ~4350 noise lines = 53% of Player.log, no actionable signal at Log tier). No spammer was caught producing noisy Warnings, so none demoted to Error.",
+  "_comment_tiers": "Default: full 5-severity coverage (Log+Warning+Error+Exception+Assert) for every category in DCL.Diagnostics.ReportCategory. Spammers observed in prior runs are demoted by 1 step - their Log severity is dropped, leaving Warning+Error+Exception+Assert (4 entries). Demoted: PROFILE, LIVEKIT, AUDIO, ANALYTICS, MULTIPLAYER_MOVEMENT, UNSPECIFIED (caught on 25917112690), COMMS_SCENE_HANDLER (caught on 25933539060 - ~4350 noise lines = 53% of Player.log, no actionable signal at Log tier). No spammer was caught producing noisy Warnings, so none demoted to Error. 2026-05-22: ASSET_BUNDLES + STREAMABLE_LOADING RE-PROMOTED to Log to surface what bootstrap async chain is the last thing running on macos-14 paravirt before main-thread freeze (~12s after VOICE_CHAT init). Re-demote once paravirt is no longer in scope.",
   "isOverride": true,
   "debugLogMatrix": [
     {
@@ -66,6 +66,10 @@
     },
     {
       "category": "ASSET_BUNDLES",
+      "severity": "Log"
+    },
+    {
+      "category": "ASSET_BUNDLES",
       "severity": "Warning"
     },
     {
@@ -1675,6 +1679,10 @@
     {
       "category": "STARTUP",
       "severity": "Assert"
+    },
+    {
+      "category": "STREAMABLE_LOADING",
+      "severity": "Log"
     },
     {
       "category": "STREAMABLE_LOADING",
