@@ -167,9 +167,12 @@ jobs:
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
-      # Mirror of Windows: keep AltTester server logs at Warn unless someone
-      # explicitly bumps this for a debugging run.
-      ALT_VERBOSE_LOGS: 'false'
+      # Temporarily bumped to 'true' (2026-05-21) while diagnosing the
+      # SplashScreen.WaitForGone(60) timeout on macos-14 — Debug-level
+      # AltTester server logs surface the per-command exchange in Player.log
+      # so we can see exactly where bootstrap stalls. Flip back to 'false'
+      # once macOS is stable to avoid the ~30 MB/run polling chatter.
+      ALT_VERBOSE_LOGS: 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -358,6 +361,34 @@ jobs:
           aws s3 sync "$REPORT_DIR" "s3://$BUCKET/$S3_PATH/" \
             --acl public-read \
             --cache-control "public, max-age=300"
+
+      # Dump the tail of Player.log + AltTester-Server.log directly into the
+      # workflow console so failures are diagnosable without downloading the
+      # artifact. Kept under `if: failure()` so green runs don't add noise.
+      # Last 400 lines is enough to capture the [BOOT NN] sequence + the
+      # AltTester command exchange around the WaitForGone timeout.
+      - name: Dump Player.log + AltTester-Server.log tail (on failure)
+        if: failure()
+        run: |
+          set +e
+          PLAYER="$HOME/Library/Logs/Decentraland/Explorer/Player.log"
+          ALT="$HOME/Library/Logs/Decentraland/Explorer/AltTester-Server.log"
+          echo "::group::Player.log (last 400 lines)"
+          if [ -f "$PLAYER" ]; then
+            tail -n 400 "$PLAYER"
+          else
+            echo "Player.log not found at $PLAYER"
+            echo "Contents of ~/Library/Logs/Decentraland/Explorer/:"
+            ls -la "$HOME/Library/Logs/Decentraland/Explorer/" 2>/dev/null || echo "(directory missing)"
+          fi
+          echo "::endgroup::"
+          echo "::group::AltTester-Server.log (last 200 lines)"
+          if [ -f "$ALT" ]; then
+            tail -n 200 "$ALT"
+          else
+            echo "AltTester-Server.log not found at $ALT"
+          fi
+          echo "::endgroup::"
 
       - name: Upload logs and report (artifact fallback)
         if: always()

@@ -65,11 +65,17 @@ on:
         required: false
         default: false
 
-  push:
-    branches: [feat/win-gpu-test-runner-workflow]
-    paths:
-      - '.github/workflows/runner-validation-windows.yml'
-      - 'explorer/Tests/**'
+  # Push trigger temporarily disabled (2026-05-21): focusing on stabilising
+  # the macOS pipe first. The self-hosted Windows runner is a serial,
+  # persistent box — leaving push on means every Mac-focused push queues
+  # behind a long Windows run we don't care about right now. Re-enable by
+  # restoring the original block below. Manual `gh workflow run` still works.
+  #
+  # push:
+  #   branches: [feat/win-gpu-test-runner-workflow]
+  #   paths:
+  #     - '.github/workflows/runner-validation-windows.yml'
+  #     - 'explorer/Tests/**'
 
 # Serialize runs on the shared self-hosted runner. We don't cancel in-flight
 # runs because the runner is persistent: an interrupted test can leave
