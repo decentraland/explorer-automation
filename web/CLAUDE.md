@@ -45,11 +45,12 @@ web/
     │       └── download.spec.ts                  # @web @landing — launcher .dmg download
     ├── auth/                       # browser-driven auth + cross-platform handoff
     │   ├── helpers/
-    │   │   ├── wallet.ts           # setupMockedWallet, mockNoProfileOnCatalysts, rebindWalletMock
-    │   │   ├── otp-mailbox.ts      # IMAP poller for Thirdweb OTPs
-    │   │   ├── auth-server.ts      # auth-api request/poll for RequestPage signing
-    │   │   ├── token-bridge.ts     # auth-token-bridge.txt path/read/wait for @cross handoff
-    │   │   └── explorer-runner.ts  # spawn metaforge + verify in-world via dotnet test
+    │   │   ├── wallet.ts                # setupMockedWallet, mockNoProfileOnCatalysts, rebindWalletMock
+    │   │   ├── otp-mailbox.ts           # IMAP poller for Thirdweb OTPs
+    │   │   ├── auth-server.ts           # auth-api request/poll for RequestPage signing
+    │   │   ├── token-bridge.ts          # auth-token-bridge.txt path/read/wait for Flow 2 (web → client)
+    │   │   ├── auth-request-bridge.ts   # auth-handoff.json {url,code} path/read/wait for Flow 1 (client → web wallet device-pairing)
+    │   │   └── explorer-runner.ts       # spawn mf + runExplorerTest(filterName) for staged dotnet test shell-outs
     │   ├── pages/
     │   │   ├── AuthPage.ts
     │   │   ├── QuickSetupPage.ts
@@ -63,7 +64,8 @@ web/
     │       ├── request-page.spec.ts              # @web @auth — RequestPage signature broker
     │       ├── switch-method.spec.ts             # @web @auth — switch from OTP to web3 in same context
     │       ├── web3-avatar-setup.spec.ts         # @webgpu — Unity 3D avatar editor
-    │       └── web-to-inworld-handoff.spec.ts    # @cross — web → desktop (currently skipped)
+    │       ├── web-to-client-handoff.spec.ts     # @cross — Flow 2: web OTP → token-bridge → Explorer in-world + emote (skipped, see TODO)
+    │       └── client-to-web-handoff.spec.ts     # @cross — Flow 1: client launches → browser OTP → in-world + emote (skipped, see TODO)
     └── marketplace/                # marketplace dapp tests
         ├── helpers/
         │   ├── wallet-setup.ts         # setupTestWallet — composes injectAuthIdentity + installInjectedWalletMock + mockExistingProfile + setupBroadcastWallet
@@ -290,14 +292,20 @@ On-chain specs **self-skip** if any of these is missing or placeholder, via a `h
 
 ## Cross-platform handoff (`@cross`)
 
-Currently skipped (`test.describe.skip`). When enabled:
+Two specs cover the handoff in both directions. Both currently `test.describe.skip` pending the manual UI-discovery steps documented at the top of each spec file.
 
-1. The dapp's "Jump Into Decentraland" CTA writes `auth-token-bridge.txt`.
-2. Path: `~/Library/Application Support/DecentralandLauncherLight/auth-token-bridge.txt` (macOS).
-3. The Decentraland Launcher's `TokenFileAuthenticator` reads + deletes the file on startup.
-4. Verification runs through `explorer/Tests/Tests/CrossPlatformVerificationTests.cs::TestExplorerIsInWorldFromTokenBridge`.
+**Flow 2 — web → client (`web-to-client-handoff.spec.ts`)**: the dapp's post-login "Jump Into Decentraland" CTA writes `auth-token-bridge.txt`; the Launcher's `TokenFileAuthenticator` consumes it on startup. Blocked on identifying the CTA selector — codegen recording required (watch the bridge file with `fswatch` while clicking candidate CTAs).
 
-If those move, update `tests/auth/helpers/token-bridge.ts` or `tests/auth/helpers/explorer-runner.ts`.
+**Flow 1 — client → web wallet device-pairing (`client-to-web-handoff.spec.ts`)**: a freshly-launched client lands on the auth screen. The C# `TestCaptureWalletAuthHandoff` fixture clicks Metamask (locator already exists at `AuthenticationMainScreenView.MetamaskButton`); the client posts to auth-api, gets back `{ requestId, code }`, displays the validation `code` in its UI, and opens the system browser at `<WEB_BASE_URL>/auth/requests/<requestId>`. C# captures `{ url, code }` and writes JSON to `auth-handoff.json`. The Playwright spec walks through web3 signup with a mocked wallet, navigates to the captured URL, **asserts the RequestPage renders the same code** (device-pairing safety check), approves the sign, and waits for the client to land in-world. Blocked on locating where the client surfaces the code and URL in its UI post-Metamask-click — needs an `alttester-explorer` session.
+
+Common across both flows:
+
+1. Paths (macOS): `~/Library/Application Support/DecentralandLauncherLight/{auth-token-bridge.txt,auth-request-id.txt}`. Helpers: `tests/auth/helpers/token-bridge.ts` and `tests/auth/helpers/auth-request-bridge.ts`.
+2. Both shell out via `runExplorerTest(filterName)` in `tests/auth/helpers/explorer-runner.ts` to a long-running Explorer launched by `runExplorer({ alttester: true, clear? })`. Each invocation opens a fresh AltTester connection, so multiple staged dotnet test runs against the same Explorer is the supported pattern.
+3. The convergence test is `explorer/Tests/Tests/CrossPlatformVerificationTests.cs::TestInWorldAndRunEmote` — asserts main menu visible + equips and triggers a Fist Pump emote. Both flows end with `await runExplorerTest('TestInWorldAndRunEmote')`.
+4. The Flow 1 capture lives in a separate fixture `CrossPlatformBrowserHandoffCaptureTests` (extends `LoggedOutAuthBaseTest`) because its `OneTimeSetUp` needs the logged-out auth screen, whereas the convergence test needs in-world.
+
+If any of those paths or names change, update both helpers + the spec headers + `explorer-runner.ts` together.
 
 ## Pitfalls observed
 

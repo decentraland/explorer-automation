@@ -91,7 +91,13 @@ export default defineConfig({
       testDir: './tests/auth/specs',
       grep: /@cross/,
       workers: 1,
-      use: { ...devices['Desktop Chrome'] }
+      use: {
+        ...devices['Desktop Chrome'],
+        // Honor PW_SLOW_MO env var so `PW_SLOW_MO=500 npx playwright test ... --headed`
+        // is enough to watch Playwright drive the wallet flow at a human-readable
+        // pace (each action delayed by N ms). 0 = default fast mode for CI.
+        launchOptions: { slowMo: Number(process.env['PW_SLOW_MO'] ?? 0) }
+      }
     },
     {
       name: 'webgpu',
