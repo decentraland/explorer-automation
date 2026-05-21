@@ -299,65 +299,6 @@ jobs:
           LOG="$HOME/Library/Logs/Decentraland/Explorer/Player.log"
           if [ -f "$LOG" ]; then rm -f "$LOG" && echo "Cleared $LOG"; fi
 
-      # Start a background `sample(1)` watcher that captures full thread stacks
-      # of the Decentraland process at fixed intervals while the test runs.
-      # `sample` is built into macOS (/usr/bin/sample), needs no root for
-      # processes the runner owns, and works on a fully frozen target — which
-      # is exactly what we need to diagnose the post-VOICE_CHAT freeze on
-      # macos-14 paravirt: Player.log stops emitting but the process is still
-      # alive (AltTester driver can still connect, it just gets no responses).
-      # A snapshot taken DURING the freeze tells us which Metal/PInvoke/mutex
-      # call the Unity main thread is parked on.
-      #
-      # Cadence: 30s gives a few samples during the ~6-min bootstrap window
-      # without blowing up artifact size (one `sample` run is ~50-300 KB).
-      # The loop exits when Decentraland goes away (process killed by cleanup)
-      # or after MAX_SAMPLES, whichever comes first.
-      - name: Start Decentraland thread sampler (background)
-        run: |
-          mkdir -p "$HOME/explorer-samples"
-          (
-            # Wait up to 2 min for Decentraland to appear. mf launches it
-            # somewhere inside the "Run InWorld suite" step that follows.
-            WAIT_DEADLINE=$(( $(date +%s) + 120 ))
-            PID=""
-            while [ "$(date +%s)" -lt "$WAIT_DEADLINE" ]; do
-              PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Decentraland" 2>/dev/null | head -1 || true)
-              if [ -n "$PID" ]; then break; fi
-              sleep 2
-            done
-            if [ -z "$PID" ]; then
-              echo "::warning::sampler: Decentraland process never appeared within 2 min — no samples will be captured"
-              exit 0
-            fi
-            echo "::notice::sampler: attaching to Decentraland pid=$PID"
-
-            # Take up to MAX_SAMPLES * 30s = ~10 min of samples. Each call
-            # blocks for 5 s (sample duration) which is fine in a background
-            # subshell — the test process runs unimpeded.
-            MAX_SAMPLES=20
-            for i in $(seq 1 $MAX_SAMPLES); do
-              # Bail early if the process died (cleanup ran).
-              if ! kill -0 "$PID" 2>/dev/null; then
-                echo "::notice::sampler: pid=$PID gone after $((i-1)) samples"
-                break
-              fi
-              TS=$(date +%H%M%S)
-              OUT="$HOME/explorer-samples/sample-${i}-${TS}.txt"
-              # sample <pid> <duration-seconds> -file <path>
-              # -mayDie suppresses the warning when the target exits mid-sample.
-              /usr/bin/sample "$PID" 5 -file "$OUT" -mayDie >/dev/null 2>&1 || true
-              if [ -f "$OUT" ]; then
-                SIZE=$(wc -c < "$OUT" | tr -d ' ')
-                echo "::notice::sampler: captured #${i} (${SIZE} bytes) -> ${OUT}"
-              fi
-              sleep 30
-            done
-          ) &
-          SAMPLER_PID=$!
-          echo "SAMPLER_PID=${SAMPLER_PID}" >> "$GITHUB_ENV"
-          echo "::notice::sampler: background loop started (subshell pid=${SAMPLER_PID})"
-
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
         timeout-minutes: 40
@@ -400,6 +341,51 @@ jobs:
           # '=' form is mandatory — Spectre.Console parses the space form
           # ("--app-args ...") as a new option starting at --landscape...
           # See MetaForge ExplorerTestSettings.AppArgs description.
+
+          # Background `sample(1)` watcher: captures full thread stacks of the
+          # Decentraland process at fixed intervals while the test runs.
+          # Must live INSIDE this step — the GH runner kills background
+          # subshells when the spawning step ends, so a dedicated "Start
+          # sampler" step would die before mf even launches Explorer.
+          # /usr/bin/sample is built into macOS, needs no root for processes
+          # the runner owns, and works on a fully frozen target — which is
+          # what we need to diagnose the post-VOICE_CHAT freeze on macos-14
+          # paravirt (Player.log stops mid-bootstrap and the AltGetServerVersion
+          # handshake times out). 30s cadence = a few snapshots over the ~6 min
+          # bootstrap; one sample is ~50-300 KB on disk.
+          mkdir -p "$HOME/explorer-samples"
+          (
+            WAIT_DEADLINE=$(( $(date +%s) + 120 ))
+            PID=""
+            while [ "$(date +%s)" -lt "$WAIT_DEADLINE" ]; do
+              PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Decentraland" 2>/dev/null | head -1 || true)
+              if [ -n "$PID" ]; then break; fi
+              sleep 2
+            done
+            if [ -z "$PID" ]; then
+              echo "sampler: Decentraland process never appeared within 2 min" > "$HOME/explorer-samples/sampler.log"
+              exit 0
+            fi
+            echo "sampler: attaching to Decentraland pid=$PID" > "$HOME/explorer-samples/sampler.log"
+            MAX_SAMPLES=20
+            for i in $(seq 1 $MAX_SAMPLES); do
+              if ! kill -0 "$PID" 2>/dev/null; then
+                echo "sampler: pid=$PID gone after $((i-1)) samples" >> "$HOME/explorer-samples/sampler.log"
+                break
+              fi
+              TS=$(date +%H%M%S)
+              OUT="$HOME/explorer-samples/sample-${i}-${TS}.txt"
+              /usr/bin/sample "$PID" 5 -file "$OUT" -mayDie >/dev/null 2>&1 || true
+              if [ -f "$OUT" ]; then
+                SIZE=$(wc -c < "$OUT" | tr -d ' ')
+                echo "sampler: captured #${i} (${SIZE} bytes) -> ${OUT}" >> "$HOME/explorer-samples/sampler.log"
+              fi
+              sleep 30
+            done
+          ) &
+          SAMPLER_PID=$!
+          echo "Started background sampler pid=$SAMPLER_PID (logs in ~/explorer-samples/sampler.log)"
+
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
@@ -501,12 +487,38 @@ jobs:
           fi
           echo "::endgroup::"
 
-          # Stop the periodic sampler if it's still going (subshell may be
-          # mid-sleep). Failure here is harmless — the job is exiting anyway.
-          if [ -n "${SAMPLER_PID:-}" ] && kill -0 "$SAMPLER_PID" 2>/dev/null; then
-            kill "$SAMPLER_PID" 2>/dev/null || true
-            echo "Stopped background sampler (pid=$SAMPLER_PID)"
+          # macOS native crash reports — written by ReportCrash when a
+          # process dies of a signal (segfault, abort, GPU fault from Metal).
+          # The "no longer running" branch above means we likely have one of
+          # these waiting. Filenames follow `Decentraland-YYYY-MM-DD-HHMMSS.ips`.
+          # Surface filenames inline so the diagnosis is visible without
+          # downloading; the .ips files themselves go to the artifact bundle.
+          echo "::group::macOS DiagnosticReports (Decentraland*)"
+          DR_DIR="$HOME/Library/Logs/DiagnosticReports"
+          if [ -d "$DR_DIR" ]; then
+            ls -la "$DR_DIR"/Decentraland* 2>/dev/null || echo "(no Decentraland* reports in $DR_DIR)"
+            # Inline the most recent .ips so a quick triage doesn't need the
+            # artifact. .ips files are JSON-prefixed plain text, ~5-50 KB.
+            LATEST=$(ls -1t "$DR_DIR"/Decentraland*.ips 2>/dev/null | head -1)
+            if [ -n "$LATEST" ]; then
+              echo "--- latest report: $LATEST ---"
+              head -200 "$LATEST"
+            fi
+          else
+            echo "(directory $DR_DIR missing)"
           fi
+          echo "::endgroup::"
+
+          # Also surface the sampler's own log so we can tell whether it
+          # attached, how many samples it took, and whether the process
+          # disappeared mid-sleep.
+          echo "::group::Sampler log"
+          if [ -f "$HOME/explorer-samples/sampler.log" ]; then
+            cat "$HOME/explorer-samples/sampler.log"
+          else
+            echo "(no sampler.log — sampler never started)"
+          fi
+          echo "::endgroup::"
 
       - name: Upload logs and report (artifact fallback)
         if: always()
@@ -520,6 +532,7 @@ jobs:
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-report/**
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
             ~/explorer-samples/**
+            ~/Library/Logs/DiagnosticReports/Decentraland*
 
       - name: Summarize report URL
         if: always() && steps.s3.outcome == 'success'
