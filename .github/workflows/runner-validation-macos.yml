@@ -299,6 +299,65 @@ jobs:
           LOG="$HOME/Library/Logs/Decentraland/Explorer/Player.log"
           if [ -f "$LOG" ]; then rm -f "$LOG" && echo "Cleared $LOG"; fi
 
+      # Start a background `sample(1)` watcher that captures full thread stacks
+      # of the Decentraland process at fixed intervals while the test runs.
+      # `sample` is built into macOS (/usr/bin/sample), needs no root for
+      # processes the runner owns, and works on a fully frozen target — which
+      # is exactly what we need to diagnose the post-VOICE_CHAT freeze on
+      # macos-14 paravirt: Player.log stops emitting but the process is still
+      # alive (AltTester driver can still connect, it just gets no responses).
+      # A snapshot taken DURING the freeze tells us which Metal/PInvoke/mutex
+      # call the Unity main thread is parked on.
+      #
+      # Cadence: 30s gives a few samples during the ~6-min bootstrap window
+      # without blowing up artifact size (one `sample` run is ~50-300 KB).
+      # The loop exits when Decentraland goes away (process killed by cleanup)
+      # or after MAX_SAMPLES, whichever comes first.
+      - name: Start Decentraland thread sampler (background)
+        run: |
+          mkdir -p "$HOME/explorer-samples"
+          (
+            # Wait up to 2 min for Decentraland to appear. mf launches it
+            # somewhere inside the "Run InWorld suite" step that follows.
+            WAIT_DEADLINE=$(( $(date +%s) + 120 ))
+            PID=""
+            while [ "$(date +%s)" -lt "$WAIT_DEADLINE" ]; do
+              PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Decentraland" 2>/dev/null | head -1 || true)
+              if [ -n "$PID" ]; then break; fi
+              sleep 2
+            done
+            if [ -z "$PID" ]; then
+              echo "::warning::sampler: Decentraland process never appeared within 2 min — no samples will be captured"
+              exit 0
+            fi
+            echo "::notice::sampler: attaching to Decentraland pid=$PID"
+
+            # Take up to MAX_SAMPLES * 30s = ~10 min of samples. Each call
+            # blocks for 5 s (sample duration) which is fine in a background
+            # subshell — the test process runs unimpeded.
+            MAX_SAMPLES=20
+            for i in $(seq 1 $MAX_SAMPLES); do
+              # Bail early if the process died (cleanup ran).
+              if ! kill -0 "$PID" 2>/dev/null; then
+                echo "::notice::sampler: pid=$PID gone after $((i-1)) samples"
+                break
+              fi
+              TS=$(date +%H%M%S)
+              OUT="$HOME/explorer-samples/sample-${i}-${TS}.txt"
+              # sample <pid> <duration-seconds> -file <path>
+              # -mayDie suppresses the warning when the target exits mid-sample.
+              /usr/bin/sample "$PID" 5 -file "$OUT" -mayDie >/dev/null 2>&1 || true
+              if [ -f "$OUT" ]; then
+                SIZE=$(wc -c < "$OUT" | tr -d ' ')
+                echo "::notice::sampler: captured #${i} (${SIZE} bytes) -> ${OUT}"
+              fi
+              sleep 30
+            done
+          ) &
+          SAMPLER_PID=$!
+          echo "SAMPLER_PID=${SAMPLER_PID}" >> "$GITHUB_ENV"
+          echo "::notice::sampler: background loop started (subshell pid=${SAMPLER_PID})"
+
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
         timeout-minutes: 40
@@ -421,6 +480,34 @@ jobs:
           fi
           echo "::endgroup::"
 
+          # Take one last `sample` snapshot of the (probably frozen) Decentraland
+          # process for the failure case where the periodic sampler may have
+          # already finished its MAX_SAMPLES budget or missed the freeze window.
+          # This is best-effort — if the process is already gone (cleanup ran or
+          # Player crashed), we just print a notice and move on.
+          echo "::group::Decentraland post-mortem sample (10s)"
+          PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Decentraland" 2>/dev/null | head -1 || true)
+          if [ -n "$PID" ]; then
+            mkdir -p "$HOME/explorer-samples"
+            POSTMORTEM="$HOME/explorer-samples/sample-postmortem.txt"
+            /usr/bin/sample "$PID" 10 -file "$POSTMORTEM" -mayDie 2>&1 || true
+            if [ -f "$POSTMORTEM" ]; then
+              echo "Saved post-mortem sample to $POSTMORTEM ($(wc -c < "$POSTMORTEM" | tr -d ' ') bytes)"
+              echo "--- main-thread excerpt (first 80 lines after Thread 0x0 header) ---"
+              awk '/^Thread / { t++ } t==1 { print } t>1 { exit }' "$POSTMORTEM" | head -80
+            fi
+          else
+            echo "Decentraland process no longer running — nothing to sample"
+          fi
+          echo "::endgroup::"
+
+          # Stop the periodic sampler if it's still going (subshell may be
+          # mid-sleep). Failure here is harmless — the job is exiting anyway.
+          if [ -n "${SAMPLER_PID:-}" ] && kill -0 "$SAMPLER_PID" 2>/dev/null; then
+            kill "$SAMPLER_PID" 2>/dev/null || true
+            echo "Stopped background sampler (pid=$SAMPLER_PID)"
+          fi
+
       - name: Upload logs and report (artifact fallback)
         if: always()
         uses: actions/upload-artifact@v4
@@ -432,6 +519,7 @@ jobs:
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-report/**
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
+            ~/explorer-samples/**
 
       - name: Summarize report URL
         if: always() && steps.s3.outcome == 'success'
