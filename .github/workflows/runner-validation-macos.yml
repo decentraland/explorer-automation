@@ -46,10 +46,10 @@ on:
         # Revert to '' to fall back to the candidate-probing logic.
         default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
       test_filter:
-        description: 'NUnit --filter expression. Default runs the full InWorld category (~17 tests).'
+        description: 'NUnit --filter expression. Default runs InWorld + Auth categories (Auth fixtures sign out at the end of the run — Order=1000+ keeps them last).'
         type: string
         required: false
-        default: 'Category=InWorld'
+        default: 'Category=InWorld|Category=Auth'
       dry_run:
         description: 'Skip mf explorer test invocation (chassis validation only).'
         type: boolean
@@ -155,7 +155,7 @@ jobs:
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld' }}
+      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld|Category=Auth' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
@@ -294,6 +294,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           EXPLORER_PERF_RECORD: '1'
+          # OtpMailbox (used by Auth/OTP fixtures) reads these via Environment.GetEnvironmentVariable.
+          # Non-sensitive entries may live in Variables or Secrets — `vars.X || secrets.X` picks
+          # whichever is set; password must be a Secret.
+          IMAP_HOST: ${{ vars.IMAP_HOST || secrets.IMAP_HOST }}
+          IMAP_PORT: ${{ vars.IMAP_PORT || secrets.IMAP_PORT }}
+          IMAP_USER: ${{ vars.IMAP_USER || secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          OTP_FROM_EMAIL: ${{ vars.OTP_FROM_EMAIL || secrets.OTP_FROM_EMAIL }}
+          EMAIL_DOMAIN: ${{ vars.EMAIL_DOMAIN || secrets.EMAIL_DOMAIN }}
         run: |
           set -euo pipefail
           TEST_EXIT=0
