@@ -5,7 +5,8 @@ import fs from 'node:fs/promises'
 /**
  * The cross-stack handoff signal for the client-first wallet flow.
  *
- * The desktop Explorer writes `auth-url.txt` the moment it calls
+ * The desktop Explorer writes `auth-url.txt` into its Unity
+ * `Application.persistentDataPath` the moment it would call
  * `Application.OpenURL` for the wallet auth flow (compile-time-gated under
  * `#if ALTTESTER` in `UnityAppWebBrowser.OpenUrl` — see the matching
  * unity-explorer change). The Playwright spec polls for that file: its
@@ -32,17 +33,17 @@ export interface AuthHandoffCapture {
 export function getAuthUrlPath(): string {
   switch (process.platform) {
     case 'darwin':
-      return path.join(os.homedir(), 'Library', 'Application Support', 'DecentralandLauncherLight', 'auth-url.txt')
+      return path.join(os.homedir(), 'Library', 'Application Support', 'Decentraland/Explorer', 'auth-url.txt')
     case 'win32':
       return path.join(
         process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming'),
-        'DecentralandLauncherLight',
+        'Decentraland/Explorer',
         'auth-url.txt'
       )
     case 'linux':
       return path.join(
         process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config'),
-        'DecentralandLauncherLight',
+        'Decentraland/Explorer',
         'auth-url.txt'
       )
     default:
@@ -144,19 +145,19 @@ export function getAuthVerificationCodePath(): string {
         os.homedir(),
         'Library',
         'Application Support',
-        'DecentralandLauncherLight',
+        'Decentraland/Explorer',
         'auth-verification-code.txt'
       )
     case 'win32':
       return path.join(
         process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming'),
-        'DecentralandLauncherLight',
+        'Decentraland/Explorer',
         'auth-verification-code.txt'
       )
     case 'linux':
       return path.join(
         process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config'),
-        'DecentralandLauncherLight',
+        'Decentraland/Explorer',
         'auth-verification-code.txt'
       )
     default:

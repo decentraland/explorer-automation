@@ -18,7 +18,8 @@ import {
 import { runExplorerTest, setupExplorerStack, teardownExplorerStack } from '../helpers/explorer-runner.js'
 
 /**
- * Flow 1 — client-first wallet device pairing. **Orchestrator only.** Unity
+ * Explorer wallet login — client-first wallet device pairing flow.
+ * **Orchestrator only.** Unity
  * assertions live in C# `[Test]` fixtures dispatched via `runExplorerTest`;
  * web assertions live in `helpers/wallet.ts` and the page objects invoked
  * here. The body below is pure sequencing.
@@ -63,7 +64,7 @@ const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 const { expect } = test
 
-test.describe('@cross client → web wallet handoff', () => {
+test.describe('@cross Explorer wallet login', () => {
   // One-time stack setup: install (if needed) + launch the AltTester-instrumented
   // Explorer build + start AltTester Desktop. Subsequent `runExplorerTest` calls
   // hit the already-running stack via plain `dotnet test`.
