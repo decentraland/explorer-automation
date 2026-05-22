@@ -205,7 +205,7 @@ jobs:
 
     env:
       BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'FullyQualifiedName~TestOpenSettingsWithShortcut' }}
+      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld|Category=Auth' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       COMMIT_SHA: ${{ github.sha }}
       PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
@@ -743,6 +743,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           EXPLORER_PERF_RECORD: "1"
+          # Stable, upload-artifact-friendly path for PerfSampler output.
+          # BaseTest reads this and writes <fixture>/perf.csv + perf-summary.txt here.
+          # Picked up by the artifact step below — so the CSV survives even if
+          # the test process is killed before [OneTimeTearDown] can attach to Allure.
+          EXPLORER_PERF_DIR: ${{ runner.temp }}/explorer-perf
           # OtpMailbox (used by Auth/OTP fixtures) reads these via Environment.GetEnvironmentVariable.
           # Non-sensitive entries may live in Variables or Secrets — `vars.X || secrets.X` picks
           # whichever is set; password must be a Secret.
@@ -855,6 +860,7 @@ jobs:
             ~/AppData/Local/Temp/Decentraland/Explorer/Crashes/**
             ~/AppData/Local/Decentraland/MetaForge/**/allure-report/**
             ~/AppData/Local/Decentraland/MetaForge/**/allure-results/**
+            ${{ runner.temp }}/explorer-perf/**
             ~/AppData/Roaming/DecentralandLauncherLight/output.log
 
       - name: Summarize report URL

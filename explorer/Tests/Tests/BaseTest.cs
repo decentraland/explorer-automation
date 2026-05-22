@@ -5,6 +5,7 @@ namespace ExplorerAutomation.Tests.Tests;
 public abstract class BaseTest
 {
     private const string PERF_ENV = "EXPLORER_PERF_RECORD";
+    private const string PERF_DIR_ENV = "EXPLORER_PERF_DIR";
 
     protected Exception ExceptionFromOneTimeSetUp;
 
@@ -42,7 +43,15 @@ public abstract class BaseTest
         if (Environment.GetEnvironmentVariable(PERF_ENV) != "1") return;
 
         var fixtureName = TestContext.CurrentContext.Test.ClassName ?? "unknown-fixture";
-        var dir = Path.Combine(Path.GetTempPath(), "explorer-perf", fixtureName);
+        // EXPLORER_PERF_DIR (set by chassis workflow) anchors output to a stable,
+        // upload-artifact-friendly path (e.g. $RUNNER_TEMP/explorer-perf). This way the
+        // CSV is collected by the workflow's upload-artifact step even if the test process
+        // is killed (timeout, crash) before [OneTimeTearDown] AttachPerf runs and can call
+        // AllureApi.AddAttachment. Local runs leave the var unset and fall back to %TEMP%.
+        var perfRoot = Environment.GetEnvironmentVariable(PERF_DIR_ENV);
+        if (string.IsNullOrEmpty(perfRoot))
+            perfRoot = Path.Combine(Path.GetTempPath(), "explorer-perf");
+        var dir = Path.Combine(perfRoot, fixtureName);
         Directory.CreateDirectory(dir);
         _perfCsvPath = Path.Combine(dir, "perf.csv");
         _perfSummaryPath = Path.Combine(dir, "perf-summary.txt");

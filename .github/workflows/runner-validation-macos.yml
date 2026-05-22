@@ -606,6 +606,11 @@ jobs:
           # final `exec` of the real binary. That way the shim loads
           # exclusively into the Explorer process and nowhere else.
           EXPLORER_PERF_RECORD: '1'
+          # Stable, upload-artifact-friendly path for PerfSampler output.
+          # BaseTest reads this and writes <fixture>/perf.csv + perf-summary.txt here.
+          # Picked up by the artifact step below — so the CSV survives even if
+          # the test process is killed before [OneTimeTearDown] can attach to Allure.
+          EXPLORER_PERF_DIR: ${{ runner.temp }}/explorer-perf
           # OtpMailbox (used by Auth/OTP fixtures) reads these via Environment.GetEnvironmentVariable.
           # Non-sensitive entries may live in Variables or Secrets — `vars.X || secrets.X` picks
           # whichever is set; password must be a Secret.
@@ -837,6 +842,7 @@ jobs:
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-report/**
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
+            ${{ runner.temp }}/explorer-perf/**
             ~/explorer-samples/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
             ~/Library/Logs/DiagnosticReports/Explorer*
