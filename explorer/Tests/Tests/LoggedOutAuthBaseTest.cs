@@ -29,8 +29,10 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         }
 
         Reporter.Log("In-world detected — opening profile menu to sign out");
-        Views.MainMenu.ProfileButton.Click();
-        var profileMenu = Views.ProfileMenu.WaitFor();
+        var profileMenu = OpenSidebarMenuWithRetry(
+            () => Views.MainMenu.ProfileButton.Click(),
+            Views.ProfileMenu,
+            "profile menu");
 
         // ViewBase.ShowAsync (in unity-explorer's MVC) disables the GraphicRaycaster on
         // the root while the open animation plays, then re-enables it. WaitFor only checks
@@ -146,20 +148,42 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     /// </summary>
     protected void OpenExplorePanelViaShortcut(int attempts = 3, int perAttemptSeconds = 15)
     {
+        OpenSidebarMenuWithRetry(
+            () => PressKey(AltKeyCode.I),
+            Views.ExplorePanel,
+            "explore panel",
+            attempts,
+            perAttemptSeconds);
+    }
+
+    /// <summary>
+    /// Trigger a sidebar interaction (shortcut press or sidebar button click) and wait for
+    /// the resulting view to appear, retrying if the input was dropped. Catches the broadest
+    /// Exception because Allure's AspectInjector wraps WaitFor's AssertionException in a
+    /// TargetInvocationException — same reason ExplorePanelView.TryWaitForGone catches
+    /// Exception rather than AssertionException.
+    /// </summary>
+    private AltObject OpenSidebarMenuWithRetry(
+        Action trigger,
+        BaseView target,
+        string label,
+        int attempts = 3,
+        int perAttemptSeconds = 15)
+    {
         for (var i = 0; i < attempts; i++)
         {
-            PressKey(AltKeyCode.I);
+            trigger();
             try
             {
-                Views.ExplorePanel.WaitFor(perAttemptSeconds);
-                return;
+                return target.WaitFor(perAttemptSeconds);
             }
-            catch (AssertionException)
+            catch (Exception)
             {
                 if (i == attempts - 1) throw;
-                Reporter.Log($"Explore panel did not appear within {perAttemptSeconds}s — retrying I shortcut ({i + 2}/{attempts})");
+                Reporter.Log($"{label} did not appear within {perAttemptSeconds}s — retrying trigger ({i + 2}/{attempts})");
             }
         }
+        throw new AssertionException($"{label} never appeared after {attempts} attempts");
     }
 
     protected string SubmitEmailWithRetry(Func<string> emailFactory, int otpScreenTimeoutSec = 25, int maxAttempts = 3)
