@@ -41,8 +41,7 @@ public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
         WaitForInWorldAfterJumpIn();
 
         // Step 6 — open backpack via the shortcut and verify.
-        PressKey(AltKeyCode.I);
-        Views.ExplorePanel.WaitFor();
+        OpenExplorePanelViaShortcut();
         Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True,
             "Backpack section should be visible after pressing I");
         PressEscape();

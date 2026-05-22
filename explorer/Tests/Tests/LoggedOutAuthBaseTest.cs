@@ -15,14 +15,19 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     {
         Views.SplashScreen.WaitForGone();
 
-        // Case 1: already at the auth screen.
-        if (Views.AuthenticationMainScreen.IsPresent())
+        // Case 1: already in-world (previous test left us here). Sign out via profile menu.
+        // NOTE: we must check the in-world signal (SidebarView) BEFORE checking
+        // AuthenticationMainScreen. The auth screen is an MVC view whose GameObject prefab
+        // 'Authentication.MainScreen(Clone)' persists in the scene tree even after the player
+        // jumps into world, so AuthenticationMainScreen.IsPresent() returns true in both
+        // states. SidebarView, on the other hand, only exists when the player is in-world.
+        if (!Views.MainMenu.IsPresent())
         {
+            // Case 2: at the auth screen (not in-world).
             EnsureLoggedOutFromAuthScreen();
             return;
         }
 
-        // Case 2: already in-world (previous test left us here). Sign out via profile menu.
         Reporter.Log("In-world detected — opening profile menu to sign out");
         Views.MainMenu.ProfileButton.Click();
         var profileMenu = Views.ProfileMenu.WaitFor();
@@ -126,6 +131,35 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         // dropped. Same ~20s settle as BaseTest.EnsureInWorld.
         Thread.Sleep(20_000);
         Reporter.Log("Player is in-world and main menu is ready");
+    }
+
+    /// <summary>
+    /// Press the Explore panel shortcut (I) and wait for the panel to appear, retrying if
+    /// the first press is dropped. On macos-14 paravirt the wall-clock 20s settle in
+    /// <see cref="WaitForInWorldAfterJumpIn"/> can still elapse before SidebarController has
+    /// wired its OnClick listeners (the runtime ticks frames at GPU=0 only when work is
+    /// pending, so wall-clock time decouples from frame-time progress), so the very first
+    /// I-press post-login can silently no-op.
+    ///
+    /// Each press is a toggle, so we wait a generous window before re-pressing — if the
+    /// previous press worked, the panel will appear inside the window and we return early.
+    /// </summary>
+    protected void OpenExplorePanelViaShortcut(int attempts = 3, int perAttemptSeconds = 15)
+    {
+        for (var i = 0; i < attempts; i++)
+        {
+            PressKey(AltKeyCode.I);
+            try
+            {
+                Views.ExplorePanel.WaitFor(perAttemptSeconds);
+                return;
+            }
+            catch (AssertionException)
+            {
+                if (i == attempts - 1) throw;
+                Reporter.Log($"Explore panel did not appear within {perAttemptSeconds}s — retrying I shortcut ({i + 2}/{attempts})");
+            }
+        }
     }
 
     protected string SubmitEmailWithRetry(Func<string> emailFactory, int otpScreenTimeoutSec = 25, int maxAttempts = 3)
