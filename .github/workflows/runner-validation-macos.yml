@@ -605,12 +605,7 @@ jobs:
           # with a shell wrapper that exports DYLD only for its own
           # final `exec` of the real binary. That way the shim loads
           # exclusively into the Explorer process and nowhere else.
-          # Perf capture disabled (2026-05-22) while diagnosing the macos-14
-          # paravirt freeze in EnsureInWorld — the AutoPilot PerfSampler runs
-          # a polling loop on the Unity main thread and competes for cycles
-          # with the landscape streaming pipeline. Flip back to '1' once the
-          # platform is stable; BaseTest already gates on this env var.
-          EXPLORER_PERF_RECORD: '0'
+          EXPLORER_PERF_RECORD: '1'
           # OtpMailbox (used by Auth/OTP fixtures) reads these via Environment.GetEnvironmentVariable.
           # Non-sensitive entries may live in Variables or Secrets — `vars.X || secrets.X` picks
           # whichever is set; password must be a Secret.
