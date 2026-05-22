@@ -18,14 +18,14 @@ name: Visual Suite
 # Required secrets (caller passes via `secrets: inherit`):
 #   - ALTTESTER_LICENSE                        AltTester Pro license key
 #   - REPOS_READ_ONLY_TOKEN                    PAT — read on decentraland/MetaForge + decentraland/unity-explorer (read-only is sufficient; baseline auto-commits use GITHUB_TOKEN)
-#   - DEV_EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
-#   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
-#   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
-#   - DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+#   - EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
+#   - EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
+#   - EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
+#   - EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
 #
 # Required vars on the caller's repo (read via `vars.*` inside this workflow,
 # which resolves against the caller's repo for workflow_call invocations):
-#   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
+#   - EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
 
 on:
   workflow_call:
@@ -102,7 +102,7 @@ jobs:
       # Filter passed to `mf explorer test --filter`. Defaults to the whole visual suite when caller doesnt supply one
       TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=Visual' }}
       # vars.* inside a workflow_call run reads the *caller's* repo vars
-      PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      PUBLIC_URL_PREFIX: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
 
     steps:
       - name: Validate inputs
@@ -290,15 +290,15 @@ jobs:
         if: always() && steps.report.outputs.report_path != ''
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
-          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
 
       - name: Upload Allure report to S3
         id: s3
         if: always() && steps.report.outputs.report_path != ''
         env:
-          BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+          BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
           REPORT: ${{ steps.report.outputs.report_path }}
         run: |
