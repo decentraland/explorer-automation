@@ -37,13 +37,12 @@ public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
         Views.AuthenticationMainScreen.JumpIntoWorldButton.Click();
         Reporter.Log("Clicked Jump Into Decentraland — waiting for in-world");
 
-        // Step 5 — wait for in-world by polling the backpack shortcut.
-        // Recurrent flow tends to take longer to wire input than new-user, hence the higher
-        // timeout here than in the new-user test.
-        WaitForInWorld(timeoutSeconds: 360);
-        Reporter.Log("Player is in-world (backpack shortcut responsive)");
+        // Step 5 — wait for in-world via the LoadingScreen + SidebarView signal.
+        WaitForInWorldAfterJumpIn();
 
-        // Step 6 — backpack already open from the in-world poll. Verify and close.
+        // Step 6 — open backpack via the shortcut and verify.
+        PressKey(AltKeyCode.I);
+        Views.ExplorePanel.WaitFor();
         Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True,
             "Backpack section should be visible after pressing I");
         PressEscape();
@@ -53,33 +52,5 @@ public class EmailOtpRecurrentLoginTests : LoggedOutAuthBaseTest
         PressKey(AltKeyCode.Space);
         Wait(1);
         Reporter.Log("Jump issued");
-    }
-
-    /// <summary>
-    /// Polls until the in-world Explore panel responds to the backpack shortcut.
-    /// </summary>
-    /// <remarks>
-    /// Uses the actual interaction outcome (pressing I opens backpack) as the in-world signal,
-    /// which is more robust than waiting on a specific HUD GameObject — sidebar UUIDs rotate
-    /// between builds and the post-OTP loading state varies.
-    /// </remarks>
-    private void WaitForInWorld(int timeoutSeconds)
-    {
-        const int INITIAL_GRACE_SECONDS = 30;
-        Reporter.Log($"Waiting {INITIAL_GRACE_SECONDS}s for world to load before probing backpack shortcut");
-        Thread.Sleep(INITIAL_GRACE_SECONDS * 1000);
-
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds - INITIAL_GRACE_SECONDS);
-        while (DateTime.UtcNow < deadline)
-        {
-            PressKey(AltKeyCode.I);
-            Thread.Sleep(2000);
-            if (Views.ExplorePanel.IsPresent())
-                return;
-            Reporter.Log("Backpack not open yet — still loading; retrying in 5s");
-            Thread.Sleep(5000);
-        }
-        throw new AssertionException(
-            $"Player did not reach in-world state within {timeoutSeconds}s (backpack shortcut never opened the explore panel).");
     }
 }

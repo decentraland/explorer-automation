@@ -91,6 +91,43 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     /// <param name="emailFactory">Returns the email to submit on each attempt.</param>
     /// <param name="otpScreenTimeoutSec">How long to wait for the OTP screen per attempt.</param>
     /// <param name="maxAttempts">Maximum number of attempts before failing.</param>
+    /// <summary>
+    /// Wait for the world to fully load after a JumpIn click (new-user WelcomeNewAccountScreen
+    /// or recurrent-user AuthenticationMainScreen). Mirrors <c>BaseTest.EnsureInWorld</c>'s
+    /// post-JumpIn pattern: poll LoadingScreen → wait for SidebarView → settle for shortcut
+    /// listener subscription.
+    /// </summary>
+    /// <remarks>
+    /// The original implementation polled <c>PressKey(I)</c> until ExplorePanel appeared, but
+    /// while LoadingScreen is up the SidebarController has not wired its OnClick listeners yet
+    /// and shortcut presses are silently dropped — so the poll can never succeed within its
+    /// budget on slow runners. On macos-14 paravirt the new-user world stream regularly runs
+    /// 4+ minutes (asset bundle warmup + avatar creation + first realm comms), so the loading
+    /// budget here is 360s — well past BaseTest's 300s default — to absorb the worst case.
+    /// </remarks>
+    protected void WaitForInWorldAfterJumpIn()
+    {
+        try
+        {
+            Views.LoadingScreen.WaitFor(15);
+            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 6 min)");
+            Views.LoadingScreen.WaitForGone(360);
+            Reporter.Log("Scene loading complete — HUD should now be interactable");
+        }
+        catch (Exception)
+        {
+            Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
+        }
+
+        Views.MainMenu.WaitFor(240);
+
+        // SidebarController subscribes its onClick listeners asynchronously after SidebarView
+        // appears; the first shortcut press immediately after can land in that gap and get
+        // dropped. Same ~20s settle as BaseTest.EnsureInWorld.
+        Thread.Sleep(20_000);
+        Reporter.Log("Player is in-world and main menu is ready");
+    }
+
     protected string SubmitEmailWithRetry(Func<string> emailFactory, int otpScreenTimeoutSec = 25, int maxAttempts = 3)
     {
         for (var i = 0; i < maxAttempts; i++)

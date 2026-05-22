@@ -98,13 +98,11 @@ public abstract class BaseTest
         if (!File.Exists(_perfSummaryPath))
             throw new AssertionException($"PerfSampler.End did not produce summary at {_perfSummaryPath}");
 
-        // Attach raw data only. The perf window is fixture-level
-        // (one OneTimeSetUp -> N test methods -> OneTimeTearDown) but Allure
-        // renders attachments per-test, so any inline rendering here would
-        // duplicate the same numbers across every test in the fixture and
-        // misleadingly imply per-test granularity. Downstream analysis
-        // (CV across runs, baseline comparison, custom dashboards) consumes
-        // perf.csv directly from the artifact bundle.
+        // Attach raw data. The perf window is fixture-level (one OneTimeSetUp ->
+        // N test methods -> OneTimeTearDown) but Allure renders attachments per-test;
+        // downstream analysis (percentiles, CV across runs, baseline comparison)
+        // consumes perf.csv directly from the artifact bundle with numpy/pandas
+        // rather than reimplementing it here.
         AllureApi.AddAttachment("perf-summary.txt", "text/plain", File.ReadAllBytes(_perfSummaryPath));
         if (File.Exists(_perfCsvPath))
             AllureApi.AddAttachment("perf.csv", "text/csv", File.ReadAllBytes(_perfCsvPath));
