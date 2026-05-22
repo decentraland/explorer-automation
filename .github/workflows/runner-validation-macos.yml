@@ -488,6 +488,45 @@ jobs:
           yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
           echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
 
+      # Replace the just-installed `metaforge` binary with one built from
+      # the feat/macos-direct-exec branch. Background: the released MetaForge
+      # invokes Explorer via /usr/bin/open on macOS, which strips DYLD_*
+      # at the SIP/LaunchServices boundary. We need DYLD_INSERT_LIBRARIES
+      # to reach the Explorer process so the CoreAudio enumeration shim
+      # (compiled below) can drop the broken paravirt audio device. The
+      # feature-branch build exposes `directExec: true` on the Explorer
+      # test launch path, which routes Process.Start at the bundle's
+      # Contents/MacOS/<binary> instead of going through `open`. This
+      # whole step disappears once the MetaForge PR lands and the
+      # tooling install.sh ships a release that includes the fix.
+      - name: Build patched MetaForge (feat/macos-direct-exec)
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          SRC=/tmp/metaforge-src
+          OUT=/tmp/metaforge-build
+          rm -rf "$SRC" "$OUT"
+          git clone --depth 1 -b feat/macos-direct-exec \
+            "https://x-access-token:${GH_TOKEN}@github.com/decentraland/MetaForge.git" \
+            "$SRC"
+          dotnet publish "$SRC/MetaForgeCLI/MetaForgeCLI.csproj" \
+            -c Release -r osx-arm64 \
+            --self-contained false \
+            --nologo \
+            -o "$OUT"
+          INSTALL_BIN="$HOME/Library/Application Support/Decentraland/MetaForge/bin"
+          [ -d "$INSTALL_BIN" ] || { echo "::error::Install bin missing: $INSTALL_BIN"; exit 1; }
+          # Overwrite the entire bin directory contents so the runtime DLLs
+          # come from our build too — replacing only `metaforge` would leave
+          # stale .dll's that the unchanged-API parts of the CLI link
+          # against, which usually works but isn't worth the risk.
+          cp -fR "$OUT/." "$INSTALL_BIN/"
+          chmod +x "$INSTALL_BIN/metaforge"
+          echo "::group::Patched mf version"
+          mf --version || true
+          echo "::endgroup::"
+
       # ── Apply CI log matrix so InWorld runs get the same verbose logging
       # as the Windows pipeline. macOS LogMatrixStore path differs from
       # Windows (~/Library/Application Support/Decentraland/MetaForge/
@@ -527,6 +566,81 @@ jobs:
           fi
           mf explorer install "$BUILD_URL" --non-interactive
 
+      # Build the CoreAudio enumeration shim and prepare Explorer to load
+      # it via DYLD_INSERT_LIBRARIES.
+      #
+      # Why: A1 + A2 in run 26280373031 conclusively ruled out the
+      # OS-side options for hiding the paravirt audio HAL on macos-14
+      # GH runners — Sealed System Volume blocks `sudo mv` of
+      # /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver even
+      # with SIP off, and kAudioDevicePropertyIsHidden is not
+      # client-settable ('nope' OSStatus). The only remaining
+      # CI-tunable lever is interposing the enumeration call inside
+      # the Explorer process so cpal never sees the broken device.
+      #
+      # The shim itself (explorer/ci/audio_filter.c) interposes
+      # AudioObjectGetPropertyData; when called with
+      # kAudioHardwarePropertyDevices on kAudioObjectSystemObject it
+      # drops Apple Virtual Sound Device and Null Audio Device from
+      # the returned AudioDeviceID[]. All other property reads pass
+      # through unchanged.
+      #
+      # codesign --remove-signature on the Explorer binary is a
+      # belt-and-suspenders safety: if Unity Cloud Build ever flips
+      # on Hardened Runtime without
+      # com.apple.security.cs.allow-dyld-environment-variables, dyld
+      # would silently drop DYLD_INSERT_LIBRARIES even on direct-exec.
+      # Stripping the signature removes that risk for CI runs (notarization
+      # / Gatekeeper aren't in play on a packaged-zip extraction anyway).
+      - name: Compile CoreAudio device-filter shim + strip Explorer signature
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/explorer/ci/audio_filter.c"
+          OUT=/tmp/audio_filter.dylib
+          [ -f "$SRC" ] || { echo "::error::shim source missing at $SRC"; exit 1; }
+
+          clang -dynamiclib -O2 \
+            -framework CoreAudio -framework CoreFoundation \
+            "$SRC" -o "$OUT"
+
+          echo "::group::Built dylib"
+          file "$OUT"
+          otool -L "$OUT"
+          # The __interpose section is what makes DYLD_INSERT_LIBRARIES
+          # actually rewrite the binding. If this is missing the shim is
+          # a no-op even though it loads.
+          otool -s __DATA __interpose "$OUT" || true
+          echo "::endgroup::"
+
+          # Quick smoke-load to ensure dyld accepts the dylib + the
+          # constructor message appears. We use /usr/bin/true (a tiny
+          # SIP-restricted binary — its env strips DYLD_*, so on its own
+          # we wouldn't see the load; but with direct-exec of an
+          # unrestricted dotnet binary the constructor *would* fire).
+          echo "::group::Smoke load via dotnet --version"
+          DYLD_INSERT_LIBRARIES="$OUT" dotnet --version 2>&1 || true
+          echo "::endgroup::"
+
+          # Locate the Explorer .app installed in the previous step and
+          # strip its signature so DYLD_INSERT_LIBRARIES is honoured even
+          # if Hardened Runtime is enabled.
+          EXPLORER_APP=$(find "$HOME/Library/Application Support/Decentraland/Explorer" \
+                              -maxdepth 6 -type d -name "Decentraland.app" 2>/dev/null | head -1)
+          if [ -z "$EXPLORER_APP" ]; then
+            echo "::warning::Decentraland.app not found under Explorer install — DYLD_INSERT may be silently dropped if HR is on"
+          else
+            BIN="$EXPLORER_APP/Contents/MacOS/Explorer"
+            echo "::group::codesign before strip"
+            codesign -dv --verbose=2 "$BIN" 2>&1 || true
+            echo "::endgroup::"
+            codesign --remove-signature "$BIN" 2>&1 || true
+            echo "::group::codesign after strip"
+            codesign -dv --verbose=2 "$BIN" 2>&1 || true
+            echo "::endgroup::"
+            # Persist the resolved path for the Run InWorld suite step.
+            echo "EXPLORER_BIN=$BIN" >> "$GITHUB_ENV"
+          fi
+
       # Same --env coupling as Windows: account/profile must live in the
       # same catalyst env that `mf explorer test` ships via --dclenv,
       # otherwise auth lands in the new-user flow and BaseTest.EnsureInWorld
@@ -556,6 +670,15 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          # CoreAudio device-enumeration shim. Loaded into the Explorer
+          # process (direct-exec'd by the patched MetaForge) and into any
+          # other macOS Mach-O child of this step. The shim is a no-op
+          # for non-CoreAudio callers, so dotnet test / mf itself just
+          # pay the dyld load cost. The Explorer process is the only
+          # consumer that actually triggers the interpose, dropping
+          # Apple Virtual Sound Device and Null Audio Device from the
+          # device list cpal enumerates during VoiceChatPlugin init.
+          DYLD_INSERT_LIBRARIES: /tmp/audio_filter.dylib
           # Perf capture disabled (2026-05-22) while diagnosing the macos-14
           # paravirt freeze in EnsureInWorld — the AutoPilot PerfSampler runs
           # a polling loop on the Unity main thread and competes for cycles
