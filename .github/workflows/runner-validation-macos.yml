@@ -671,6 +671,46 @@ jobs:
             echo "::group::codesign after strip"
             codesign -dv --verbose=2 "$BIN" 2>&1 || true
             echo "::endgroup::"
+
+            # Replace the Explorer binary with a shell wrapper that
+            # injects DYLD_INSERT_LIBRARIES *only* for the real Explorer
+            # exec. Setting DYLD at workflow step `env` level (which we
+            # tried in run 26284244738) leaks the shim into every child
+            # process — bash, mf, dotnet, MSBuild, AspectInjector — and
+            # AspectInjector crashed because of it (see
+            # AspectInjector-2026-05-22-111030.ips), so `dotnet build` of
+            # the NUnit test project never completed.
+            #
+            # The wrapper exec's the real binary with `exec -a "$0"` so
+            # argv[0] still looks like .../Decentraland.app/Contents/MacOS/Explorer
+            # (Unity's CFBundle-aware paths and Player.log line prefix
+            # would otherwise change to "Explorer.real").
+            #
+            # MetaForge's direct-exec path picks the first file under
+            # Contents/MacOS alphabetically (StringComparer.Ordinal);
+            # ASCII '.' (0x2E) < every letter, so "Explorer.real" sorts
+            # BEFORE "Explorer" and would win. We name the real binary
+            # ".real-explorer-binary" (leading dot) so it sorts to the
+            # very top — but MetaForge then needs to skip dotfiles.
+            # Simpler: pin the name to something that sorts AFTER
+            # "Explorer" alphabetically, e.g. "ExplorerReal", and trust
+            # the wrapper to be found first.
+            REAL="$EXPLORER_APP/Contents/MacOS/ExplorerReal"
+            mv "$BIN" "$REAL"
+            cat > "$BIN" <<'EOF'
+          #!/bin/bash
+          # CI-only DYLD-injection wrapper. Lets the audio_filter shim
+          # load into Explorer without polluting sibling processes
+          # (mf / dotnet / MSBuild / AspectInjector).
+          export DYLD_INSERT_LIBRARIES=/tmp/audio_filter.dylib
+          exec -a "$0" "$(dirname "$0")/ExplorerReal" "$@"
+          EOF
+            chmod +x "$BIN"
+            echo "::group::Wrapper installed"
+            ls -la "$EXPLORER_APP/Contents/MacOS/"
+            cat "$BIN"
+            echo "::endgroup::"
+
             # Persist the resolved path for the Run InWorld suite step.
             echo "EXPLORER_BIN=$BIN" >> "$GITHUB_ENV"
           fi
@@ -704,15 +744,17 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-          # CoreAudio device-enumeration shim. Loaded into the Explorer
-          # process (direct-exec'd by the patched MetaForge) and into any
-          # other macOS Mach-O child of this step. The shim is a no-op
-          # for non-CoreAudio callers, so dotnet test / mf itself just
-          # pay the dyld load cost. The Explorer process is the only
-          # consumer that actually triggers the interpose, dropping
-          # Apple Virtual Sound Device and Null Audio Device from the
-          # device list cpal enumerates during VoiceChatPlugin init.
-          DYLD_INSERT_LIBRARIES: /tmp/audio_filter.dylib
+          # NOTE: DYLD_INSERT_LIBRARIES is intentionally NOT set here.
+          # Run 26284244738 confirmed that exporting it at step env
+          # scope leaks the shim into every child process — including
+          # AspectInjector, the IL post-processor in the dotnet test
+          # build chain, which crashed
+          # (AspectInjector-2026-05-22-111030.ips) and took
+          # `dotnet build` of the NUnit test project down with it.
+          # Instead, the previous step replaces Contents/MacOS/Explorer
+          # with a shell wrapper that exports DYLD only for its own
+          # final `exec` of the real binary. That way the shim loads
+          # exclusively into the Explorer process and nowhere else.
           # Perf capture disabled (2026-05-22) while diagnosing the macos-14
           # paravirt freeze in EnsureInWorld — the AutoPilot PerfSampler runs
           # a polling loop on the Unity main thread and competes for cycles
