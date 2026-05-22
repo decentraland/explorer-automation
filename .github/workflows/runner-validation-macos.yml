@@ -838,11 +838,49 @@ jobs:
       # macos-14 is ephemeral so cleanup is best-effort; we still release
       # the AltTester license slot and remove the metaforge test account so
       # the activation pool doesn't bloat with dead slots.
+      #
+      # Defensive after runs 26276740988 + 26280373031: each `mf` subcommand
+      # is bounded by `timeout(1)` and the whole step has a 2-minute cap,
+      # because `mf explorer server stop` was sitting indefinitely waiting
+      # on a graceful shutdown of an Explorer process whose Unity main
+      # thread was wedged on `mach_msg` to coreaudiod (the rust_audio hang
+      # we're chasing in this branch). With the main thread frozen, the
+      # in-process SIGTERM handler can't run, so the wait never completes.
+      # Killing the bundle executable up front is the only reliable way to
+      # unblock the chain.
       - name: Cleanup metaforge state
         if: always()
+        timeout-minutes: 2
         run: |
-          mf explorer server stop --non-interactive || true
-          mf alttester deactivate --non-interactive || true
+          set +e
+          # Force-kill the Explorer process FIRST. CFBundleExecutable is
+          # "Explorer", not "Decentraland" — match by the full bundle path
+          # so we don't accidentally kill an unrelated `Explorer` binary
+          # the runner might have. `-9` because anything softer waits on
+          # the same wedged main thread we're trying to escape from.
+          pkill -9 -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null || true
+          sleep 1
+
+          # Per-command timeout helper. macOS doesn't ship `timeout(1)` in
+          # /usr/bin (it's a GNU coreutils binary), and we don't want to
+          # take a dependency on `brew install coreutils` just for this.
+          # Fork + watchdog SIGKILL is portable and good enough — we only
+          # care about an upper bound on how long a single `mf` call can
+          # block the cleanup step.
+          run_with_timeout() {
+            local secs=$1; shift
+            "$@" &
+            local pid=$!
+            ( sleep "$secs" && kill -9 "$pid" 2>/dev/null ) &
+            local watchdog=$!
+            wait "$pid" 2>/dev/null
+            local rc=$?
+            kill -9 "$watchdog" 2>/dev/null
+            return $rc
+          }
+
+          run_with_timeout 30 mf explorer server stop --non-interactive || true
+          run_with_timeout 30 mf alttester deactivate --non-interactive || true
           if [ -n "${MF_ACCOUNT:-}" ]; then
-            mf account remove "$MF_ACCOUNT" --yes --non-interactive || true
+            run_with_timeout 30 mf account remove "$MF_ACCOUNT" --yes --non-interactive || true
           fi
