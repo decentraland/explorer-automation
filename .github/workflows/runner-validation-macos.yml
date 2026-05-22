@@ -629,8 +629,13 @@ jobs:
           # Locate the Explorer .app installed in the previous step and
           # strip its signature so DYLD_INSERT_LIBRARIES is honoured even
           # if Hardened Runtime is enabled.
+          # `find ... | head -1` under `set -o pipefail` is a trap: head
+          # closes stdin after one line, find writes again, gets SIGPIPE,
+          # and the pipeline returns non-zero. Use -print -quit so find
+          # exits cleanly after the first match instead.
           EXPLORER_APP=$(find "$HOME/Library/Application Support/Decentraland/Explorer" \
-                              -maxdepth 6 -type d -name "Decentraland.app" 2>/dev/null | head -1)
+                              -maxdepth 6 -type d -name "Decentraland.app" \
+                              -print -quit 2>/dev/null)
           if [ -z "$EXPLORER_APP" ]; then
             echo "::warning::Decentraland.app not found under Explorer install — DYLD_INSERT may be silently dropped if HR is on"
           else
