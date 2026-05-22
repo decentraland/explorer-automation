@@ -510,9 +510,14 @@ jobs:
           git clone --depth 1 -b feat/macos-direct-exec \
             "https://x-access-token:${GH_TOKEN}@github.com/decentraland/MetaForge.git" \
             "$SRC"
+          # MetaForgeCLI.csproj declares <SelfContained>true</SelfContained>
+          # + <PublishSingleFile>true</PublishSingleFile> + compression, so
+          # we must publish self-contained to match the released layout.
+          # `--self-contained false` errored with NETSDK1176 (compression
+          # requires self-contained).
           dotnet publish "$SRC/MetaForgeCLI/MetaForgeCLI.csproj" \
             -c Release -r osx-arm64 \
-            --self-contained false \
+            --self-contained true \
             --nologo \
             -o "$OUT"
           INSTALL_BIN="$HOME/Library/Application Support/Decentraland/MetaForge/bin"
