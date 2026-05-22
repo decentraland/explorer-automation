@@ -224,36 +224,101 @@ jobs:
           allure --version
           gh --version
 
-      # Install a virtual audio device so coreaudiod has something to enumerate.
-      # Diagnosis from run 26258559596: rust_audio (com.decentraland.livekit-sdk)
-      # calls cpal::supports_input on every HAL device during VoiceChatPlugin
-      # init; on GH-hosted macos-14 paravirt the only audio HAL is broken and
-      # AudioUnitSetProperty → mach_msg to coreaudiod blocks indefinitely,
-      # hanging the Unity main thread (see ~/explorer-samples/sample-*.txt).
+      # Make BlackHole-2ch the only viable input/output device coreaudiod hands to
+      # cpal, AND collect the diagnostics needed to physically remove the
+      # paravirt HAL on the next iteration if this isn't enough.
       #
-      # BlackHole-2ch is an AudioServerPlugin (no kext → no SIP, no reboot),
-      # MIT-licensed, and registers as a regular input+output device. Installing
-      # it gives cpal a device that actually completes its CoreAudio handshake.
-      # If the paravirt HAL is still in the enumeration path AND still broken,
-      # this step alone won't fix the hang — the diagnostic dump after the
-      # next failure will show via `system_profiler SPAudioDataType` whether
-      # the bad device is still present.
-      - name: Install virtual audio device (BlackHole-2ch)
+      # Background: rust_audio (com.decentraland.livekit-sdk) calls
+      # cpal::supports_input on every device returned by
+      # kAudioHardwarePropertyDevices during VoiceChatPlugin init. On
+      # GH-hosted macos-14 paravirt the "Apple Virtual Sound Device" (Built-in
+      # transport, default in+out) responds to enumeration but its AudioUnit
+      # blocks on AudioUnitSetProperty → mach_msg to coreaudiod indefinitely,
+      # hanging the Unity main thread (see ~/explorer-samples/sample-*.txt
+      # from run 26258559596).
+      #
+      # This step combines two CI-side tactics for the run:
+      #   (A) DIAGNOSTIC — inventory /Library/Audio/Plug-Ins/HAL/,
+      #       /System/Library/Audio/Plug-Ins/HAL/, and kextstat so the next
+      #       iteration can decide whether to `sudo mv` an HAL plug-in aside
+      #       or `kextunload` a driver to make the paravirt device disappear
+      #       from coreaudiod's enumeration entirely.
+      #   (B) IN-FLIGHT FIX ATTEMPT — install switchaudio-osx and set
+      #       BlackHole as default input + output. cpal enumerates ALL
+      #       devices (not just default), so this alone shouldn't fix the
+      #       hang — but if Decentraland's rust_audio wrapper has a
+      #       fast-return-on-first-good-device pattern, or if cpal happens
+      #       to walk devices in default-first order on macOS, (B) alone
+      #       may be sufficient. Cheap to test in the same run as (A).
+      - name: Install BlackHole + set default + paravirt HAL diagnostics
         run: |
           set -euo pipefail
+
+          # ── Install both pieces: the virtual device AND the CLI used to
+          # set defaults. Cask install pulls the BlackHole AudioServerPlugin
+          # into /Library/Audio/Plug-Ins/HAL/; the formula provides the
+          # SwitchAudioSource binary used below.
           brew install --cask blackhole-2ch
+          brew install switchaudio-osx
+
           # AudioServerPlugin is loaded by coreaudiod on demand. Restarting
-          # the daemon forces it to rescan /Library/Audio/Plug-Ins/HAL so the
-          # device is visible to the Explorer process started later.
+          # the daemon forces it to rescan /Library/Audio/Plug-Ins/HAL so
+          # BlackHole becomes visible before we set it as default.
           sudo killall coreaudiod 2>/dev/null || true
           sleep 3
-          echo "::group::system_profiler SPAudioDataType"
+
+          # ── (A) DIAGNOSTIC: where does "Apple Virtual Sound Device" live? ──
+          # If it's an AudioServerPlugin bundle in /Library/Audio/Plug-Ins/HAL,
+          # we can `sudo mv` it aside in a follow-up iteration. If it's in
+          # /System/... it's SIP-protected. If it's a kext, kextunload is
+          # the lever (also typically SIP-restricted but worth probing).
+          echo "::group::HAL plug-ins: /Library/Audio/Plug-Ins/HAL/"
+          ls -la /Library/Audio/Plug-Ins/HAL/ 2>/dev/null || echo "(missing)"
+          echo "::endgroup::"
+          echo "::group::HAL plug-ins: /System/Library/Audio/Plug-Ins/HAL/"
+          ls -la /System/Library/Audio/Plug-Ins/HAL/ 2>/dev/null || echo "(missing)"
+          echo "::endgroup::"
+          echo "::group::Loaded audio/sound/virt kexts (kextstat)"
+          kextstat 2>/dev/null | grep -iE 'sound|audio|virt|hda|coreaudio' \
+            || echo "(no matches)"
+          echo "::endgroup::"
+          echo "::group::Filesystem search for paravirt sound bundles"
+          find /Library /System/Library -maxdepth 6 \
+               \( -iname '*virtual*sound*' \
+               -o -iname '*virtio*sound*' \
+               -o -iname 'AppleVirtual*' \) \
+               2>/dev/null | head -30 || true
+          echo "::endgroup::"
+
+          # ── (B) IN-FLIGHT FIX: make BlackHole the default in + out ──
+          # Default selection writes to
+          # ~/Library/Preferences/Audio/com.apple.audio.SystemSettings.plist
+          # and is picked up by coreaudiod immediately (no second restart,
+          # no reboot). cpal still enumerates the full device list, so this
+          # only helps if rust_audio's wrapper short-circuits on the first
+          # working device or cpal happens to walk default-first on macOS.
+          SwitchAudioSource -s "BlackHole 2ch" -t input
+          SwitchAudioSource -s "BlackHole 2ch" -t output
+
+          echo "::group::Default devices after switch"
+          echo "Default input:  $(SwitchAudioSource -c -t input)"
+          echo "Default output: $(SwitchAudioSource -c -t output)"
+          echo "::endgroup::"
+
+          echo "::group::system_profiler SPAudioDataType (final state)"
           system_profiler SPAudioDataType
           echo "::endgroup::"
+
+          # ── Sanity checks. Fail fast if either piece didn't land. ──
           system_profiler SPAudioDataType | grep -qi blackhole || {
             echo "::error::BlackHole did not register with coreaudiod"
             exit 1
           }
+          DEFAULT_IN=$(SwitchAudioSource -c -t input)
+          case "$DEFAULT_IN" in
+            *BlackHole*) echo "✓ Default input is BlackHole" ;;
+            *) echo "::error::Default input is '$DEFAULT_IN', expected BlackHole"; exit 1 ;;
+          esac
 
       - name: Verify MetaForge access
         env:
