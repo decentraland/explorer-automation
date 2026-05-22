@@ -604,12 +604,25 @@ jobs:
           OUT=/tmp/audio_filter.dylib
           [ -f "$SRC" ] || { echo "::error::shim source missing at $SRC"; exit 1; }
 
+          # Build a universal (arm64 + arm64e) dylib. macos-14 ships
+          # platform binaries (bash, /usr/bin/true, codesign, …) as
+          # arm64e (Apple Silicon pointer authentication); an arm64-only
+          # dylib refuses to load into them and dyld aborts the whole
+          # process. Since DYLD_INSERT_LIBRARIES is set at step `env`
+          # level, every child process — not just Explorer — must be
+          # able to load the shim, so we ship both slices in one fat
+          # Mach-O. Explorer is arm64 and binds the arm64 slice; the
+          # bash/coreutils chain binds the arm64e slice.
           clang -dynamiclib -O2 \
+            -arch arm64 -arch arm64e \
             -framework CoreAudio -framework CoreFoundation \
             "$SRC" -o "$OUT"
 
           echo "::group::Built dylib"
           file "$OUT"
+          # Confirm both slices are present — failures show up here as
+          # a single-arch line, easier to spot than a runtime dyld abort.
+          lipo -info "$OUT" || true
           otool -L "$OUT"
           # The __interpose section is what makes DYLD_INSERT_LIBRARIES
           # actually rewrite the binding. If this is missing the shim is
