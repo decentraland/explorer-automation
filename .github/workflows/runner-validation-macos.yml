@@ -299,10 +299,19 @@ jobs:
           # working device or cpal happens to walk default-first on macOS.
           SwitchAudioSource -s "BlackHole 2ch" -t input
           SwitchAudioSource -s "BlackHole 2ch" -t output
+          # -t system controls the "Default System Output Device" slot used
+          # for alert sounds. In run 26276740988 Apple Virtual Sound Device
+          # held it after -t input/-t output were flipped to BlackHole.
+          # Not load-bearing for the rust_audio hang (cpal doesn't query
+          # system-output), but flip it for hygiene — fewer references to
+          # the paravirt device anywhere in coreaudiod's state.
+          SwitchAudioSource -s "BlackHole 2ch" -t system \
+            || echo "(system-default switch unsupported on this version — non-fatal)"
 
           echo "::group::Default devices after switch"
           echo "Default input:  $(SwitchAudioSource -c -t input)"
           echo "Default output: $(SwitchAudioSource -c -t output)"
+          echo "Default system: $(SwitchAudioSource -c -t system 2>/dev/null || echo '(n/a)')"
           echo "::endgroup::"
 
           echo "::group::system_profiler SPAudioDataType (final state)"
@@ -319,6 +328,147 @@ jobs:
             *BlackHole*) echo "✓ Default input is BlackHole" ;;
             *) echo "::error::Default input is '$DEFAULT_IN', expected BlackHole"; exit 1 ;;
           esac
+
+      # Two probes for the next layer of "make the paravirt audio device
+      # invisible to cpal" investigation. Both are best-effort; the step
+      # never fails the job — its purpose is data + a long shot at a fix.
+      #
+      # (A1) SIP / SSV probe.  Run 26276740988 confirmed AppleVirtIOSound
+      # lives in /System/Library/Audio/Plug-Ins/HAL/, which is the
+      # cryptographically-sealed system volume. We try `sudo mv` once just
+      # to record the exact failure mode and rule it out conclusively for
+      # future readers — expect "Read-only file system" or
+      # "Operation not permitted".
+      #
+      # (A2) kAudioDevicePropertyIsHidden attempt.  CoreAudio exposes a
+      # 'hidn' property on AudioDevice objects; if cpal (or rather, its
+      # iteration over kAudioHardwarePropertyDevices) honors this flag,
+      # marking Apple Virtual Sound Device hidden at the CoreAudio layer
+      # would suppress it from enumeration entirely. The property is
+      # commonly set by plug-ins themselves, not by clients, so
+      # AudioObjectIsPropertySettable likely returns false — but the cost
+      # of the experiment is one swiftc compile + one binary exec, and
+      # the diagnostic output (settability + status code + read-back
+      # value) is exactly what we need to decide on Variant A3
+      # (DYLD_INSERT_LIBRARIES shim) next.
+      - name: Probe SIP + try to hide AppleVirtIOSound device (A1 + A2)
+        run: |
+          set -uo pipefail
+          # Note: NOT `set -e` here — every probe is informational, and a
+          # non-zero from any one of them shouldn't kill the workflow.
+
+          # ── A1: csrutil + SSV mount flags + try the mv ──
+          echo "::group::A1 — csrutil status"
+          csrutil status 2>&1 || true
+          echo "::endgroup::"
+
+          echo "::group::A1 — /System mount options"
+          mount | grep -E "^/dev/.* on /System" 2>&1 || mount | head -5
+          echo "::endgroup::"
+
+          echo "::group::A1 — extended attrs on AppleVirtIOSound.driver"
+          # -O prints file flags (schg/restricted/etc). Restricted flag
+          # is the SIP marker; sealed status is the SSV marker.
+          ls -laO@ /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver 2>&1 || true
+          echo "::endgroup::"
+
+          echo "::group::A1 — attempt sudo mv (expected to fail on SSV)"
+          sudo mv /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver \
+                  /tmp/AppleVirtIOSound.driver.bak 2>&1 || true
+          if [ -d /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver ]; then
+            echo "→ AppleVirtIOSound.driver STILL present after mv attempt (SSV held, as expected)"
+          else
+            echo "→ AppleVirtIOSound.driver GONE after mv (unexpected — would be a real fix!)"
+          fi
+          echo "::endgroup::"
+
+          # ── A2: build + run Swift CLI that walks devices and tries to
+          # set kAudioDevicePropertyIsHidden on the paravirt ones ──
+          cat > /tmp/hide_paravirt_audio.swift <<'SWIFT_EOF'
+          import CoreAudio
+          import Foundation
+
+          func deviceName(_ id: AudioDeviceID) -> String {
+              var addr = AudioObjectPropertyAddress(
+                  mSelector: kAudioObjectPropertyName,
+                  mScope: kAudioObjectPropertyScopeGlobal,
+                  mElement: kAudioObjectPropertyElementMain)
+              var cfName: Unmanaged<CFString>?
+              var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+              let st = withUnsafeMutablePointer(to: &cfName) { ptr -> OSStatus in
+                  AudioObjectGetPropertyData(id, &addr, 0, nil, &size, ptr)
+              }
+              if st != noErr { return "<err \(st)>" }
+              return (cfName?.takeRetainedValue() as String?) ?? "<nil>"
+          }
+
+          // Enumerate all devices via kAudioHardwarePropertyDevices.
+          var devAddr = AudioObjectPropertyAddress(
+              mSelector: kAudioHardwarePropertyDevices,
+              mScope: kAudioObjectPropertyScopeGlobal,
+              mElement: kAudioObjectPropertyElementMain)
+          var devSize: UInt32 = 0
+          let sysObj = AudioObjectID(kAudioObjectSystemObject)
+          guard AudioObjectGetPropertyDataSize(sysObj, &devAddr, 0, nil, &devSize) == noErr else {
+              print("ERR: AudioObjectGetPropertyDataSize(Devices) failed"); exit(1)
+          }
+          let count = Int(devSize) / MemoryLayout<AudioDeviceID>.size
+          var devices = [AudioDeviceID](repeating: 0, count: count)
+          AudioObjectGetPropertyData(sysObj, &devAddr, 0, nil, &devSize, &devices)
+          print("Enumerated \(count) audio device(s):")
+
+          for d in devices {
+              let n = deviceName(d)
+              let isParavirt = n.contains("Apple Virtual Sound Device") || n == "Null Audio Device"
+              print("  • id=\(d) name='\(n)'\(isParavirt ? "  ← TARGET" : "")")
+              guard isParavirt else { continue }
+
+              var hidAddr = AudioObjectPropertyAddress(
+                  mSelector: kAudioDevicePropertyIsHidden,
+                  mScope: kAudioObjectPropertyScopeGlobal,
+                  mElement: kAudioObjectPropertyElementMain)
+
+              // Check existence + settability.
+              let hasProp = AudioObjectHasProperty(d, &hidAddr)
+              var settable: DarwinBoolean = false
+              let stSet = AudioObjectIsPropertySettable(d, &hidAddr, &settable)
+              print("      kAudioDevicePropertyIsHidden: present=\(hasProp), settable=\(settable.boolValue) (status=\(stSet))")
+
+              // Read current value, if any.
+              var got: UInt32 = 0xFFFF_FFFF
+              var sz = UInt32(MemoryLayout<UInt32>.size)
+              let stRead = AudioObjectGetPropertyData(d, &hidAddr, 0, nil, &sz, &got)
+              print("      current value (status=\(stRead)) = \(got)")
+
+              // Try the write regardless of `settable` — sometimes
+              // CoreAudio reports false but the write actually lands.
+              var hidden: UInt32 = 1
+              let stWrite = AudioObjectSetPropertyData(d, &hidAddr, 0, nil,
+                                UInt32(MemoryLayout<UInt32>.size), &hidden)
+              print("      SetPropertyData(IsHidden=1) → status=\(stWrite)")
+
+              // Read back to see if the value stuck.
+              var after: UInt32 = 0xFFFF_FFFF
+              var sz2 = UInt32(MemoryLayout<UInt32>.size)
+              AudioObjectGetPropertyData(d, &hidAddr, 0, nil, &sz2, &after)
+              print("      read-back IsHidden = \(after)")
+          }
+          SWIFT_EOF
+
+          echo "::group::A2 — compile hide_paravirt_audio (swiftc)"
+          swiftc /tmp/hide_paravirt_audio.swift -o /tmp/hide_paravirt_audio \
+                 -framework CoreAudio 2>&1 \
+            && echo "(compiled ok)" \
+            || { echo "(swiftc failed — skipping A2)"; exit 0; }
+          echo "::endgroup::"
+
+          echo "::group::A2 — run hide_paravirt_audio"
+          /tmp/hide_paravirt_audio 2>&1 || true
+          echo "::endgroup::"
+
+          echo "::group::A2 — system_profiler after A2 attempt"
+          system_profiler SPAudioDataType 2>&1 | head -120
+          echo "::endgroup::"
 
       - name: Verify MetaForge access
         env:
@@ -397,7 +547,13 @@ jobs:
 
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
-        timeout-minutes: 40
+        # Temporarily 10 (was 40) while iterating on the rust_audio /
+        # coreaudiod hang diagnostics on macos-14 paravirt. The freeze is
+        # deterministic and shows up in Player.log + sample-*.txt within
+        # ~30s of bootstrap; sitting through the remaining 39 minutes
+        # just to confirm "still hung" costs ~10× iteration time. Restore
+        # to 40 once the platform is green.
+        timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           # Perf capture disabled (2026-05-22) while diagnosing the macos-14
