@@ -15,15 +15,15 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     {
         Views.SplashScreen.WaitForGone();
 
-        // Case 1: already in-world (previous test left us here). Sign out via profile menu.
-        // NOTE: we must check the in-world signal (SidebarView) BEFORE checking
-        // AuthenticationMainScreen. The auth screen is an MVC view whose GameObject prefab
-        // 'Authentication.MainScreen(Clone)' persists in the scene tree even after the player
-        // jumps into world, so AuthenticationMainScreen.IsPresent() returns true in both
-        // states. SidebarView, on the other hand, only exists when the player is in-world.
-        if (!Views.MainMenu.IsPresent())
+        // Detecting "are we on the auth screen or actually in-world?" is tricky on this
+        // build: BOTH Authentication.MainScreen(Clone) AND SidebarView are MVC view prefabs
+        // that get instantiated by the bootstrap and persist in the scene tree across state
+        // transitions. Their bare GameObject existence (what IsPresent() probes) returns
+        // true in either state. The reliable discriminator is the visible sub-screen: one
+        // of {JumpIntoWorldButton, LoginSelection.Screen, Verification.OTP.Screen} is
+        // findable iff the auth UI is actively showing.
+        if (IsOnAuthScreen())
         {
-            // Case 2: at the auth screen (not in-world).
             EnsureLoggedOutFromAuthScreen();
             return;
         }
@@ -53,6 +53,16 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         Views.AuthenticationMainScreen.WaitFor(60);
         EnsureLoggedOutFromAuthScreen();
     }
+
+    /// <summary>
+    /// True iff one of the auth screen's three visible sub-states is currently showing.
+    /// See the comment in <see cref="EnsureInWorld"/> for why we can't use
+    /// <c>AuthenticationMainScreen.IsPresent()</c> or <c>MainMenu.IsPresent()</c> directly.
+    /// </summary>
+    private bool IsOnAuthScreen() =>
+        Views.AuthenticationMainScreen.JumpIntoWorldButton.IsPresent() ||
+        Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent() ||
+        Views.OtpVerificationScreen.IsPresent();
 
     /// <summary>
     /// When the auth screen is showing, ensure the LoginSelection (logged-out) sub-screen
