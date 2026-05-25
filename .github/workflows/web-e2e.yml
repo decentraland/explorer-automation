@@ -20,6 +20,7 @@ on:
         options:
           - all
           - auth
+          - auth-onchain
           - landing
           - marketplace
           - marketplace-onchain
@@ -102,6 +103,8 @@ jobs:
           MARKETPLACE_TEST_ITEM_ID=${{ vars.MARKETPLACE_TEST_ITEM_ID || secrets.MARKETPLACE_TEST_ITEM_ID }}
           MARKETPLACE_TEST_ITEM_TYPE=${{ vars.MARKETPLACE_TEST_ITEM_TYPE || secrets.MARKETPLACE_TEST_ITEM_TYPE }}
           MARKETPLACE_TEST_LISTING_PRICE_MANA=${{ vars.MARKETPLACE_TEST_LISTING_PRICE_MANA || secrets.MARKETPLACE_TEST_LISTING_PRICE_MANA }}
+          MARKETPLACE_TEST_TIP_AMOUNT_MANA=${{ vars.MARKETPLACE_TEST_TIP_AMOUNT_MANA || secrets.MARKETPLACE_TEST_TIP_AMOUNT_MANA }}
+          MARKETPLACE_TEST_GIFT_TOKEN_ID=${{ vars.MARKETPLACE_TEST_GIFT_TOKEN_ID || secrets.MARKETPLACE_TEST_GIFT_TOKEN_ID }}
           EOF
 
       - name: Compute Playwright args
@@ -110,9 +113,10 @@ jobs:
           case "${{ inputs.suite }}" in
             all)                  echo "pw=--project=web" ;;
             auth)                 echo "pw=--project=web --grep @auth" ;;
+            auth-onchain)         echo "pw=--project=auth-onchain --workers=1" ;;
             landing)              echo "pw=--project=web --grep @landing" ;;
             marketplace)          echo "pw=--project=marketplace" ;;
-            marketplace-onchain)  echo "pw=--project=marketplace-onchain" ;;
+            marketplace-onchain)  echo "pw=--project=marketplace-onchain --workers=1" ;;
             cross)                echo "pw=--project=cross" ;;
           esac >> "$GITHUB_OUTPUT"
 

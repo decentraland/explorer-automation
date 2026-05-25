@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 import { generatePrivateKey } from 'viem/accounts'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
@@ -27,7 +27,6 @@ import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
  */
 
 const REDIRECT_TO = `${getBaseUrl()}/`
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 walletTest('@web @auth recurrent user can log in with web3 wallet', async ({ page, ethereumWalletMock }) => {
   const privateKey = generatePrivateKey()

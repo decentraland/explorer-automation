@@ -1,5 +1,5 @@
 import { generatePrivateKey } from 'viem/accounts'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, rebindWalletMock, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
@@ -29,7 +29,7 @@ test('@web @auth web3 session persists across marketplace, builder, and account'
   ethereumWalletMock
 }) => {
   const privateKey = generatePrivateKey()
-  const username = `QA${randomBytes(3).toString('hex')}`
+  const username = uniqueUsername()
 
   // Phase 1 — register the wallet and reach the homepage.
   const unmockProfile = await mockNoProfileOnCatalysts(page)

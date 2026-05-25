@@ -39,11 +39,13 @@ export interface RequestOutcome {
  * Resolves the auth-api host for the environment under test. Resolution rule:
  *
  *  1. `AUTH_SERVER_URL` env var — explicit override, used verbatim (trailing
- *     slash stripped).
+ *     slash stripped). Set this when you want the spec to talk to a different
+ *     auth-api than the one paired with `BASE_URL`'s host (e.g. running
+ *     against the .org dapp but using zone's auth-api so the dapp picks up
+ *     testnet contracts — see `dappEnvQuery()` below).
  *  2. Otherwise derive `auth-api.<host>` from `WEB_BASE_URL` (or `BASE_URL`
  *     as a fallback). So `WEB_BASE_URL=https://decentraland.today` →
- *     `https://auth-api.decentraland.today`. Each dapp host has its own
- *     paired auth-api.
+ *     `https://auth-api.decentraland.today`.
  *  3. Final fallback: `https://auth-api.decentraland.org`.
  *
  * Reads env vars at call time so tests that override env vars in `beforeAll`
@@ -56,6 +58,36 @@ export function authServerUrl(): string {
   const baseUrl = optionalEnv('WEB_BASE_URL') ?? optionalEnv('BASE_URL') ?? 'https://decentraland.org'
   const host = new URL(baseUrl).host
   return `https://auth-api.${host}`
+}
+
+/**
+ * The `?env=…` query value the dapp expects so it boots into the testnet /
+ * staging contract list matching the spec's auth-api. Derived from the
+ * resolved `authServerUrl()` host: a spec talking to `auth-api.decentraland.zone`
+ * must drive the dapp with `?env=dev` so the dapp talks to the same zone
+ * services (transactions-api, marketplace-api, etc.). `''` means no query
+ * string is appended.
+ *
+ * The user knob is therefore just `AUTH_SERVER_URL` (or `BASE_URL`); this
+ * function derives the matching dapp env so the two stay consistent.
+ */
+export function dappEnvQuery(): string {
+  const host = new URL(authServerUrl()).host
+  if (host.endsWith('decentraland.zone')) return 'dev'
+  if (host.endsWith('decentraland.today')) return 'today'
+  return ''
+}
+
+/**
+ * Sibling-service URL on the same host as `authServerUrl()` — e.g.
+ * `authPairedServiceUrl('transactions-api')` returns the transactions-api
+ * origin for whatever env the auth-api is on. Keeps the two in lockstep
+ * without each call site re-doing the host swap.
+ */
+export function authPairedServiceUrl(subdomain: string): string {
+  const url = new URL(authServerUrl())
+  url.host = url.host.replace(/^auth-api\./, `${subdomain}.`)
+  return url.origin
 }
 
 /**
@@ -103,4 +135,17 @@ export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POL
     return (await res.json()) as RequestOutcome
   }
   throw new Error(`Polling for request ${requestId} timed out after ${timeoutMs}ms`)
+}
+
+/**
+ * Extracts the tx hash from an `eth_sendTransaction` outcome, throwing if
+ * the wallet returned an error rather than a signature. Helper exists so
+ * on-chain specs don't need a local `if (!result) throw` (which Playwright's
+ * `no-conditional-in-test` rule flags) and so the error formatting stays
+ * consistent across specs.
+ */
+export function requireTxHash(outcome: RequestOutcome): `0x${string}` {
+  const hash = outcome.result
+  if (!hash) throw new Error(`expected tx hash from auth outcome (got error: ${JSON.stringify(outcome.error)})`)
+  return hash as `0x${string}`
 }
