@@ -164,6 +164,29 @@ Use the project skills:
 
 Both skills live at `../.claude/skills/` and codify the full conventions (region layout, naming, lifecycle, locator discovery via the `alttester-explorer` agent).
 
+## New test implementation
+
+When authoring a brand-new test you need a live Explorer build instrumented for AltTester and a connected AltTester Desktop to explore the GameObject hierarchy and discover locators.
+
+1. **Launch the Explorer locally, prepared for AltTester:**
+   ```bash
+   metaforge explorer run -- --alttester
+   ```
+   (add `--clear` if you want a logged-out launch, e.g. for an Auth test).
+
+2. **Open AltTester Desktop manually and activate it** with the shared license. (The license value is not included here — get it from the team's secret store.)
+
+3. **Connect AltTester Desktop to the running Explorer build** manually, and wait for the connection to establish.
+
+4. **Implement the new test** using the GameObjects visible in the AltTester Desktop hierarchy to discover element IDs, names, and paths. Use the `view-writer` and `test-writer` skills (see [Adding tests / views](#adding-tests--views)).
+
+5. **Switch to a terminal and run the suite** (AltTester Desktop supplies the license while it's running, so no terminal license step is needed):
+   ```bash
+   metaforge explorer test dev --filter "Name=YourNewTest"
+   ```
+
+6. **Remember to deactivate the license in AltTester Desktop** after closing it.
+
 ## Visual Regression Testing
 
 Pixel-diff tests run against custom SDK7 scenes hosted out of [`scenes/`](scenes). The host server stays up across many test invocations; each fixture's scene gets hot-reloaded into it on demand.
