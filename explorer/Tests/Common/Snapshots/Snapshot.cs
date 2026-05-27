@@ -19,14 +19,23 @@ public static class Snapshot
 {
     private const string ENV_VAR = "SNAPSHOT_MODE";
 
+    // Expected framebuffer size is platform-dependent. macOS chassis ship with an attached
+    // 1920x1080 display, so `--resolution 1920x1080` lands exactly. The Windows GitHub-hosted
+    // runner (Azure NCasT4_v3) has no monitor attached; DXGI denies ExclusiveFullScreen mode
+    // switch (HRESULT 0x887A0022) and Unity falls back to FullScreenWindow at the desktop
+    // default of 1024x768. We accept the native runner resolution per-OS and only fail when
+    // it drifts away from that expectation (which would mean *something else* broke).
+    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1024 : 1920;
+    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 768 : 1080;
+
     // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
     // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
     // runs from churning visually-identical files (and the surrounding commit/PR diff).
-    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.5;
+    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.3;
 
     public static void AssertMatchesBaseline(
         string name = "default",
-        double tolerance = 0.5,
+        double tolerance = 0.3,
         SnapshotMode? mode = null,
         SKRect? clip = null,
         SnapshotOptions options = null)
@@ -128,6 +137,7 @@ public static class Snapshot
     private static SKBitmap CaptureAndClip(SKRect? clip, SnapshotOptions options)
     {
         var bmp = ScreenshotCapture.CaptureBitmap(options.CaptureQuality);
+        AssertFrameSize(bmp);
         if (clip == null) return bmp;
 
         try
@@ -185,6 +195,25 @@ public static class Snapshot
                 return true;
             }
         }
+    }
+
+    private static void AssertFrameSize(SKBitmap bmp)
+    {
+        if (bmp.Width == EXPECTED_FRAME_WIDTH && bmp.Height == EXPECTED_FRAME_HEIGHT) return;
+
+        // Attach the wrong-size frame so the failure report shows what was actually rendered —
+        // useful for telling apart a headless-desktop fallback from Unity respecting a bogus flag.
+        var wrongSizePng = ScreenshotCapture.EncodePng(bmp);
+        Reporter.AttachPng("frame.wrong-size", wrongSizePng);
+
+        var actualW = bmp.Width;
+        var actualH = bmp.Height;
+        bmp.Dispose();
+        Assert.Fail(
+            $"Captured frame is {actualW}x{actualH}, expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}. " +
+            "Per-OS expectations: macOS=1920x1080 (chassis-attached display honors --resolution); " +
+            "Windows=1024x768 (headless WDDM falls back to desktop default — DXGI denies ExclusiveFullScreen). " +
+            "A drift from these values means something other than the known headless-fallback path broke.");
     }
 
     private static SnapshotMode ResolveMode(SnapshotMode? perCallMode)

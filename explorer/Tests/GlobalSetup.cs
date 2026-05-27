@@ -1,3 +1,5 @@
+using AltTester.AltTesterSDK.Driver.Logging;
+
 namespace ExplorerAutomation.Tests;
 
 [SetUpFixture]
@@ -31,6 +33,33 @@ public class GlobalSetup
             enableLogging: false,
             connectTimeout: 5
         );
+
+        // The SDK default for the test-side recvall ceiling is 60s. Any
+        // WaitFor*/FindObject command whose Player-side `timeout` exceeds that
+        // hits CommandResponseTimeoutException before the Unity-side wait
+        // resolves — which is exactly what we saw on GH-hosted macos-14 paravirt
+        // (SplashScreen.WaitForGone(180) needs ~90s to succeed; the 60s SDK cap
+        // fired first). 300s comfortably covers every wait we hand out in
+        // EnsureInWorld (Splash 180s, Loading 300s, MainMenu 240s) and leaves
+        // headroom for the worst paravirt-VM cold-start without masking a real
+        // hang — anything past 5 min is a genuine failure worth surfacing.
+        CommonStuff.AltDriver.SetCommandResponseTimeout(300);
+
+        // The Unity-side AltTester server echoes every command/response into
+        // Debug.Log → Player.log; at default Debug level WaitFor polling produces
+        // multi-KB JSON+stacktrace per iteration and that's ~64% of Player.log
+        // bytes on a full InWorld run. Default to Warn for both interactive and
+        // CI runs; opt back into Debug via ALT_VERBOSE_LOGS=true when triaging
+        // an AltTester-side issue. AltLogger.File keeps its own level (Debug)
+        // and writes to AltTester-Server.log next to Player.log — full command
+        // history stays available there.
+        var verbose = string.Equals(
+            Environment.GetEnvironmentVariable("ALT_VERBOSE_LOGS"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        var unityLogLevel = verbose ? AltLogLevel.Debug : AltLogLevel.Warn;
+        CommonStuff.AltDriver.SetServerLogging(AltLogger.Unity, unityLogLevel);
+        Reporter.Log($"AltTester server Unity log level: {unityLogLevel}" + (verbose ? " (ALT_VERBOSE_LOGS=true)" : ""));
 
         Reporter.Log("Successfully connected to the game.");
     }
