@@ -19,14 +19,24 @@ public static class Snapshot
 {
     private const string ENV_VAR = "SNAPSHOT_MODE";
 
+    // Canonical capture resolution.
+    // Mac: 960x540 — MetaForge v2.10.3+ default for Visual runs (16:9, matches Unity toon-shader
+    // test projects, sits in SRPTests' 512²→1024×576 range, ~200-350 KB PNGs).
+    // Windows: 1280x720 — the self-hosted GPU runner (Hyper-V vGPU on Tesla T4) can't honor a
+    // 960x540 back-buffer reliably; 720p is the smallest 16:9 Unity will open at on that host.
+    // Windows pipeline injects `--resolution 1280x720` into the metaforge CLI; both sides baseline
+    // independently (BaselineStore writes `.windows.png` / `.macos.png` suffixes).
+    private static readonly int EXPECTED_FRAME_WIDTH = OperatingSystem.IsWindows() ? 1280 : 960;
+    private static readonly int EXPECTED_FRAME_HEIGHT = OperatingSystem.IsWindows() ? 720 : 540;
+
     // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
     // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
     // runs from churning visually-identical files (and the surrounding commit/PR diff).
-    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.5;
+    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.3;
 
     public static void AssertMatchesBaseline(
         string name = "default",
-        double tolerance = 0.5,
+        double tolerance = 0.3,
         SnapshotMode? mode = null,
         SKRect? clip = null,
         SnapshotOptions options = null)
@@ -128,6 +138,7 @@ public static class Snapshot
     private static SKBitmap CaptureAndClip(SKRect? clip, SnapshotOptions options)
     {
         var bmp = ScreenshotCapture.CaptureBitmap(options.CaptureQuality);
+        AssertFrameSize(bmp);
         if (clip == null) return bmp;
 
         try
@@ -185,6 +196,24 @@ public static class Snapshot
                 return true;
             }
         }
+    }
+
+    private static void AssertFrameSize(SKBitmap bmp)
+    {
+        if (bmp.Width == EXPECTED_FRAME_WIDTH && bmp.Height == EXPECTED_FRAME_HEIGHT) return;
+
+        // Attach the wrong-size frame so the failure report shows what was actually rendered.
+        var wrongSizePng = ScreenshotCapture.EncodePng(bmp);
+        Reporter.AttachPng("frame.wrong-size", wrongSizePng);
+
+        var actualW = bmp.Width;
+        var actualH = bmp.Height;
+        bmp.Dispose();
+        Assert.Fail(
+            $"Captured frame is {actualW}x{actualH}, expected {EXPECTED_FRAME_WIDTH}x{EXPECTED_FRAME_HEIGHT}. " +
+            "Defaults are 960x540 on Mac and 1280x720 on Windows. " +
+            "A drift means either an older MetaForge is in use, or the wrong `--resolution WxH` " +
+            "was passed without bumping the baselines.");
     }
 
     private static SnapshotMode ResolveMode(SnapshotMode? perCallMode)

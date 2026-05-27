@@ -1,0 +1,832 @@
+name: Visual Suite (Windows)
+
+# Windows reusable counterpart to run-visual-suite.yml. Owns the entire
+# Windows-side mechanics of the visual regression suite on the self-hosted
+# GPU runner: install chassis (NVIDIA driver, VC++ redist, .NET, AltTester,
+# gh, MinGit, MetaForge, Node, allure, AWS CLI), test invocation, Allure
+# upload, optional baseline commit, per-platform PR comment.
+#
+# Mirror of the macOS reusable's `workflow_call` contract — callers
+# (manual-visual-tests.yml, generate-baselines.yml, _temp-bootstrap-*.yml)
+# pass the same inputs and don't need to know which OS they're targeting
+# beyond the file they call.
+#
+# Why a separate file instead of conditional steps in run-visual-suite.yml:
+# install-time divergence between macOS (bash / brew / dmg) and Windows
+# (PowerShell / Inno Setup / MSI) is too wide to share usefully. The C#
+# side is platform-agnostic — BaselineStore.cs already emits `.windows.png`
+# suffixes, so no test-code change is needed for per-OS baselines.
+#
+# Required secrets (caller passes via `secrets: inherit`):
+#   - ALTTESTER_LICENSE                        AltTester Pro license key
+#   - REPOS_READ_ONLY_TOKEN                    PAT — read on decentraland/MetaForge + decentraland/unity-explorer (baseline auto-commits use GITHUB_TOKEN)
+#   - DEV_EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
+#   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
+#   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
+#   - DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+#
+# Required vars on the caller's repo:
+#   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL   Public-facing prefix of the bucket
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: '"test" to validate against baselines, "record" to regenerate them, or "bootstrap" to only record baselines that are currently missing.'
+        type: string
+        required: false
+        default: test
+
+      filter:
+        description: 'NUnit filter passed to `mf explorer test --filter`. Empty falls back to "Category=Visual".'
+        type: string
+        required: false
+        default: ''
+
+      pr_number:
+        description: 'PR number on the *caller* repo, used for the S3 path and the result comment. Empty for non-PR runs.'
+        type: string
+        required: false
+        default: ''
+
+      build_url:
+        description: 'Direct URL to a Decentraland_windows64.zip Explorer build.'
+        type: string
+        required: true
+
+      tests_ref:
+        description: 'explorer-automation branch to use for tests/scenes/baselines. Empty falls back to main.'
+        type: string
+        required: false
+        default: ''
+
+      commit_sha:
+        description: 'Short SHA of the caller PR head, surfaced in the PR comment + S3 path. Defaults to the workflow run id when omitted.'
+        type: string
+        required: false
+        default: ''
+
+      branch_label:
+        description: 'Branch name shown in the PR comment. Defaults to the tests_ref when omitted.'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Serialize Windows visual runs on the shared self-hosted GPU runner. Don't
+# cancel in-flight: persistent runner means an aborted job can leak
+# Decentraland.exe / AltTesterDesktop.exe processes that corrupt the next
+# run's Player.log. Let queued jobs wait for cleanup to finish.
+concurrency:
+  group: run-visual-suite-windows
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Visual suite (${{ inputs.mode }} / windows)
+    runs-on: ["win-gpu-t4-onboarding-new-image"]
+    timeout-minutes: 60
+
+    env:
+      TARGET_OS: windows
+      MODE: ${{ inputs.mode }}
+      PR_NUMBER: ${{ inputs.pr_number }}
+      PR_REPO: ${{ github.repository }}
+      BUILD_URL: ${{ inputs.build_url }}
+      TESTS_REF: ${{ inputs.tests_ref }}
+      COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || format('run-{0}', github.run_id) }}
+      BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || 'main') }}
+      TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=Visual' }}
+      PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      # Default Warn silences ~30 MB of AltTester polling chatter from Player.log.
+      # AltTester-Server.log still keeps full Debug command history.
+      ALT_VERBOSE_LOGS: 'false'
+
+    steps:
+      # Must run BEFORE actions/checkout: without git on PATH the action falls
+      # back to the GitHub REST API (zip extraction), leaving the workspace
+      # without a .git dir. The baseline-commit step downstream then has no
+      # repo to commit/push from.
+      - name: Install Git for Windows (MinGit)
+        shell: powershell
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (Get-Command git -ErrorAction SilentlyContinue) {
+            Write-Host "git already on PATH: $(git --version) - skipping install."
+            return
+          }
+          $dest = Join-Path $env:USERPROFILE "git-mingit"
+          $cached = $null
+          if (Test-Path $dest) {
+            $cached = Get-ChildItem -Path $dest -Recurse -Filter "git.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($cached) {
+            $binDir = Split-Path -Parent $cached.FullName
+            Write-Host "git cached on disk: $($cached.FullName) - reusing."
+            "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$binDir;$env:PATH"
+            & $cached.FullName --version
+            return
+          }
+          $tag = "v2.54.0.windows.1"
+          $version = "2.54.0"
+          $url = "https://github.com/git-for-windows/git/releases/download/$tag/MinGit-$version-64-bit.zip"
+          $zip = Join-Path $env:TEMP "mingit.zip"
+          Write-Host "Downloading MinGit $version from $url"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $dest
+          $bin = Get-ChildItem -Path $dest -Recurse -Filter "git.exe" | Select-Object -First 1
+          if (-not $bin) { throw "git.exe not found in extracted MinGit zip" }
+          $binDir = Split-Path -Parent $bin.FullName
+          "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$binDir;$env:PATH"
+          & $bin.FullName --version
+
+      # Always check out the tip of tests_ref, not github.sha. In the
+      # record->validate bootstrap flow the record-job pushes a baseline
+      # commit onto the branch; the validate-job that runs after must see
+      # that commit, otherwise it falls back to "Snapshot baseline missing"
+      # on every fixture. github.sha is frozen at workflow-trigger time and
+      # would miss the auto-commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tests_ref }}
+
+      - name: Validate inputs
+        shell: powershell
+        run: |
+          if (@('test','record','bootstrap') -notcontains $env:MODE) {
+            Write-Error "Unknown mode '$env:MODE'. Expected 'test', 'record', or 'bootstrap'."
+            exit 1
+          }
+
+      - name: Compute identifiers
+        id: ids
+        shell: powershell
+        run: |
+          # Mac reusable's S3 path template, with TARGET_OS=windows baked in.
+          # Non-PR runs land under `manual-<run_id>` so successive manual
+          # dispatches don't clobber each other.
+          $repoSlug = $env:PR_REPO -replace '/','-'
+          if ($env:PR_NUMBER) { $prSegment = $env:PR_NUMBER } else { $prSegment = "manual-$($env:GITHUB_RUN_ID)" }
+          $s3Path = "@dcl/$repoSlug/visual-regression/$($env:MODE)/$($env:TARGET_OS)/$prSegment/$($env:COMMIT_SHA)"
+          $reportUrl = "$($env:PUBLIC_URL_PREFIX)/$s3Path/index.html"
+          "s3_path=$s3Path" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "report_url=$reportUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # ── GPU diagnostics (never fails; surfaces hardware state in logs) ──
+      # Driver-model + Vulkan ICD probe is the early-warning canary: if the
+      # image ever ships a TCC-mode T4 or loses Vulkan ICD registration,
+      # later steps fail at Unity GfxDevice init with confusing symptoms.
+      # This step makes the cause obvious in the log.
+      - name: GPU diagnostics
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          Write-Host "=== Video Controllers ==="
+          Get-WmiObject Win32_VideoController | Format-List Name, DriverVersion, Status, AdapterRAM, VideoProcessor
+          Write-Host "=== nvidia-smi (basic) ==="
+          try { nvidia-smi } catch { Write-Host "nvidia-smi not on PATH" }
+          Write-Host "=== nvidia-smi driver model (TCC vs WDDM) ==="
+          try { nvidia-smi --query-gpu=name,driver_model.current,driver_model.pending --format=csv } catch { Write-Host "driver_model query failed: $_" }
+          Write-Host "=== Vulkan ICDs in registry ==="
+          $icdPaths = @(
+            "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers",
+            "HKLM:\SOFTWARE\WOW6432Node\Khronos\Vulkan\Drivers"
+          )
+          foreach ($p in $icdPaths) {
+            Write-Host "--- $p ---"
+            if (Test-Path $p) { Get-ItemProperty -Path $p | Format-List } else { Write-Host "(missing)" }
+          }
+          Write-Host "=== PnP devices with NVIDIA vendor ID (VEN_10DE) ==="
+          Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like '*VEN_10DE*' } |
+            Select-Object Status, Problem, Class, FriendlyName, InstanceId |
+            Format-List
+
+      - name: Install NVIDIA driver (idempotent)
+        shell: powershell
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bound = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like '*VEN_10DE*' -and $_.Status -eq 'OK' }
+          if ($bound) {
+            Write-Host "NVIDIA device already bound; skipping install."
+            try { nvidia-smi } catch { Write-Host "(nvidia-smi not on PATH for this shell yet)" }
+            return
+          }
+          # Azure-redistributed GRID vGPU18 (572.83) for NCasT4_v3 on Win10/11/Server 2022.
+          $url = "https://download.microsoft.com/download/5ccc0984-e1b5-494d-8211-43b19ece6b9b/572.83_grid_win10_win11_server2022_dch_64bit_international_azure_swl.exe"
+          $installer = Join-Path $env:TEMP "nvidia-grid-572.83.exe"
+          Write-Host "Downloading GRID 572.83 from $url"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $installer
+          Write-Host "Installing silently"
+          $proc = Start-Process -FilePath $installer -ArgumentList "-s","-clean","-noreboot","-noeula" -Wait -PassThru
+          Write-Host "Installer exit code: $($proc.ExitCode)"
+
+          # GitHub's runner sandbox silently drops Restart-Computer. Force PnP
+          # re-evaluation instead: scan-devices broadcasts WM_DEVICECHANGE; if
+          # that's not enough, disable/enable the VEN_10DE node to reset state.
+          Write-Host "Triggering PnP rescan to bind freshly-installed driver"
+          pnputil /scan-devices
+          Start-Sleep -Seconds 15
+
+          $stillFailed = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like '*VEN_10DE*' -and $_.Status -ne 'OK' }
+          if ($stillFailed) {
+            Write-Host "Device still not bound after scan-devices; toggling disable/enable"
+            foreach ($dev in $stillFailed) {
+              Write-Host "  Disable+Enable: $($dev.InstanceId)"
+              Disable-PnpDevice -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
+              Start-Sleep -Seconds 3
+              Enable-PnpDevice  -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
+            }
+            Start-Sleep -Seconds 10
+          }
+
+          # Refresh process PATH so nvidia-smi resolves later without restarting shell.
+          $machinePath = [System.Environment]::GetEnvironmentVariable("PATH","Machine")
+          $userPath    = [System.Environment]::GetEnvironmentVariable("PATH","User")
+          $env:PATH = "$machinePath;$userPath"
+
+      # Unity Player .exe links MSVC runtime (msvcp140.dll). Probe registry
+      # first — base image ships VC++ as a transitive dep, blind install
+      # has hung 25 minutes on already-installed runners.
+      - name: Ensure Visual C++ Redistributable
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+          $info = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+          if ($info -and $info.Installed -eq 1) {
+            Write-Host "VC++ Redistributable already installed (version $($info.Version), bld $($info.Bld)); skipping."
+            return
+          }
+          Write-Host "VC++ Redistributable not detected at $key - installing."
+          $url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          $installer = Join-Path $env:TEMP "vc_redist.x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/install","/quiet","/norestart" -Wait
+          Write-Host "Visual C++ Redistributable install completed."
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        timeout-minutes: 25
+        with:
+          dotnet-version: '10.0.x'
+
+      # AltTester Desktop zip ships an Inno Setup installer, NOT the Unity
+      # binary directly. Renaming and launching it with -batchmode flags
+      # caused the 90s "AltTester did not become ready" hang chased for days
+      # (2026-05-13). Real Unity binary after a proper install is ~666 KB
+      # x64; renamed-installer is 100+ MB x86. Detect both states and reinstall
+      # silently via /VERYSILENT when needed.
+      - name: Install AltTester Desktop
+        shell: powershell
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installDir = "C:\Program Files\AltTesterDesktop"
+          $target = Join-Path $installDir "AltTesterDesktop.exe"
+          # Pre-step probe. The runner is shared/persistent, so AltTester normally
+          # survives between jobs — when it doesn't, we want to know whether it
+          # disappeared cleanly (dir gone) or partially (exe present but
+          # UnityPlayer.dll missing, etc). Pair this with the post-cleanup probe
+          # at the bottom of the file: comparing run N's "post" line with run
+          # N+1's "pre" line localises who clobbered the install.
+          Write-Host "::group::AltTester install probe (pre-install)"
+          if (Test-Path $installDir) {
+            Write-Host ("installDir exists: {0}" -f $installDir)
+            Get-ChildItem -Path $installDir -ErrorAction SilentlyContinue |
+              Select-Object Name, Length, LastWriteTimeUtc |
+              Format-Table | Out-String | Write-Host
+            if (Test-Path $target) {
+              $info = Get-Item $target
+              Write-Host ("AltTesterDesktop.exe: {0:N1} MB, mtime(UTC)={1:o}" -f ($info.Length / 1MB), $info.LastWriteTimeUtc)
+            } else {
+              Write-Host "AltTesterDesktop.exe: MISSING"
+            }
+            $unityDll = Join-Path $installDir "UnityPlayer.dll"
+            Write-Host ("UnityPlayer.dll present: {0}" -f (Test-Path $unityDll))
+          } else {
+            Write-Host ("installDir DOES NOT exist: {0}" -f $installDir)
+          }
+          Write-Host "::endgroup::"
+          $needsInstall = $true
+          if ((Test-Path $target) -and (Test-Path (Join-Path $installDir "UnityPlayer.dll"))) {
+            $sizeMb = (Get-Item $target).Length / 1MB
+            if ($sizeMb -lt 5) {
+              Write-Host ("AltTester Desktop already installed at {0} (size {1:N1} MB) - skipping." -f $target, $sizeMb)
+              $needsInstall = $false
+            } else {
+              Write-Host ("Stale AltTesterDesktop.exe at $target is {0:N1} MB (looks like renamed Inno installer). Will reinstall." -f $sizeMb)
+            }
+          }
+          if ($needsInstall) {
+            if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue }
+            $url = "https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageWindows__2_3_1.zip"
+            $zip = Join-Path $env:RUNNER_TEMP "alttester.zip"
+            $extractDir = Join-Path $env:RUNNER_TEMP "alttester-installer"
+            # 159 MB zip on a Cloudflare edge that occasionally truncates mid-stream;
+            # Invoke-WebRequest swallowed the cut once (run 25941807072 -> "End of
+            # Central Directory record could not be found"). curl.exe with --retry
+            # handles transient resets and validates Content-Length before exiting 0.
+            if (Test-Path $zip) { Remove-Item $zip -Force }
+            Write-Host "Downloading $url"
+            $curlArgs = @(
+              '--fail', '--location', '--show-error', '--silent',
+              '--retry', '5', '--retry-delay', '5', '--retry-all-errors',
+              '--connect-timeout', '30', '--max-time', '600',
+              '--output', $zip, $url
+            )
+            & curl.exe @curlArgs
+            if ($LASTEXITCODE -ne 0) { throw "curl.exe failed downloading AltTester zip (exit $LASTEXITCODE)" }
+            $zipSize = (Get-Item $zip).Length
+            if ($zipSize -lt 50MB) { throw "Downloaded AltTester zip is suspiciously small ($zipSize bytes); aborting before Expand-Archive." }
+            Write-Host ("Downloaded {0:N1} MB" -f ($zipSize / 1MB))
+            if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+            Expand-Archive -Path $zip -DestinationPath $extractDir
+            $installer = Get-ChildItem -Path $extractDir -Recurse -Filter "AltTesterDesktop*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $installer) { throw "AltTester installer not found inside the Windows package zip" }
+            Write-Host "Running Inno Setup installer silently: $($installer.FullName)"
+            $proc = Start-Process -FilePath $installer.FullName `
+              -ArgumentList @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=`"$installDir`"") `
+              -Wait -PassThru
+            if ($proc.ExitCode -ne 0) { throw "AltTester installer exited with code $($proc.ExitCode)" }
+          }
+          if (-not (Test-Path $target)) { throw "Install completed but $target is missing" }
+          if (-not (Test-Path (Join-Path $installDir "UnityPlayer.dll"))) {
+            throw "Install completed but UnityPlayer.dll is missing under $installDir"
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($target)
+          $peOff = [BitConverter]::ToInt32($bytes, 60)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOff + 4)
+          $sz = (Get-Item $target).Length
+          Write-Host ("Verified AltTesterDesktop.exe: {0} bytes, machine=0x{1:X}" -f $sz, $machine)
+          if ($machine -ne 0x8664) { throw "AltTesterDesktop.exe is not x64 after install (machine=0x$($machine.ToString('X'))). Refusing to proceed." }
+          if ($sz -gt 5MB) { throw "AltTesterDesktop.exe is unexpectedly large ($sz bytes); installer probably didn't run." }
+
+      # gh CLI side-load. MetaForge's install.ps1 requires `gh`; winget
+      # fallback is unreliable on this image. Persistent runner caches under
+      # $USERPROFILE so subsequent runs skip the 36 MB download.
+      - name: Install GitHub CLI
+        shell: powershell
+        timeout-minutes: 15
+        run: |
+          $version = "2.63.0"
+          $dest = Join-Path $env:USERPROFILE "gh-cli"
+          if (Get-Command gh -ErrorAction SilentlyContinue) {
+            Write-Host "gh CLI already on PATH: $(gh --version | Select-Object -First 1) - skipping install."
+            return
+          }
+          $cached = $null
+          if (Test-Path $dest) {
+            $cached = Get-ChildItem -Path $dest -Recurse -Filter "gh.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($cached) {
+            $binDir = Split-Path -Parent $cached.FullName
+            Write-Host "gh CLI cached on disk: $($cached.FullName) - reusing."
+            "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$binDir;$env:PATH"
+            & $cached.FullName --version
+            return
+          }
+          $zip = Join-Path $env:TEMP "gh_cli.zip"
+          $url = "https://github.com/cli/cli/releases/download/v$version/gh_${version}_windows_amd64.zip"
+          Write-Host "Downloading gh CLI $version from $url"
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $dest
+          $bin = Get-ChildItem -Path $dest -Recurse -Filter "gh.exe" | Select-Object -First 1
+          if (-not $bin) { throw "gh.exe not found in extracted gh CLI release zip" }
+          $binDir = Split-Path -Parent $bin.FullName
+          "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$binDir;$env:PATH"
+          & $bin.FullName --version
+
+      # MinGit: `mf explorer test` clones explorer-automation internally;
+      # base image doesn't ship git. Portable build cached under USERPROFILE.
+      - name: Verify MetaForge access
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          if (-not $env:GH_TOKEN) {
+            Write-Error "Missing REPOS_READ_ONLY_TOKEN secret (PAT with read access to decentraland/MetaForge)"
+            exit 1
+          }
+          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
+
+      - name: Install MetaForge
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          iex (irm https://explorer-artifacts.decentraland.zone/tools/install.ps1)
+
+      - name: Discover mf on PATH
+        shell: powershell
+        run: |
+          $candidates = @(
+            "$env:LOCALAPPDATA\Decentraland\MetaForge\bin",
+            "$env:APPDATA\Decentraland\MetaForge\bin",
+            "$env:USERPROFILE\.metaforge\bin"
+          )
+          $found = $null
+          foreach ($c in $candidates) {
+            if (Test-Path (Join-Path $c "mf.exe")) { $found = $c; break }
+            if (Test-Path (Join-Path $c "mf.cmd")) { $found = $c; break }
+            if (Test-Path (Join-Path $c "mf"))     { $found = $c; break }
+          }
+          if (-not $found) {
+            Write-Host "Searched: $($candidates -join '; ')"
+            foreach ($c in $candidates) { if (Test-Path $c) { Get-ChildItem $c | Select-Object FullName } }
+            throw "mf binary not found in any expected location"
+          }
+          Write-Host "Found mf in: $found"
+          $found | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$found;$env:PATH"
+          mf --version
+
+      - name: Configure AltTester license
+        shell: powershell
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          if (-not $env:ALTTESTER_LICENSE) {
+            Write-Error "Missing ALTTESTER_LICENSE secret. Add it under repo Settings -> Secrets -> Actions."
+            exit 1
+          }
+          mf alttester set-license $env:ALTTESTER_LICENSE
+
+      # mf account login writes auth-token state into Explorer's userdata
+      # dir, which only exists after Explorer has been installed at least
+      # once. Pre-install up front so login doesn't trip on a missing path.
+      - name: Pre-install Explorer build
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          if (-not $env:BUILD_URL) { throw "BUILD_URL is empty" }
+          Write-Host "Installing Explorer from $env:BUILD_URL"
+          mf explorer install $env:BUILD_URL --non-interactive
+
+      - name: Provision metaforge test account
+        shell: powershell
+        run: |
+          $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
+          if (-not (Test-Path $userdata)) { New-Item -Path $userdata -ItemType Directory -Force | Out-Null }
+          $account = "ci-visual-$env:GITHUB_RUN_ID"
+          mf account create $account --env org
+          mf account login $account --env org
+          "MF_ACCOUNT=$account" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Clear Explorer Player.log
+        shell: powershell
+        run: |
+          $logPath = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          if (Test-Path $logPath) { Remove-Item $logPath -Force; Write-Host "Cleared $logPath" }
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install allure CLI
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            Write-Error "npm is not on PATH after setup-node - investigate."
+            exit 1
+          }
+          npm install -g allure --no-fund --no-audit --loglevel=error
+          $npmPrefix = (& npm config get prefix).Trim()
+          if (-not $npmPrefix -or -not (Test-Path $npmPrefix)) {
+            throw "Could not resolve npm prefix dir (got: '$npmPrefix')"
+          }
+          "$npmPrefix" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$npmPrefix;$env:PATH"
+          & (Join-Path $npmPrefix "allure.cmd") --version
+
+      - name: Run visual regression suite
+        timeout-minutes: 45
+        shell: powershell
+        env:
+          MF_LOG_LEVEL: info
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          if ($env:TESTS_REF) {
+            mf explorer server start --tests-ref $env:TESTS_REF
+          } else {
+            mf explorer server start
+          }
+
+          $recordArgs = @()
+          switch ($env:MODE) {
+            'record'    { $recordArgs = @('--record-baselines') }
+            'bootstrap' { $env:SNAPSHOT_MODE = 'MissingOnly' }
+          }
+
+          $testRefArgs = @()
+          if ($env:TESTS_REF) { $testRefArgs = @('--tests-ref', $env:TESTS_REF) }
+
+          $testExit = 0
+          # --resolution forces Unity Player's back-buffer to 1280x720 (16:9 HD)
+          # regardless of the host desktop mode. On this runner the desktop is
+          # 1024x768 (Microsoft Hyper-V Video, can't be switched — see commit
+          # history for the ChangeDisplaySettingsEx/VDD rabbit hole we walked
+          # away from). Capture is back-buffer based, so desktop res doesn't
+          # matter; Unity runs windowed/borderless here (DXGI fullscreen blocked
+          # on Hyper-V vGPU, see PR #13). Mac uses 960x540 by default.
+          mf explorer test $env:BUILD_URL `
+            --non-interactive `
+            @testRefArgs `
+            @recordArgs `
+            --filter "$env:TEST_FILTER" `
+            --resolution 1280x720 `
+            --report-type SingleFile `
+            --skip-allure-open
+          $testExit = $LASTEXITCODE
+
+          try { mf explorer server stop --non-interactive } catch { Write-Host "server stop: $_" }
+          exit $testExit
+
+      - name: Locate Allure report
+        id: report
+        if: always()
+        shell: powershell
+        run: |
+          $roots = @(
+            (Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge"),
+            (Join-Path $env:APPDATA "Decentraland\MetaForge")
+          )
+          $report = $null
+          foreach ($root in $roots) {
+            if (-not (Test-Path $root)) { continue }
+            $candidate = Get-ChildItem -Path $root -Recurse -Filter "index.html" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -like "*allure-report*" } |
+              Select-Object -First 1
+            if ($candidate) { $report = $candidate.FullName; break }
+          }
+          if (-not $report) {
+            # Hard fail: the report is the user-visible evidence of the run.
+            # Missing it means we can't show pass/fail diffs to reviewers.
+            Write-Error "Allure report not found under metaforge data dir. metaforge's report-gen step likely failed - check earlier logs."
+            exit 1
+          }
+          Write-Host "Report at: $report"
+          "report_path=$report" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # aws-actions/configure-aws-credentials only exports env vars; it does
+      # NOT install the AWS CLI. Side-load MSI; persistent runner caches it.
+      - name: Install AWS CLI
+        if: always() && steps.report.outputs.report_path != ''
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = "Stop"
+          $awsDir = "C:\Program Files\Amazon\AWSCLIV2"
+          if (Get-Command aws -ErrorAction SilentlyContinue) {
+            Write-Host "aws CLI already on PATH: $(aws --version) - skipping install."
+            return
+          }
+          if (Test-Path (Join-Path $awsDir "aws.exe")) {
+            Write-Host "aws CLI installed at $awsDir but not on PATH - prepending."
+            "$awsDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$awsDir;$env:PATH"
+            aws --version
+            return
+          }
+          $msi = Join-Path $env:TEMP "AWSCLIV2.msi"
+          Write-Host "Downloading AWS CLI v2 MSI..."
+          Invoke-WebRequest -UseBasicParsing -Uri "https://awscli.amazonaws.com/AWSCLIV2.msi" -OutFile $msi
+          Write-Host "Installing AWS CLI v2 silently..."
+          $proc = Start-Process msiexec.exe -ArgumentList "/i","`"$msi`"","/qn","/norestart" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "AWS CLI MSI installer exited with code $($proc.ExitCode)" }
+          if (-not (Test-Path (Join-Path $awsDir "aws.exe"))) {
+            throw "AWS CLI install completed but $awsDir\aws.exe is missing"
+          }
+          "$awsDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$awsDir;$env:PATH"
+          aws --version
+
+      - name: Configure AWS credentials
+        if: always() && steps.report.outputs.report_path != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+
+      - name: Upload Allure report to S3
+        id: s3
+        if: always() && steps.report.outputs.report_path != ''
+        shell: powershell
+        env:
+          BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+          S3_PATH: ${{ steps.ids.outputs.s3_path }}
+          REPORT: ${{ steps.report.outputs.report_path }}
+        run: |
+          $reportDir = Split-Path -Parent $env:REPORT
+          aws s3 sync "$reportDir" "s3://$env:BUCKET/$env:S3_PATH/" --acl public-read --cache-control "public, max-age=300"
+
+      - name: Upload Allure artifact (fallback if S3 fails)
+        if: always() && steps.report.outputs.report_path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-windows-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
+          path: ${{ steps.report.outputs.report_path }}
+          retention-days: 14
+
+      # ─── Baselines mode: commit regenerated PNGs back to the PR branch ───
+      # Fires when:
+      #   1. mode is `record` or `bootstrap`, AND
+      #   2. PR_NUMBER is non-empty (a PR exists to push to).
+      # Manual workflow_dispatch in record mode renders new baselines visible
+      # in the Allure report, but never commits — there is no "right" branch
+      # to push to without PR context, and an accidental push to main would
+      # be destructive.
+      #
+      # BaselineStore.cs emits .windows.png suffixes, so the `git add` glob
+      # naturally picks up only the Windows files even though the repo also
+      # holds the .macos.png siblings.
+      #
+      # Intentionally NOT gated on the report being present: the baselines
+      # are the load-bearing artifact, the report is the user-visible
+      # evidence. If `mf explorer test` recorded baselines but report-gen
+      # failed afterward, we'd lose the baselines if we skipped this step.
+      - name: Commit regenerated baselines
+        if: always() && (inputs.mode == 'record' || inputs.mode == 'bootstrap') && env.PR_NUMBER != ''
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Baselines are written by BaselineStore.cs into <project root>/Baselines/,
+          # where the project root is the dir containing Tests.csproj that mf resolves
+          # via AppContext.BaseDirectory. On a GH-hosted Windows runner mf doesn't create
+          # a managed clone under $LOCALAPPDATA, so tests run straight out of the
+          # actions/checkout workspace and the PNGs land there too.
+          $repoRoot = $env:GITHUB_WORKSPACE
+          if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
+            throw "GITHUB_WORKSPACE has no .git dir: $repoRoot. Expected actions/checkout to have run."
+          }
+          Set-Location $repoRoot
+
+          git add '**/Baselines/**/*.png' 2>$null
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "No baseline changes to commit."
+            exit 0
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          $msg = "chore(baselines): regenerate via /generate-baselines`n`nTriggered by PR #$env:PR_NUMBER on $env:PR_REPO.`nRecorded against build $env:COMMIT_SHA."
+          git commit -m $msg
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed (exit $LASTEXITCODE)" }
+
+          git push origin "HEAD:$env:TESTS_REF"
+          if ($LASTEXITCODE -ne 0) { throw "git push failed (exit $LASTEXITCODE)" }
+
+      - name: Find existing PR comment
+        if: always() && env.PR_NUMBER != ''
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          repository: ${{ env.PR_REPO }}
+          issue-number: ${{ env.PR_NUMBER }}
+          comment-author: 'github-actions[bot]'
+          body-includes: ${{ format('## {0} (windows)', (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests') }}
+
+      - name: Comment results on PR
+        if: always() && env.PR_NUMBER != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          repository: ${{ env.PR_REPO }}
+          issue-number: ${{ env.PR_NUMBER }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            ## ${{ (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests' }} (windows)
+
+            ${{ job.status == 'success' && ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**') }}
+
+            | | |
+            |---|---|
+            | Platform | `windows` |
+            | Mode | `${{ inputs.mode }}` |
+            | Commit | `${{ env.COMMIT_SHA }}` |
+            | Branch | `${{ env.BRANCH_LABEL }}` |
+            | Tests ref | `${{ env.TESTS_REF || 'main' }}` |
+            | Filter | `${{ env.TEST_FILTER }}` |
+            | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
+            | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+            <sub>Self-hosted `win-gpu-t4-onboarding-new-image` · this comment is updated on every run.</sub>
+
+      - name: Upload Explorer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-log-windows-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ~/AppData/LocalLow/Decentraland/Explorer/Player.log
+            ~/AppData/LocalLow/Decentraland/Explorer/AltTester-Server.log
+            ~/AppData/Local/Temp/Decentraland/Explorer/Crashes/**
+
+      # ── Cleanup is mandatory on a persistent self-hosted runner. Every step ──
+      # ── runs unconditionally so a single failure here doesn't mask another. ──
+      #
+      # `mf alttester deactivate` invokes AltTesterDesktop.exe in batchmode
+      # (a Unity Player build). Empirically hangs on this runner even with the
+      # GRID 572.83 WDDM driver — wrap in a 60s background-job timeout so a
+      # hang here never starves `mf account remove` below.
+      - name: Cleanup - stop MetaForge state
+        if: always()
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          try { mf explorer server stop --non-interactive } catch { Write-Host "server stop: $_" }
+
+          $driverModel = $null
+          try {
+            $driverModel = (nvidia-smi --query-gpu=driver_model.current --format=csv,noheader 2>$null | Select-Object -First 1).Trim()
+          } catch { }
+
+          if ($driverModel -eq "WDDM") {
+            Write-Host "GPU driver model = WDDM; attempting mf alttester deactivate (60s hard timeout)..."
+            $job = Start-Job -ScriptBlock { mf alttester deactivate --non-interactive 2>&1 }
+            if (Wait-Job $job -Timeout 60) {
+              Receive-Job $job | ForEach-Object { Write-Host $_ }
+              Write-Host "alttester deactivate completed."
+            } else {
+              Write-Host "::warning::alttester deactivate timed out (>60s) - killing AltTesterDesktop.exe and continuing."
+              Stop-Job $job -ErrorAction SilentlyContinue
+              Get-Process AltTesterDesktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "::warning::Skipping mf alttester deactivate - GPU driver model='$driverModel' (need WDDM)."
+          }
+
+          if ($env:MF_ACCOUNT) {
+            try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
+          }
+
+      - name: Cleanup - kill Explorer / Unity / AltTester
+        if: always()
+        timeout-minutes: 2
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          Get-Process | Where-Object { $_.ProcessName -match "Decentraland|Unity|AltTester" } |
+            ForEach-Object {
+              Write-Host "Killing $($_.ProcessName) (PID: $($_.Id))"
+              Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+            }
+
+      # Counterpart to the pre-install probe at the top of this file. By logging
+      # the install state at job-exit we can tell, on the next run, whether the
+      # install dir was already clobbered when we started (=> something else on
+      # the persistent runner deleted it between jobs) or whether it survived
+      # cleanup intact (=> mystery happens later, possibly at runner-image
+      # provisioning).
+      - name: AltTester install probe (post-cleanup)
+        if: always()
+        timeout-minutes: 1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $installDir = "C:\Program Files\AltTesterDesktop"
+          $target = Join-Path $installDir "AltTesterDesktop.exe"
+          $unityDll = Join-Path $installDir "UnityPlayer.dll"
+          if (Test-Path $installDir) {
+            Write-Host ("installDir exists: {0}" -f $installDir)
+            Get-ChildItem -Path $installDir -ErrorAction SilentlyContinue |
+              Select-Object Name, Length, LastWriteTimeUtc |
+              Format-Table | Out-String | Write-Host
+            if (Test-Path $target) {
+              $info = Get-Item $target
+              Write-Host ("AltTesterDesktop.exe: {0:N1} MB, mtime(UTC)={1:o}" -f ($info.Length / 1MB), $info.LastWriteTimeUtc)
+            } else {
+              Write-Host "AltTesterDesktop.exe: MISSING"
+            }
+            Write-Host ("UnityPlayer.dll present: {0}" -f (Test-Path $unityDll))
+          } else {
+            Write-Host ("installDir DOES NOT exist: {0}" -f $installDir)
+          }

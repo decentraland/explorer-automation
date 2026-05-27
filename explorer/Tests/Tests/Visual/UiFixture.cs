@@ -17,6 +17,6 @@ public class UiFixture
     [Test]
     public void Default()
     {
-        Snapshot.AssertMatchesBaseline("default", tolerance: 0.5);
+        Snapshot.AssertMatchesBaseline();
     }
 }
