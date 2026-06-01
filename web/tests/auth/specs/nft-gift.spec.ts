@@ -12,10 +12,11 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { setupBroadcastWallet } from '../../../shared/helpers/broadcast-wallet.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
-import { createAuthRequest, pollAuthOutcome, requireTxHash } from '../helpers/auth-server.js'
+import { createAuthRequest, dappEnvQuery, pollAuthOutcome, requireTxHash } from '../helpers/auth-server.js'
 import { buildAuthChain } from '../../../shared/helpers/identity.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
 import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
+import { withEnv } from '../../../shared/helpers/url.js'
 import type { WalletPool, WalletRole } from '../../marketplace/helpers/wallet-pool.js'
 
 /**
@@ -204,11 +205,18 @@ test.describe('@web @auth @on-chain NFT gift round-trip (RequestPage)', () => {
     const { requestId } = await createAuthRequest('eth_sendTransaction', [txParams], authChain)
     expect(requestId).toBeTruthy()
 
-    await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' })
+    await page.goto(withEnv(`/auth/requests/${requestId}`, dappEnvQuery()), { waitUntil: 'load' })
 
-    const allowBtn = page.locator('[data-testid="wallet-interaction-allow-button"]')
-    await allowBtn.waitFor({ state: 'visible', timeout: 30_000 })
-    await allowBtn.click()
+    // The dapp renders one of two UIs for `eth_sendTransaction`:
+    //   - Generic wallet-interaction UI → [data-testid="wallet-interaction-allow-button"]
+    //   - "Confirm Gift" rich UI (when calldata is ERC-721 safeTransferFrom on
+    //     a recognised collection) → no testid; button label "CONFIRM & SEND"
+    // Match either; whichever appears first is the right approval control.
+    const allowBtn = page
+      .locator('[data-testid="wallet-interaction-allow-button"]')
+      .or(page.getByRole('button', { name: /confirm\s*&\s*send/i }))
+    await allowBtn.first().waitFor({ state: 'visible', timeout: 30_000 })
+    await allowBtn.first().click()
 
     const outcome = await pollAuthOutcome(requestId, 240_000)
     expect(outcome.sender.toLowerCase()).toBe(sender.address.toLowerCase())
