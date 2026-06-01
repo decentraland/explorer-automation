@@ -4,7 +4,7 @@ import { privateKeyToAddress } from 'viem/accounts'
 import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { setupBroadcastWallet } from '../../../shared/helpers/broadcast-wallet.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
-import { requireEnv } from '../../../shared/helpers/env.js'
+import { rpcUrl } from '../../../shared/helpers/network.js'
 
 /**
  * Pre-navigation wallet setup, must be called BEFORE the first `page.goto`.
@@ -50,8 +50,8 @@ export async function setupTestWallet(
   await setupBroadcastWallet(page, {
     privateKey,
     rpcUrls: {
-      [polygonAmoy.id]: requireEnv('POLYGON_AMOY_RPC_URL'),
-      [sepolia.id]: requireEnv('SEPOLIA_RPC_URL')
+      [polygonAmoy.id]: rpcUrl(polygonAmoy.id),
+      [sepolia.id]: rpcUrl(sepolia.id)
     },
     initialChainId: options.initialChainId ?? sepolia.id,
     allowedTargets: options.allowedContracts?.targets,

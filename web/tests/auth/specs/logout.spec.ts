@@ -5,6 +5,7 @@ import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.j
 import { buildAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { mockExistingProfile } from '../../../shared/helpers/profile.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
+import { appChainId } from '../../../shared/helpers/network.js'
 import { withEnv } from '../../../shared/helpers/url.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
@@ -30,7 +31,6 @@ import { Navbar } from '../../marketplace/pages/Navbar.js'
  */
 
 const REDIRECT_TO = `${getBaseUrl()}/`
-const SEPOLIA_CHAIN_ID = 11_155_111
 
 const { expect } = test
 
@@ -62,7 +62,7 @@ test('@web @auth logout clears the SSO identity from localStorage', async ({ pag
   const identity = await buildAuthIdentity(privateKey)
   const ssoKey = `single-sign-on-${address.toLowerCase()}`
   const ssoValue = JSON.stringify({ ...identity, expiration: identity.expiration.toISOString() })
-  const connectValue = JSON.stringify({ providerType: 'injected', chainId: SEPOLIA_CHAIN_ID })
+  const connectValue = JSON.stringify({ providerType: 'injected', chainId: appChainId() })
   await page.evaluate(
     ({ ssoKey, ssoValue, connectValue }: { ssoKey: string; ssoValue: string; connectValue: string }) => {
       localStorage.setItem(ssoKey, ssoValue)

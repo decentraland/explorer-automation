@@ -1,4 +1,4 @@
-import { optionalEnv } from '../../../shared/helpers/env.js'
+import { getBaseUrl, optionalEnv } from '../../../shared/helpers/env.js'
 import type { AuthChain } from '../../../shared/helpers/identity.js'
 
 /**
@@ -40,13 +40,12 @@ export interface RequestOutcome {
  *
  *  1. `AUTH_SERVER_URL` env var — explicit override, used verbatim (trailing
  *     slash stripped). Set this when you want the spec to talk to a different
- *     auth-api than the one paired with `BASE_URL`'s host (e.g. running
- *     against the .org dapp but using zone's auth-api so the dapp picks up
- *     testnet contracts — see `dappEnvQuery()` below).
- *  2. Otherwise derive `auth-api.<host>` from `WEB_BASE_URL` (or `BASE_URL`
- *     as a fallback). So `WEB_BASE_URL=https://decentraland.today` →
+ *     auth-api than the one paired with the dapp host (e.g. running against
+ *     the .org dapp but using zone's auth-api so the dapp picks up testnet
+ *     contracts — see `dappEnvQuery()` below).
+ *  2. Otherwise derive `auth-api.<host>` from `getBaseUrl()` (`WEB_BASE_URL`,
+ *     default `.org`). So `WEB_BASE_URL=https://decentraland.today` →
  *     `https://auth-api.decentraland.today`.
- *  3. Final fallback: `https://auth-api.decentraland.org`.
  *
  * Reads env vars at call time so tests that override env vars in `beforeAll`
  * see the new value.
@@ -55,8 +54,7 @@ export function authServerUrl(): string {
   const explicit = optionalEnv('AUTH_SERVER_URL')
   if (explicit) return explicit.replace(/\/+$/, '')
 
-  const baseUrl = optionalEnv('WEB_BASE_URL') ?? optionalEnv('BASE_URL') ?? 'https://decentraland.org'
-  const host = new URL(baseUrl).host
+  const host = new URL(getBaseUrl()).host
   return `https://auth-api.${host}`
 }
 

@@ -1,6 +1,6 @@
 import { walletTest as test } from '../../marketplace/fixtures/wallet-fixture.js'
 import { encodeFunctionData, parseEther, parseEventLogs, type TransactionReceipt } from 'viem'
-import { polygonAmoy } from 'viem/chains'
+import { polygonAmoy, sepolia } from 'viem/chains'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { MANA_AMOY } from '../../marketplace/helpers/wallet-pool.js'
 import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
@@ -16,7 +16,8 @@ import {
 import { sendManaMetaTransfer } from '../helpers/mana-meta-tx.js'
 import { buildAuthChain } from '../../../shared/helpers/identity.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
-import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
+import { rpcUrl } from '../../../shared/helpers/network.js'
+import { optionalEnv } from '../../../shared/helpers/env.js'
 import { withEnv } from '../../../shared/helpers/url.js'
 
 /**
@@ -120,8 +121,8 @@ test.describe('@web @auth @on-chain MANA donation round-trip (RequestPage)', () 
     const receiver = walletPool.buyer
     const tipAmount = parseEther(optionalEnv('MARKETPLACE_TEST_TIP_AMOUNT_MANA') ?? '0.01')
 
-    const amoyRpc = requireEnv('POLYGON_AMOY_RPC_URL')
-    const sepoliaRpc = requireEnv('SEPOLIA_RPC_URL')
+    const amoyRpc = rpcUrl(polygonAmoy.id)
+    const sepoliaRpc = rpcUrl(sepolia.id)
 
     // ─── Half 1: UI E2E — walletA tips walletB via RequestPage ───────────
     await injectAuthIdentity(page, sender.privateKey)

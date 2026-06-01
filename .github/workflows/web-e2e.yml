@@ -122,13 +122,12 @@ jobs:
 
       - name: Run Playwright
         env:
-          # `WEB_BASE_URL` drives the auth/landing suite (`getBaseUrl()`),
-          # `BASE_URL` drives the marketplace suite (its own playwright.config
-          # block). Setting both keeps every project pointed at the same env.
+          # `WEB_BASE_URL` is the single host var — `getBaseUrl()` resolves every
+          # project and helper (auth, landing, marketplace, marketplace-api,
+          # auth-api, CF-header gate) from it, so all surfaces stay on one env.
           # `MARKETPLACE_ENV=dev` forces testnets (Polygon Amoy / Sepolia) for
           # the on-chain bucket regardless of the dapp host.
           WEB_BASE_URL: https://decentraland.${{ inputs.environment }}
-          BASE_URL: https://decentraland.${{ inputs.environment }}
           MARKETPLACE_ENV: ${{ inputs.suite == 'marketplace-onchain' && 'dev' || '' }}
         run: |
           echo "Running suite=${{ inputs.suite }} against $WEB_BASE_URL"

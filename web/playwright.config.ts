@@ -24,11 +24,12 @@ loadDotenv({ path: path.resolve(__dirname, '../.env') })
 // .org is publicly reachable; .zone and .today are gated behind Cloudflare
 // Access (internal-only). Use ?env=dev (via `withEnv()` in shared/helpers/url.ts)
 // to switch the dapp to Polygon Amoy / Sepolia while still hitting the public
-// .org host.
-const BASE_URL = (process.env.BASE_URL ?? 'https://decentraland.org').replace(/\/$/, '')
-// Trailing slash is required so relative `goto('browse')` resolves under /marketplace/.
-// Without it, `goto('/browse')` would replace the path and hit the root landing page.
-const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${BASE_URL}/marketplace/`
+// .org host. `getBaseUrl()` is the single host resolver (WEB_BASE_URL, default
+// .org, trailing slash stripped) shared by every project and helper.
+// Trailing slash on MARKETPLACE_BASE_URL is required so relative `goto('browse')`
+// resolves under /marketplace/. Without it, `goto('/browse')` would replace the
+// path and hit the root landing page.
+const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${getBaseUrl()}/marketplace/`
 
 /**
  * Five projects:

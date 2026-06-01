@@ -7,7 +7,7 @@ import {
   parseEventLogs,
   type TransactionReceipt
 } from 'viem'
-import { polygonAmoy } from 'viem/chains'
+import { polygonAmoy, sepolia } from 'viem/chains'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { injectAuthIdentity, installInjectedWalletMock } from '../../../shared/helpers/auth-identity.js'
 import { setupBroadcastWallet } from '../../../shared/helpers/broadcast-wallet.js'
@@ -15,6 +15,7 @@ import { mockExistingProfile } from '../../../shared/helpers/profile.js'
 import { createAuthRequest, dappEnvQuery, pollAuthOutcome, requireTxHash } from '../helpers/auth-server.js'
 import { buildAuthChain } from '../../../shared/helpers/identity.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
+import { rpcUrl } from '../../../shared/helpers/network.js'
 import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
 import { withEnv } from '../../../shared/helpers/url.js'
 import type { WalletPool, WalletRole } from '../../marketplace/helpers/wallet-pool.js'
@@ -161,8 +162,8 @@ test.describe('@web @auth @on-chain NFT gift round-trip (RequestPage)', () => {
   test('owner gifts NFT via RequestPage, receiver returns it on-chain', async ({ page, walletPool }) => {
     const nftContract = requireEnv('MARKETPLACE_TEST_ITEM_CONTRACT').toLowerCase() as `0x${string}`
     const tokenId = BigInt(requireEnv('MARKETPLACE_TEST_GIFT_TOKEN_ID'))
-    const amoyRpc = requireEnv('POLYGON_AMOY_RPC_URL')
-    const sepoliaRpc = requireEnv('SEPOLIA_RPC_URL')
+    const amoyRpc = rpcUrl(polygonAmoy.id)
+    const sepoliaRpc = rpcUrl(sepolia.id)
     const pub = createPublicClient({ chain: polygonAmoy, transport: http(amoyRpc) })
 
     // Resolve sender/receiver by current ownership. Either pool wallet may

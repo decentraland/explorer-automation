@@ -104,8 +104,8 @@ jobs:
 
       - name: Run Playwright (--project=web on .org)
         env:
+          # Single host var — `getBaseUrl()` resolves every project/helper from it.
           WEB_BASE_URL: https://decentraland.org
-          BASE_URL: https://decentraland.org
         run: npx playwright test --project=web
 
       - name: Upload Playwright report
