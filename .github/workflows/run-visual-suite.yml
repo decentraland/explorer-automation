@@ -310,7 +310,7 @@ jobs:
 
       - name: Upload Allure artifact (fallback if S3 fails)
         if: always() && steps.report.outputs.report_path != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v6
         with:
           name: allure-report-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
           path: ${{ steps.report.outputs.report_path }}
@@ -399,7 +399,7 @@ jobs:
       # Upload the Explorer's Player.log so callers can download and print it
       - name: Upload Explorer Player.log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v6
         with:
           name: player-log-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
           path: /Users/runner/Library/Logs/Decentraland/Explorer/Player.log
