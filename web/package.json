@@ -24,7 +24,7 @@
     "report": "playwright show-report"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
+    "@playwright/test": "^1.60.0",
     "@synthetixio/ethereum-wallet-mock": "^0.0.14",
     "@synthetixio/synpress": "^4.1.2",
     "@types/node": "^22.10.0",
