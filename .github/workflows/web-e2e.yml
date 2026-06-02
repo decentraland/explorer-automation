@@ -76,11 +76,33 @@ jobs:
           restore-keys: |
             pw-${{ runner.os }}-
 
+      - name: Install Playwright system deps
+        # apt-only (sudo); fast and doesn't touch cdn.playwright.dev, so it sits
+        # outside the retry wrapper below.
+        timeout-minutes: 5
+        run: npx playwright install-deps chromium
+
       - name: Install Playwright browsers
-        # Cap the browser download so a stalled CDN artifact fails this step in
-        # minutes (with logs) rather than hanging until the job timeout.
+        # cdn.playwright.dev intermittently stalls right after the chrome zip
+        # reaches 100% — the next artifact's connection hangs with no data and
+        # no error, so a bare `install` sits idle until the step timeout. Wrap
+        # each attempt in `timeout` so a stalled download is killed and retried
+        # from a fresh connection; a healthy download finishes in seconds, only
+        # a stall burns the per-attempt cap. On a cache hit the browsers are
+        # already present and attempt 1 is a no-op.
         timeout-minutes: 10
-        run: npx playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3 4; do
+            echo "::group::playwright install chromium (attempt $attempt)"
+            if timeout 120 npx playwright install chromium; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "attempt $attempt stalled or failed; retrying"
+            echo "::endgroup::"
+          done
+          echo "::error::playwright install chromium failed after 4 attempts"
+          exit 1
 
       - name: Write .env from secrets / variables
         # web/shared/helpers/env.ts loads `.env` from the repo root.
