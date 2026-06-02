@@ -58,6 +58,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
+        # Browsers are installed by the dedicated cache-aware step below — there
+        # is no `postinstall` chromium download here, so `npm ci` is just the
+        # node deps. A tight timeout turns any registry/lifecycle-script stall
+        # into a fast, attributable failure instead of a 30-min job-level kill.
+        timeout-minutes: 5
         run: npm ci
 
       - name: Cache Playwright browsers
@@ -73,6 +78,9 @@ jobs:
             pw-${{ runner.os }}-
 
       - name: Install Playwright browsers
+        # Cap the browser download so a stalled CDN artifact fails this step in
+        # minutes (with logs) rather than hanging until the job timeout.
+        timeout-minutes: 10
         run: npx playwright install --with-deps chromium
 
       - name: Write .env from secrets / variables

@@ -21,8 +21,7 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "report": "playwright show-report",
-    "postinstall": "playwright install chromium"
+    "report": "playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
