@@ -1,0 +1,14 @@
+{
+  "name": "@dcl-vrt/animations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual-regression scene: Animator component cases",
+  "scripts": {
+    "build": "sdk-commands build --skip-install",
+    "start": "sdk-commands start"
+  },
+  "devDependencies": {
+    "@dcl/sdk": "latest",
+    "@dcl/js-runtime": "7.23.1"
+  }
+}

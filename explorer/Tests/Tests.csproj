@@ -23,6 +23,9 @@
     <PackageReference Include="NUnit.Analyzers" Version="4.12.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.2.0" />
     <PackageReference Include="JunitXml.TestLogger" Version="8.0.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +34,10 @@
 
   <ItemGroup>
     <Using Include="NUnit.Framework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Baselines\**\*.png" Pack="false" CopyToOutputDirectory="Never" />
   </ItemGroup>
 
 </Project>

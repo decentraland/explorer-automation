@@ -44,3 +44,7 @@ web/test-results/
 web/allure-results/
 web/.agents/skills/dcl-testing-playwright/
 web/.agents/skills/playwright-best-practices/
+
+/.agents
+/.claude
+skills-lock.json

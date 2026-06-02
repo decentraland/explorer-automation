@@ -35,7 +35,19 @@ public class MetaForgeTestLogger : ITestLoggerWithParameters
         };
         var name = EscapeJson(e.Result.TestCase.DisplayName);
 
-        Console.Out.WriteLine($"##mf##{{\"c\":{count},\"o\":\"{outcome}\",\"n\":\"{name}\"}}");
+        // For failures, emit message + stack trace so metaforge can surface
+        // them on the run-tests progress task. Single-line JSON keeps the
+        // existing line-based parser happy — newlines in the original output
+        // are escaped by EscapeJson.
+        var extras = "";
+        if (e.Result.Outcome == TestOutcome.Failed)
+        {
+            var message = EscapeJson(e.Result.ErrorMessage ?? "");
+            var stack = EscapeJson(e.Result.ErrorStackTrace ?? "");
+            extras = $",\"m\":\"{message}\",\"s\":\"{stack}\"";
+        }
+
+        Console.Out.WriteLine($"##mf##{{\"c\":{count},\"o\":\"{outcome}\",\"n\":\"{name}\"{extras}}}");
         Console.Out.Flush();
     }
 
