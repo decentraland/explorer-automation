@@ -1,5 +1,5 @@
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import {
   setupMockedWallet,
@@ -34,7 +34,6 @@ import { buildAuthChain, getEphemeralMessage } from '../../../shared/helpers/ide
  */
 
 const REDIRECT_TO = `${getBaseUrl()}/`
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 const { expect } = test
 

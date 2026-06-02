@@ -12,17 +12,19 @@
     "test:marketplace": "npm run test:marketplace:offchain && npm run test:marketplace:onchain",
     "test:marketplace:offchain": "playwright test --project=marketplace",
     "test:marketplace:onchain": "playwright test --project=marketplace-onchain --workers=1",
+    "test:auth": "npm run test:auth:offchain && npm run test:auth:onchain",
+    "test:auth:offchain": "playwright test --project=web --grep @auth",
+    "test:auth:onchain": "playwright test --project=auth-onchain --workers=1",
     "test:all": "playwright test",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "report": "playwright show-report",
-    "postinstall": "playwright install chromium"
+    "report": "playwright show-report"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
+    "@playwright/test": "^1.60.0",
     "@synthetixio/ethereum-wallet-mock": "^0.0.14",
     "@synthetixio/synpress": "^4.1.2",
     "@types/node": "^22.10.0",

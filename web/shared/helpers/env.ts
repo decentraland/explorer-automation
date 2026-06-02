@@ -38,9 +38,9 @@ const CF_GATED_HOSTS = new Set(['decentraland.zone', 'decentraland.today'])
  * Cloudflare Access service-token headers, if all of the following hold:
  *
  *  1. `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` are both set, AND
- *  2. the dapp host under test (resolved from `WEB_BASE_URL`, falling back to
- *     `BASE_URL`, then `.org`) is one of the CF-gated dev/staging dapps —
- *     `decentraland.zone` or `decentraland.today`.
+ *  2. the dapp host under test (`getBaseUrl()` → `WEB_BASE_URL`, default `.org`)
+ *     is one of the CF-gated dev/staging dapps — `decentraland.zone` or
+ *     `decentraland.today`.
  *
  * Returns `{}` otherwise — safe to spread into any `headers` object.
  *
@@ -58,8 +58,7 @@ export function getCloudflareAccessHeaders(): Record<string, string> {
   const secret = optionalEnv('CF_ACCESS_CLIENT_SECRET')
   if (!id || !secret) return {}
 
-  const baseUrl = optionalEnv('WEB_BASE_URL') ?? optionalEnv('BASE_URL') ?? 'https://decentraland.org'
-  const host = new URL(baseUrl).host
+  const host = new URL(getBaseUrl()).host
   if (!CF_GATED_HOSTS.has(host)) return {}
 
   return {

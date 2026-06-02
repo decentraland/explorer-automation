@@ -36,4 +36,23 @@ export class Navbar {
   async waitForDisconnected(timeoutMs = 30_000): Promise<void> {
     await this.signInButton().waitFor({ state: 'visible', timeout: timeoutMs })
   }
+
+  /**
+   * Opens the user menu and clicks the Log Out / Disconnect entry. The
+   * dropdown item may render as a `menuitem` or a button, and the wording
+   * varies ("Log Out", "Sign Out", "Disconnect"). Accept all via a broad
+   * accessible-name regex.
+   */
+  async clickLogout(): Promise<void> {
+    await this.userMenu().click()
+    // The dropdown's Log Out entry is rendered as plain text inside a non-
+    // semantic div (no `role="menuitem"` / button). Use getByText with an
+    // exact match to avoid catching unrelated occurrences of the word, and
+    // .first() in case the dropdown duplicates entries between desktop and
+    // mobile layouts.
+    const matcher = /^(log\s*out|sign\s*out|disconnect)$/i
+    const logout = this.page.getByText(matcher).first()
+    await logout.waitFor({ state: 'visible', timeout: 10_000 })
+    await logout.click()
+  }
 }

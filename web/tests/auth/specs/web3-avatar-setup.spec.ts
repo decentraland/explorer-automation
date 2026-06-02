@@ -1,5 +1,5 @@
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import {
   setupMockedWallet,
@@ -40,7 +40,6 @@ import { AvatarSetupPage } from '../pages/AvatarSetupPage.js'
 
 const REDIRECT_TO = `${getBaseUrl()}/`
 const AVATAR_SETUP_URL = `${getBaseUrl()}/auth/avatar-setup`
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 const { expect } = test
 

@@ -24,11 +24,12 @@ loadDotenv({ path: path.resolve(__dirname, '../.env') })
 // .org is publicly reachable; .zone and .today are gated behind Cloudflare
 // Access (internal-only). Use ?env=dev (via `withEnv()` in shared/helpers/url.ts)
 // to switch the dapp to Polygon Amoy / Sepolia while still hitting the public
-// .org host.
-const BASE_URL = (process.env.BASE_URL ?? 'https://decentraland.org').replace(/\/$/, '')
-// Trailing slash is required so relative `goto('browse')` resolves under /marketplace/.
-// Without it, `goto('/browse')` would replace the path and hit the root landing page.
-const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${BASE_URL}/marketplace/`
+// .org host. `getBaseUrl()` is the single host resolver (WEB_BASE_URL, default
+// .org, trailing slash stripped) shared by every project and helper.
+// Trailing slash on MARKETPLACE_BASE_URL is required so relative `goto('browse')`
+// resolves under /marketplace/. Without it, `goto('/browse')` would replace the
+// path and hit the root landing page.
+const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${getBaseUrl()}/marketplace/`
 
 /**
  * Five projects:
@@ -84,6 +85,11 @@ export default defineConfig({
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,
+      // Exclude broadcast specs (`@on-chain`) — they share the funded wallet
+      // pool with `marketplace-onchain` and need `--workers=1` to avoid nonce
+      // races. Auth on-chain specs (`mana-donation`, `nft-gift`) run under
+      // the dedicated `auth-onchain` project below.
+      grepInvert: /@on-chain/,
       use: { ...devices['Desktop Chrome'] }
     },
     {
@@ -143,6 +149,21 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         baseURL: MARKETPLACE_BASE_URL
       }
+    },
+    {
+      // Auth-site on-chain specs (`mana-donation`, `nft-gift`) — they drive
+      // the auth dapp (`/auth/requests/<id>`), not the marketplace dapp, so
+      // they need the dapp-root baseURL rather than MARKETPLACE_BASE_URL.
+      // Same wallet-pool serialization story as `marketplace-onchain`:
+      // workers: 1, retries: 0. The two on-chain projects must NOT run
+      // concurrently — invoking them in sequence is fine.
+      name: 'auth-onchain',
+      testDir: './tests/auth/specs',
+      grep: /@on-chain/,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      use: { ...devices['Desktop Chrome'] }
     }
   ]
 })

@@ -1,5 +1,5 @@
 import { generatePrivateKey } from 'viem/accounts'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest as test } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupMockedWallet, mockNoProfileOnCatalysts } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
@@ -22,7 +22,6 @@ import { QuickSetupPage } from '../pages/QuickSetupPage.js'
  */
 
 const REDIRECT_TARGET = `${getBaseUrl()}/marketplace`
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 const { expect } = test
 

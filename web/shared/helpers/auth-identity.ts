@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { generatePrivateKey, privateKeyToAccount, privateKeyToAddress } from 'viem/accounts'
+import { appChainId } from './network.js'
 
 /**
  * Decentraland's ephemeral message format — must match exactly what
@@ -51,7 +52,12 @@ export async function buildAuthIdentity(
 }
 
 export interface InjectAuthIdentityOptions {
-  /** App chain id seeded into decentraland-connect-storage-key. Default Sepolia (11155111). */
+  /**
+   * App chain id seeded into decentraland-connect-storage-key. Defaults to
+   * `appChainId()` — the chain matching the env the dapp boots with (testnet
+   * Sepolia for `?env=dev`, Ethereum mainnet for prod). Seeding a chain that
+   * doesn't match the dapp's env triggers a blocking "Wrong Network" modal.
+   */
   chainId?: number
 }
 
@@ -85,10 +91,11 @@ export async function injectAuthIdentity(
 ): Promise<AuthIdentity> {
   const identity = await buildAuthIdentity(userPrivateKey)
   const address = privateKeyToAddress(userPrivateKey).toLowerCase()
-  // Default chain: Ethereum Sepolia. Marketplace's CHAIN_ID for the dev env
-  // is 11155111 (Sepolia); Polygon Amoy is the secondary network for MANA.
-  // For the wallet provider's auto-connect we need the app-chain id.
-  const chainId = options.chainId ?? 11155111
+  // App-chain id for the wallet provider's auto-connect, derived from the env
+  // the dapp boots with (`appChainId()`): Sepolia (11155111) on dev/testnet,
+  // Ethereum mainnet (1) on prod. Polygon Amoy / Polygon is the secondary
+  // network for MANA. Must match the dapp's env or it shows "Wrong Network".
+  const chainId = options.chainId ?? appChainId()
   const ssoKey = `single-sign-on-${address}`
   const ssoValue = JSON.stringify({
     ...identity,
@@ -123,7 +130,11 @@ export async function injectAuthIdentity(
 }
 
 export interface InstallInjectedWalletMockOptions {
-  /** Initial chain id reported via eth_chainId / net_version. Default Sepolia (11155111). */
+  /**
+   * Initial chain id reported via eth_chainId / net_version. Defaults to
+   * `appChainId()` — the chain matching the env the dapp boots with (testnet
+   * Sepolia for `?env=dev`, Ethereum mainnet for prod).
+   */
   chainId?: number
 }
 
@@ -159,7 +170,7 @@ export async function installInjectedWalletMock(
   options: InstallInjectedWalletMockOptions = {}
 ): Promise<void> {
   const address = privateKeyToAddress(userPrivateKey).toLowerCase()
-  const chainId = options.chainId ?? 11155111
+  const chainId = options.chainId ?? appChainId()
 
   await page.addInitScript(
     ({ address, chainId }: { address: string; chainId: number }) => {

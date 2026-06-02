@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { randomBytes } from 'node:crypto'
+import { uniqueUsername } from '../helpers/test-user.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
@@ -15,8 +15,6 @@ import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'
  * (different feature flags, different middlewares); covering both keeps
  * us honest if either side regresses.
  */
-
-const uniqueUsername = (): string => `QA${randomBytes(3).toString('hex')}`
 
 test('@web @auth new user can sign up via email + OTP', async ({ page }) => {
   const email = generateFreshEmail()
