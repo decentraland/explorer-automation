@@ -57,20 +57,22 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     #region Helper methods
 
     /// <summary>
-    /// Closes the panel. Tries the X button first; if that doesn't dismiss the panel within
-    /// 5s, falls back to pressing Escape (which Unity's IClosable input handler also catches).
-    /// Some sections (Map, Gallery) consume input themselves and absorb the X button click,
-    /// so the keyboard fallback is the reliable path.
+    /// Closes the panel. Presses Escape first — it's the most reliable path because Unity's
+    /// IClosable input handler catches it uniformly and every shortcut test (Map, Gallery,
+    /// Backpack, …) proves Escape dismisses any section. The X button is only used as a
+    /// fallback for the rare case where Escape is consumed elsewhere. Clicking the X first
+    /// is unsafe for sections that absorb pointer input (Navmap drags, Gallery), which puts
+    /// them in an interactive state that then swallows subsequent Escape.
     /// </summary>
     [AllureStep("Close the explore panel")]
     public void Close()
     {
-        CloseButton.Click();
+        CommonStuff.AltDriver.PressKey(AltKeyCode.Escape);
         if (TryWaitForGone(5))
             return;
 
-        Reporter.Log("CloseButton click did not dismiss the panel — falling back to Escape");
-        CommonStuff.AltDriver.PressKey(AltKeyCode.Escape);
+        Reporter.Log("Escape did not dismiss the panel — falling back to CloseButton click");
+        CloseButton.Click();
         WaitForGone(15);
     }
 

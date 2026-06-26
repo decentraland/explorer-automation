@@ -24,6 +24,6 @@ public class AvatarShapeFixture
         // before the snapshot fires.
         Thread.Sleep(10000);
 
-        Snapshot.AssertMatchesBaseline("default", tolerance: 1.5);
+        Snapshot.AssertMatchesBaseline();
     }
 }

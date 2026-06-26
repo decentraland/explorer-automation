@@ -1,13 +1,14 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Navmap Tests")]
+[Category("InWorld")]
 [Order(13)]
 public class NavmapTests : BaseTest
 {
     [Test]
     public void TestClickAllCategoryFilters()
     {
-        Views.MainMenu.MapButton.Click();
+        PressKey(AltKeyCode.M);
         Views.ExplorePanel.Navmap.WaitFor();
 
         Views.ExplorePanel.Navmap.AllCategoryButton.Click();

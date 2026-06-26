@@ -10,6 +10,7 @@ public class ViewContainer
     public static ViewContainer Instance { get; private set; }
 
     public AuthenticationMainScreenView AuthenticationMainScreen { get; } = new();
+    public MinimumSpecsScreenView       MinimumSpecsScreen       { get; } = new();
     public OtpVerificationScreenView    OtpVerificationScreen    { get; } = new();
     public WelcomeNewAccountScreenView  WelcomeNewAccountScreen  { get; } = new();
     public SplashScreenView             SplashScreen             { get; } = new();
