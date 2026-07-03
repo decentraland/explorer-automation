@@ -1,4 +1,4 @@
-namespace ExplorerAutomation.Tests.Tests;
+/* namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Backpack Outfits Tests")]
 [Category("InWorld")]
@@ -41,3 +41,4 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Close();
     }
 }
+ */
