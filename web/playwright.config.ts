@@ -85,6 +85,17 @@ export default defineConfig({
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,
+      // Auth specs self-bootstrap a fresh user against prod on every run. A
+      // clean single-phase web3 signup measures ~110s end-to-end: ~26s to
+      // reach quick-setup, up to ~20s for the ToS checkbox to settle while
+      // the avatar preview loads, and 5-45s+ of profile deployment before
+      // the "Start Exploring" interstitial appears (catalyst-side latency,
+      // high variance). Two-phase specs (recurrent login, redirectTo,
+      // switch-method, RequestPage) run the signup AND a second flow, so the
+      // default 120s budget made every slow-deploy run time out at whatever
+      // step happened to be in flight. 240s absorbs the variance; specs that
+      // need even more (OTP resend countdown) set test.setTimeout locally.
+      timeout: 240_000,
       // Exclude broadcast specs (`@on-chain`) — they share the funded wallet
       // pool with `marketplace-onchain` and need `--workers=1` to avoid nonce
       // races. Auth on-chain specs (`mana-donation`, `nft-gift`) run under

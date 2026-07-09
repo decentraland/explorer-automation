@@ -310,6 +310,7 @@ If those move, update `tests/auth/helpers/token-bridge.ts` or `tests/auth/helper
 
 ## Pitfalls observed
 
+- Quick-setup profile deployment is slow and high-variance on prod: after LET'S GO the button reads "DEPLOYING..." for 5-45s+ before the "Account is Ready!" interstitial appears, and the ToS checkbox's `check()` can take ~20s while the avatar preview loads. A clean single-phase web3 signup measures ~110s end-to-end. This is why the `web` project timeout is 240s and `QuickSetupPage.clickStartExploring` waits for the CTA with its own 120s budget — don't "optimize" either back down; every auth spec self-bootstraps through this screen, so a tight budget makes the whole suite flaky with timeouts scattered across unrelated steps.
 - Calling `setupBroadcastWallet` after `page.goto` — silent no-op, broadcast layer never installs, dapp falls back to Web3Mock fakes.
 - Asserting `page.waitForURL(/\/(success|status)/)` on the buy flow — passes on `/status` before any tx mines. Use `/success` only and combine with `waitForTransactionReceipt`.
 - Adding a marketplace spec without `@marketplace` — runs under no project, silently skipped.
