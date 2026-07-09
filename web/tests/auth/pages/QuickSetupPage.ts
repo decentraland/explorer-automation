@@ -1,6 +1,16 @@
 import type { Page } from '@playwright/test'
 
 /**
+ * Timeout budget for the two slow spots on this screen (measured on prod,
+ * July 2026 — see the method docs for the mechanics):
+ *   - ToS checkbox `check()` — up to ~20s while the avatar preview loads.
+ *   - "Start Exploring" CTA — appears 5-45s+ after LET'S GO (profile deploy).
+ * Kept here as the single place to tune if prod latency shifts.
+ */
+const TOS_CHECKBOX_TIMEOUT_MS = 60_000
+const START_EXPLORING_TIMEOUT_MS = 120_000
+
+/**
  * Page Object for `https://decentraland.org/auth/quick-setup`.
  *
  * Shown after a NEW user completes email + OTP or a web3 signup. Recurrent
@@ -51,10 +61,8 @@ export class QuickSetupPage {
    * on prod). Bound it explicitly so a genuinely wedged page fails here
    * with a clear message instead of eating the whole test budget.
    */
-  async acceptTerms(timeoutMs = 60_000): Promise<void> {
-    await this.page
-      .getByRole('checkbox', { name: "I agree with Decentraland's" })
-      .check({ timeout: timeoutMs })
+  async acceptTerms(timeoutMs = TOS_CHECKBOX_TIMEOUT_MS): Promise<void> {
+    await this.page.getByRole('checkbox', { name: "I agree with Decentraland's" }).check({ timeout: timeoutMs })
   }
 
   async submit(): Promise<void> {
@@ -68,7 +76,7 @@ export class QuickSetupPage {
    * high variance; measured July 2026), so wait for the CTA explicitly with
    * a budget that absorbs the worst observed case before clicking.
    */
-  async clickStartExploring(timeoutMs = 120_000): Promise<void> {
+  async clickStartExploring(timeoutMs = START_EXPLORING_TIMEOUT_MS): Promise<void> {
     const cta = this.page.getByRole('button', { name: 'Start Exploring' })
     await cta.waitFor({ state: 'visible', timeout: timeoutMs })
     await cta.click()

@@ -119,8 +119,22 @@ export async function createAuthRequest(
  * while the request is still pending; once a wallet signs (or rejects), it
  * responds with the outcome JSON.
  */
+/**
+ * `fetch` rejections that are worth retrying: the per-poll abort
+ * (`AbortSignal.timeout` fires a DOMException named `TimeoutError` /
+ * `AbortError`) and undici's network-level failures (DNS, connection
+ * refused/reset), which surface as `TypeError`. Anything else — e.g. a
+ * throwing env resolver inside `authServerUrl()` — is a bug and must
+ * propagate, not be retried into a generic deadline error.
+ */
+function isTransientFetchError(err: unknown): boolean {
+  if (err instanceof TypeError) return true
+  return err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')
+}
+
 export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POLL_TIMEOUT_MS): Promise<RequestOutcome> {
   const deadline = Date.now() + timeoutMs
+  let lastFetchError: unknown
   while (Date.now() < deadline) {
     // Node's fetch has no default timeout — an auth-api GET that never
     // responds would hang this loop past the deadline check and silently
@@ -131,7 +145,10 @@ export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POL
       res = await fetch(`${authServerUrl()}/requests/${requestId}`, {
         signal: AbortSignal.timeout(10_000)
       })
-    } catch {
+    } catch (err) {
+      if (!isTransientFetchError(err)) throw err
+      lastFetchError = err
+      console.warn(`[auth-server] poll fetch failed, retrying: ${String(err)}`)
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
       continue
     }
@@ -144,7 +161,8 @@ export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POL
     }
     return (await res.json()) as RequestOutcome
   }
-  throw new Error(`Polling for request ${requestId} timed out after ${timeoutMs}ms`)
+  const lastError = lastFetchError === undefined ? '' : ` (last fetch error: ${String(lastFetchError)})`
+  throw new Error(`Polling for request ${requestId} timed out after ${timeoutMs}ms${lastError}`)
 }
 
 /**
