@@ -112,7 +112,7 @@ const haveOnChainConfig = (): boolean =>
       optionalEnv('SEPOLIA_RPC_URL')
   )
 
-test.describe('@web @auth @on-chain MANA donation round-trip (RequestPage)', () => {
+test.describe('@auth @on-chain MANA donation round-trip (RequestPage)', () => {
   test.skip(!haveOnChainConfig(), 'Requires on-chain wallet config')
   test.describe.configure({ timeout: 420_000 })
 

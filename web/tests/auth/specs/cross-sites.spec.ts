@@ -53,8 +53,18 @@ test('@web @auth web3 session persists across marketplace, builder, and account'
     // Re-bind Web3Mock on the new page state so any wallet-touching code on
     // the subdomain gets our address back, not the mock's default.
     await rebindWalletMock(page, ethereumWalletMock, privateKey)
-    await page.waitForTimeout(3_000)
-    expect(page.url(), `expected to land on /${site}`).toContain(`/${site}`)
-    expect(page.url(), `expected to NOT bounce to /auth on ${site}`).not.toMatch(/\/auth\/login/)
+
+    // A lost session bounces the user to /auth/login via a client-side redirect
+    // shortly after load. Actively watch for that navigation for a bounded window
+    // instead of sleeping a fixed 3s and snapshotting the URL once — the old
+    // approach silently passed a bounce that fired just after the snapshot.
+    // waitForURL resolves the instant a bounce happens (at any point in the
+    // window) and rejects on timeout when the session held.
+    const bounced = await page
+      .waitForURL(/\/auth\/login/, { timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false)
+    expect(bounced, `expected to NOT bounce to /auth/login on ${site}`).toBe(false)
+    expect(page.url(), `expected to stay on /${site}`).toContain(`/${site}`)
   }
 })

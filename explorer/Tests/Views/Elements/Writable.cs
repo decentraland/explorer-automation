@@ -10,7 +10,7 @@ public record Writable(By by, string name) : Clickable(by, name)
     public void SetText(string text, bool submit = true, float timeout = 10.0f)
     {
         var altObject = WaitFor(timeout);
-        altObject.SetText(text);
+        altObject.SetText(text, submit);
     }
 
     [AllureStep("Get text from object")]

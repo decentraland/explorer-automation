@@ -55,22 +55,30 @@ export class AuthorizationModal {
    * resulting `POST` to the action's own endpoint (e.g. `/v1/trades` for a
    * listing) regardless of whether the modal was driven or not.
    *
-   * Returns `true` if the modal opened and was driven, `false` if it didn't
-   * appear (already-approved wallet). The caller can use this to know how
-   * many `/v1/transactions` POSTs to expect downstream (1 vs 2).
+   * Returns `{ opened, authorized }`:
+   *   - `opened`     — the modal appeared and its Sign step was clicked.
+   *   - `authorized` — the Authorize step actually ran (fresh wallet). This is
+   *     the load-bearing signal for relayer-POST counting: an authorize click
+   *     fires an *extra* `/v1/transactions` POST (the approval) before the
+   *     action's own POST, so callers should expect 2 POSTs when `authorized`
+   *     is true and 1 otherwise. `opened === true, authorized === false` (modal
+   *     shown with Sign already enabled) and `opened === false` (no modal) both
+   *     mean a single POST.
    */
-  async authorizeAndSign(openTimeoutMs = 30_000): Promise<boolean> {
+  async authorizeAndSign(openTimeoutMs = 30_000): Promise<{ opened: boolean; authorized: boolean }> {
     const opened = await this.signButton()
       .waitFor({ state: 'visible', timeout: openTimeoutMs })
       .then(() => true)
       .catch(() => false)
-    if (!opened) return false
+    if (!opened) return { opened: false, authorized: false }
 
+    let authorized = false
     if (
       await this.authorizeButton()
         .isVisible()
         .catch(() => false)
     ) {
+      authorized = true
       await this.authorizeButton().click()
       // Step 2 unlocks once the relayer's auth POST returns OK. For some
       // approvals (notably ERC721 setApprovalForAll for listings) the
@@ -92,6 +100,6 @@ export class AuthorizationModal {
       )
     }
     await this.signButton().click()
-    return true
+    return { opened: true, authorized }
   }
 }
