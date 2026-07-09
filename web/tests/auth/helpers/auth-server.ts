@@ -122,7 +122,19 @@ export async function createAuthRequest(
 export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POLL_TIMEOUT_MS): Promise<RequestOutcome> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const res = await fetch(`${authServerUrl()}/requests/${requestId}`)
+    // Node's fetch has no default timeout — an auth-api GET that never
+    // responds would hang this loop past the deadline check and silently
+    // consume the remaining test budget. Bound each poll individually and
+    // treat a timed-out poll as pending; the outer deadline still applies.
+    let res: Response
+    try {
+      res = await fetch(`${authServerUrl()}/requests/${requestId}`, {
+        signal: AbortSignal.timeout(10_000)
+      })
+    } catch {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+      continue
+    }
     if (res.status === 204) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
       continue

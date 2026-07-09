@@ -3,10 +3,19 @@ import type { Page } from '@playwright/test'
 /**
  * Page Object for `https://decentraland.org/auth/quick-setup`.
  *
- * Shown after a NEW user completes email + OTP. Recurrent users skip this
- * screen entirely. Has username (required), optional email (= newsletter
- * opt-in), terms checkbox (required), and a LET'S GO button. After that,
+ * Shown after a NEW user completes email + OTP or a web3 signup. Recurrent
+ * users skip this screen entirely. Has username (required), a newsletter
+ * opt-in, terms checkbox (required), and a LET'S GO button. After that,
  * an "Account is Ready!" interstitial shows with a "Start Exploring" CTA.
+ *
+ * The newsletter opt-in renders differently per signup method (observed on
+ * prod, July 2026):
+ *   - web3 signup — an optional "Enter your email" textbox (filling it
+ *     subscribes the user). Covered by `subscribeToNewsletter`.
+ *   - email + OTP signup — the dapp already knows the email, so it shows a
+ *     "Subscribe to newsletter…" checkbox instead; there is no email textbox.
+ *     No spec currently opts in on this path — add a checkbox helper if one
+ *     ever needs to.
  */
 export class QuickSetupPage {
   constructor(private readonly page: Page) {}
@@ -27,21 +36,42 @@ export class QuickSetupPage {
    * Filling this field opts the user in to Decentraland's newsletter
    * (the field's helper text is "Subscribe to Decentraland's newsletter…").
    * For the no-newsletter test, simply skip calling this.
+   *
+   * web3 signup variant only — the OTP variant renders a checkbox instead
+   * of this textbox (see class doc).
    */
   async subscribeToNewsletter(email: string): Promise<void> {
     await this.page.getByRole('textbox', { name: 'Enter your email' }).fill(email)
   }
 
-  async acceptTerms(): Promise<void> {
-    await this.page.getByRole('checkbox', { name: "I agree with Decentraland's" }).check()
+  /**
+   * The ToS checkbox is a MUI input under a custom icon; while the avatar
+   * preview iframe is still loading its assets the row keeps re-rendering
+   * and `check()`'s actionability wait can legitimately take ~20s (measured
+   * on prod). Bound it explicitly so a genuinely wedged page fails here
+   * with a clear message instead of eating the whole test budget.
+   */
+  async acceptTerms(timeoutMs = 60_000): Promise<void> {
+    await this.page
+      .getByRole('checkbox', { name: "I agree with Decentraland's" })
+      .check({ timeout: timeoutMs })
   }
 
   async submit(): Promise<void> {
     await this.page.getByRole('button', { name: "LET'S GO" }).click()
   }
 
-  async clickStartExploring(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Start Exploring' }).click()
+  /**
+   * After LET'S GO the dapp deploys the profile entity to a catalyst and the
+   * button reads "DEPLOYING..." until the "Account is Ready!" interstitial
+   * appears. Deploy-to-interstitial latency is 5-45s+ on prod (catalyst-side,
+   * high variance; measured July 2026), so wait for the CTA explicitly with
+   * a budget that absorbs the worst observed case before clicking.
+   */
+  async clickStartExploring(timeoutMs = 120_000): Promise<void> {
+    const cta = this.page.getByRole('button', { name: 'Start Exploring' })
+    await cta.waitFor({ state: 'visible', timeout: timeoutMs })
+    await cta.click()
   }
 
   // ─── Avatar customization ───────────────────────────────────────────────
