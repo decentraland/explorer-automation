@@ -1,4 +1,8 @@
-import { test as base, type Fixtures, type PlaywrightTestArgs, type PlaywrightTestOptions } from '@playwright/test'
+import { type Fixtures, type PlaywrightTestArgs, type PlaywrightTestOptions } from '@playwright/test'
+// `base` is the CF-Access-aware test (not plain `@playwright/test`) so that
+// `.zone` / `.today` marketplace runs get the Access headers on gated-host
+// requests. `baseWalletTest` carries the same route already.
+import { test as base } from '../../../shared/fixtures/base-test.js'
 import { walletTest as baseWalletTest } from '../../../shared/fixtures/wallet-fixture.js'
 import { setupTestWallet } from '../helpers/wallet-setup.js'
 import { setupWalletPool, type WalletPool } from '../helpers/wallet-pool.js'
