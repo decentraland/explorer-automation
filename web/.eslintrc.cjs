@@ -23,7 +23,7 @@ module.exports = {
       // `@playwright/test` silently loses the headers on `.zone` / `.today`
       // and times out on blank pages. Types and `expect` alone are still fine
       // to import, but base-test re-exports `expect` so one import covers both.
-      files: ['tests/**/*.spec.ts'],
+      files: ['tests/**/*.{spec,test}.ts'],
       rules: {
         'no-restricted-imports': [
           'error',

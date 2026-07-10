@@ -53,8 +53,16 @@ function envReplacements(): Replacement[] {
     if (!value || value.length < MIN_SECRET_LENGTH) continue
     if (!SECRET_NAME_PATTERN.test(name) && !EXTRA_SENSITIVE_ENV_VARS.includes(name)) continue
     replacements.push({ needle: value, placeholder: `<${name}>` })
+    // Percent-encoding is case-insensitive (RFC 3986): encodeURIComponent
+    // emits uppercase hex (%2B) but other encoders emit lowercase (%2b), so
+    // cover both. Mixed-case escapes within one value aren't covered — no
+    // real-world encoder produces them.
     const encoded = encodeURIComponent(value)
-    if (encoded !== value) replacements.push({ needle: encoded, placeholder: `<${name}>` })
+    if (encoded !== value) {
+      replacements.push({ needle: encoded, placeholder: `<${name}>` })
+      const lowercaseHex = encoded.replace(/%[0-9A-F]{2}/g, escape => escape.toLowerCase())
+      if (lowercaseHex !== encoded) replacements.push({ needle: lowercaseHex, placeholder: `<${name}>` })
+    }
   }
   // Longest first so a value that contains another secret as a substring is
   // replaced whole before the shorter needle can split it.
@@ -65,14 +73,18 @@ function envReplacements(): Replacement[] {
 const PATTERN_REDACTIONS: Array<{ pattern: RegExp; replacement: string }> = [
   // JWT — three dot-separated base64url segments starting with an `eyJ` header.
   { pattern: /\beyJ[\w-]{8,}\.[\w-]{4,}\.[\w-]{4,}\b/g, replacement: '<JWT>' },
-  // Authorization-style bearer tokens quoted in console text.
-  { pattern: /\bBearer\s+[\w.~+/-]{8,}=*/g, replacement: 'Bearer <TOKEN>' },
+  // Authorization-style bearer tokens quoted in console text. The scheme is
+  // case-insensitive (RFC 7235) — capture it so the original casing survives.
+  { pattern: /\b(Bearer)\s+[\w.~+/-]{8,}=*/gi, replacement: '$1 <TOKEN>' },
   // Basic-auth userinfo in URLs — https://user:pass@host.
   { pattern: /(\/\/[^\s/:@]+:)[^\s@/]+@/g, replacement: '$1<REDACTED>@' },
-  // Values of credential-named query params.
+  // Values of credential-named query params. `key` (GCP/Firebase-style) and
+  // `code` (OAuth authorization codes) are included even though they can
+  // occasionally name innocent data — over-redacting a failure log beats
+  // leaking through it.
   {
     pattern:
-      /([?&](?:access_token|id_token|refresh_token|token|apikey|api_key|client_secret|secret|password|private_key|signature|auth|otp)=)[^&\s"']+/gi,
+      /([?&](?:access_token|id_token|refresh_token|token|apikey|api_key|key|client_secret|secret|password|private_key|signature|auth|otp|code)=)[^&\s"']+/gi,
     replacement: '$1<REDACTED>'
   }
 ]
@@ -81,7 +93,7 @@ const PATTERN_REDACTIONS: Array<{ pattern: RegExp; replacement: string }> = [
 export function sanitizeForLog(text: string): string {
   let result = text
   for (const { needle, placeholder } of envReplacements()) {
-    result = result.split(needle).join(placeholder)
+    result = result.replaceAll(needle, placeholder)
   }
   for (const { pattern, replacement } of PATTERN_REDACTIONS) {
     result = result.replace(pattern, replacement)
