@@ -73,7 +73,9 @@ public static class ImageDiff
         var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
         try
         {
-            if (!bmp.ReadPixels(info, handle.AddrOfPinnedObject(), info.RowBytes, 0, 0))
+            using var pixmap = bmp.PeekPixels();
+            if (pixmap is null ||
+                !pixmap.ReadPixels(info, handle.AddrOfPinnedObject(), info.RowBytes, 0, 0))
                 throw new InvalidOperationException(
                     $"Failed to read {bmp.Width}x{bmp.Height} bitmap pixels for image diff.");
         }
