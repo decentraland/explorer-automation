@@ -155,7 +155,7 @@ const haveOnChainConfig = (): boolean =>
       optionalEnv('MARKETPLACE_TEST_GIFT_TOKEN_ID')
   )
 
-test.describe('@web @auth @on-chain NFT gift round-trip (RequestPage)', () => {
+test.describe('@auth @on-chain NFT gift round-trip (RequestPage)', () => {
   test.skip(!haveOnChainConfig(), 'Requires on-chain wallet + NFT config')
   test.describe.configure({ timeout: 420_000 })
 

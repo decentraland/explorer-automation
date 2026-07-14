@@ -21,12 +21,13 @@ public abstract class BaseTest
         }
         catch (Exception ex)
         {
-            // Capture and rethrow per-test in [SetUp]. NUnit reports OneTimeSetUp failures
+            // Capture and re-fail per-test in [SetUp]. NUnit reports OneTimeSetUp failures
             // at the fixture level, which Allure doesn't render as test entries — so all
-            // tests in this fixture would be invisible in the report. By re-failing inside
-            // [SetUp], each test gets its own entry marked as failed.
+            // tests in this fixture would be invisible in the report. Do NOT rethrow here:
+            // a throwing OneTimeSetUp makes NUnit skip [SetUp] and the tests entirely, which
+            // would defeat the per-test re-fail below. Swallowing lets [SetUp] run and mark
+            // each test as failed with its own entry.
             ExceptionFromOneTimeSetUp = ex;
-            throw;
         }
     }
 

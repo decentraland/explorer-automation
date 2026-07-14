@@ -112,7 +112,7 @@ Playwright's projects use `grep` to route specs. An untagged `describe` doesn't 
 
 Pure-signature flows (e.g. listing-only via `/v1/trades`, no relayer) do NOT carry `@on-chain` — they don't compete for the wallet pool.
 
-**Substring collision**: `npm test` runs `playwright test --grep @web`, and `@web` is a substring of `@webgpu` — so the CLI-level `--grep` matches both projects' specs and the 2 webgpu tests run twice (once via `npm test`, once via `npm run test:webgpu`). The per-project `grep: /@web\b/` only filters within a project; CLI `--grep` is global. Tighten to `--grep "@web\b"` or `--project=web` if you want strict separation.
+**Substring collision (resolved)**: `npm test` now runs `playwright test --project=web`, which scopes the run to the `web` project alone. A previous version used a global `--grep @web`; because `@web` is a substring of `@webgpu`, that also pulled in the headed WebGPU specs, and because it matched the `@web`-tagged `mana-donation` / `nft-gift` describes it also dragged the 420s on-chain auth specs into the default run. Selecting the project directly avoids both (the project's own `grep: /@web\b/` + `grepInvert: /@on-chain/` do the intra-project filtering). If you ever go back to a CLI grep, use `--grep "@web\b"` — a bare `--grep @web` is global and re-introduces the collision. The `mana-donation` / `nft-gift` describes are tagged `@auth @on-chain` (not `@web`) so they only route through the `auth-onchain` project.
 
 ### Locator priority — surface-aware
 

@@ -39,7 +39,7 @@ import { getBaseUrl } from './env.js'
  */
 export function marketplaceApiBaseUrl(): string {
   const explicit = process.env.MARKETPLACE_API_BASE_URL
-  if (explicit) return explicit.replace(/\/$/, '')
+  if (explicit) return explicit.replace(/\/+$/, '')
 
   const host = new URL(getBaseUrl()).host
   const env = process.env.MARKETPLACE_ENV ?? 'dev'

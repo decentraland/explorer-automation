@@ -26,3 +26,38 @@ export function decodeMintFromReceipt(receipt: TransactionReceipt, contract: `0x
   }
   return { tokenId: BigInt(mintLog.topics[3]).toString() }
 }
+
+/**
+ * Asserts that `receipt` contains an ERC-721 Transfer(from, to=`buyer`, tokenId)
+ * log on `contract` — i.e. the NFT actually changed hands to the buyer. Used by
+ * the secondary (accept-listing) buy to verify the on-chain ownership transfer,
+ * not merely that the relayer tx "succeeded" (a receipt that only carried the
+ * approval, or transferred a different token, would otherwise pass silently).
+ *
+ * topics[2] is the indexed `to` address (left-padded to 32 bytes); topics[3] is
+ * the indexed tokenId. Throws if no matching log is found.
+ */
+export function assertErc721ReceivedBy(
+  receipt: TransactionReceipt,
+  contract: `0x${string}`,
+  buyer: `0x${string}`,
+  tokenId: string
+): void {
+  const wantedContract = contract.toLowerCase()
+  const wantedBuyer = buyer.toLowerCase()
+  const wantedTokenId = BigInt(tokenId)
+  const transfer = receipt.logs.find(l => {
+    if (l.address.toLowerCase() !== wantedContract) return false
+    if (l.topics[0] !== TRANSFER_EVENT_TOPIC) return false
+    const to = l.topics[2]
+    const tid = l.topics[3]
+    if (!to || !tid) return false
+    if (`0x${to.slice(-40)}`.toLowerCase() !== wantedBuyer) return false
+    return BigInt(tid) === wantedTokenId
+  })
+  if (!transfer) {
+    throw new Error(
+      `No ERC-721 Transfer of token ${tokenId} to ${buyer} on ${contract} found in receipt ${receipt.transactionHash}`
+    )
+  }
+}
