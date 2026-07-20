@@ -18,7 +18,7 @@ import {
   waitForDeepLinkRedirect,
   parseDeepLinkUrl
 } from '../helpers/deeplink.js'
-import { removeTokenBridge, writeTokenBridge } from '../helpers/token-bridge.js'
+import { writeDeeplinkBridge, removeDeeplinkBridge } from '../helpers/deeplink-bridge.js'
 import { runExplorer, verifyExplorerInWorldFromDeeplink } from '../helpers/explorer-runner.js'
 import type { ChildProcess } from 'node:child_process'
 
@@ -29,16 +29,17 @@ test.describe('@cross deeplink → desktop handoff', () => {
   let explorer: ChildProcess | undefined
 
   test.beforeEach(async () => {
-    await removeTokenBridge()
+    await removeDeeplinkBridge()
   })
 
   test.afterEach(async () => {
+    await removeDeeplinkBridge()
     if (explorer && !explorer.killed) {
       explorer.kill('SIGTERM')
     }
   })
 
-  test('deeplink auth writes token bridge and Explorer lands in-world', async ({ page, ethereumWalletMock }) => {
+  test('deeplink auth writes bridge and Explorer lands in-world', async ({ page, ethereumWalletMock }) => {
     const privateKey = generatePrivateKey()
     const account = privateKeyToAccount(privateKey)
 
@@ -65,12 +66,12 @@ test.describe('@cross deeplink → desktop handoff', () => {
     const deepLinkUrl = await waitForDeepLinkRedirect(page, 120_000)
     const params = parseDeepLinkUrl(deepLinkUrl)
     expect(params.signin).toBeTruthy()
+    expect(params.authRequestId).toBe(authRequestId)
 
-    // ── Write identity ID to token bridge ──
-    // TokenFileAuthenticator reads a GUID from auth-token-bridge.txt, fetches
-    // GET /identities/{guid}, and auto-logs in. The deeplink flow's signin
-    // param IS that identity ID.
-    await writeTokenBridge(params.signin!)
+    // ── Write deeplink-bridge.json (same format the launcher writes) ──
+    // Format: {"deeplink": "decentraland://open?signin={identityId}&authRequestId={uuid}"}
+    // DeeplinkSentinel polls for this file and feeds it to DeepLinkHandle.
+    await writeDeeplinkBridge(deepLinkUrl)
 
     // ── Launch Explorer and verify in-world ──
     explorer = runExplorer({ alttester: true })
