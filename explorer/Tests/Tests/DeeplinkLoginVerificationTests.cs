@@ -1,28 +1,76 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 /// <summary>
-/// Fixture invoked from the TypeScript / Playwright `@cross` deeplink suite to
-/// verify that an Explorer launched after a deeplink login flow has a fully
-/// functional authenticated session. The TS test shells out:
+/// Fixture invoked from the TypeScript / Playwright `@cross` deeplink suite.
 ///
 ///     dotnet test explorer/Tests --filter "ClassName~DeeplinkLoginVerificationTests"
 ///
-/// Flow: Playwright completes the browser-side deeplink auth, captures the
-/// deep link URL (decentraland://open?signin={identityId}&amp;authRequestId={uuid}),
-/// writes deeplink-bridge.json, and launches the Explorer with AltTester.
-/// EnsureInWorld (inherited from BaseTest) handles splash → auth → loading.
-/// These tests then verify the resulting session.
+/// After the deeplink login completes, the Explorer does NOT auto-jump into the
+/// world. It stays on the auth screen in the cached-account state ("Jump Into
+/// Decentraland" button visible). The user must click that button to proceed.
+///
+/// This fixture overrides <see cref="BaseTest.EnsureInWorld"/> to explicitly
+/// verify the deeplink-specific intermediate state before clicking JumpIn:
+///   1. Splash clears
+///   2. Auth screen appears with JumpIntoWorldButton (cached-account state)
+///   3. LoginSelectionScreen is NOT present (we're not on the login form)
+///   4. Click JumpIntoWorldButton
+///   5. World loads → main menu visible
+///
+/// Individual tests then verify the resulting authenticated session.
 /// </summary>
 [AllureSuite("Deeplink Login Verification")]
 [Category("CrossVerify")]
 [Order(16)]
 public class DeeplinkLoginVerificationTests : BaseTest
 {
+    protected override void EnsureInWorld()
+    {
+        if (Views.SplashScreen.IsPresent())
+        {
+            Reporter.Log("Splash screen detected — waiting for it to clear");
+            Views.SplashScreen.WaitForGone(60);
+        }
+
+        // After deeplink login, the Explorer must land on the cached-account auth
+        // screen — NOT the login form. If we see LoginSelectionScreen instead, the
+        // deeplink identity was not consumed and we're in a logged-out state.
+        Views.AuthenticationMainScreen.WaitFor(60);
+        Reporter.Log("Auth screen detected after deeplink login");
+
+        Assert.That(Views.AuthenticationMainScreen.JumpIntoWorldButton.IsPresent(), Is.True,
+            "After deeplink login the auth screen should show 'Jump Into Decentraland' (cached-account state), "
+            + "not the login form. If this fails, the deeplink identity was not consumed by the Explorer.");
+
+        Assert.That(Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent(), Is.False,
+            "The login form (email / MetaMask / Google) should NOT be visible — the deeplink login "
+            + "should have cached the account, showing the Jump In screen instead.");
+
+        Reporter.Log("Cached-account state confirmed — clicking Jump Into Decentraland");
+        Views.AuthenticationMainScreen.JumpIntoWorldButton.Click();
+
+        try
+        {
+            Views.LoadingScreen.WaitFor(15);
+            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
+            Views.LoadingScreen.WaitForGone(300);
+            Reporter.Log("Scene loading complete");
+        }
+        catch (Exception)
+        {
+            Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
+        }
+
+        Views.MainMenu.WaitFor(120);
+        Thread.Sleep(20_000);
+        Reporter.Log("Player is in-world and main menu is ready");
+    }
+
     [Test]
     public void TestExplorerIsInWorldFromDeeplinkLogin()
     {
         Assert.That(Views.MainMenu.IsPresent(), Is.True,
-            "Main menu (sidebar) should be visible after deeplink login completes.");
+            "Main menu (sidebar) should be visible after clicking Jump Into Decentraland.");
     }
 
     [Test]
