@@ -2,44 +2,24 @@ import { randomUUID } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { authServerUrl } from './auth-server.js'
 
-/**
- * Helpers for the deeplink login flow E2E tests.
- *
- * The deeplink login is the Explorer desktop client's primary sign-in path:
- *
- *  1. Explorer generates a client-side UUID (`authRequestId`).
- *  2. Explorer opens the browser to
- *     `/auth/login/{authRequestId}?loginMethod=metamask&flow=deeplink`.
- *  3. User connects their wallet and signs in the browser.
- *  4. The auth dapp creates an identity on the auth server.
- *  5. The auth dapp redirects via deep link:
- *     `decentraland://?signin={identityId}&authRequestId={authRequestId}`.
- *  6. Explorer receives the deep link, fetches the identity from
- *     `GET /identities/{identityId}`, and completes the login.
- *
- * Related PRs:
- *   - Launcher: https://github.com/decentraland/launcher-rust/pull/293
- *   - Explorer: https://github.com/decentraland/unity-explorer/pull/9100
- */
-
 // ─── URL construction ───────────────────────────────────────────────────────
 
-/** Generates a client-side auth request ID — a UUID the Explorer would produce. */
 export function generateAuthRequestId(): string {
   return randomUUID()
 }
 
 /**
- * Builds the login URL the Explorer opens in the browser for deeplink auth.
+ * Builds the request-page URL the Explorer opens for deeplink auth.
  *
- * Format: `/auth/login/{authRequestId}?loginMethod={method}&flow=deeplink`
+ * Format: `/auth/requests/{authRequestId}?flow=deeplink`
  *
- * The path includes the `authRequestId` so the auth dapp can echo it back in
- * the `decentraland://` redirect. `flow=deeplink` tells the auth dapp to
- * redirect via OS deep link instead of the normal homepage redirect.
+ * The route UUID is the client-generated correlation ID — forwarded to the
+ * client as the deep link's `authRequestId` so it can match this login to the
+ * instance that requested it. `flow=deeplink` opts into the deep-link login
+ * handoff (case-insensitive on the auth dapp side).
  */
-export function buildDeeplinkLoginPath(authRequestId: string, loginMethod = 'metamask'): string {
-  return `/auth/login/${authRequestId}?loginMethod=${loginMethod}&flow=deeplink`
+export function buildDeeplinkLoginPath(authRequestId: string): string {
+  return `/auth/requests/${authRequestId}?flow=deeplink`
 }
 
 // ─── Deep link redirect capture ─────────────────────────────────────────────
@@ -50,6 +30,10 @@ export function buildDeeplinkLoginPath(authRequestId: string, loginMethod = 'met
  * ERR_UNKNOWN_URL_SCHEME). The captured URL is stored on `window` and
  * retrievable via {@link getCapturedDeepLink}.
  *
+ * The auth dapp launches the deep link via a hidden iframe (`iframe.src = url`)
+ * so the primary interceptor patches the HTMLIFrameElement `src` setter.
+ * Location and window.open interceptors are kept as fallbacks.
+ *
  * Must be called BEFORE navigating to the auth page — `addInitScript` only
  * takes effect on subsequent navigations.
  */
@@ -58,9 +42,25 @@ export async function installDeeplinkCapture(page: Page): Promise<void> {
     const w = window as unknown as { __capturedDeepLink: string | null }
     w.__capturedDeepLink = null
 
-    // Intercept Location.prototype.assign — covers `location.assign(url)` and
-    // direct `location.href = url` assignment (which Chromium routes through
-    // assign internally).
+    // Primary: intercept HTMLIFrameElement.src setter — the auth dapp creates
+    // a hidden iframe with `iframe.src = 'decentraland://...'` to trigger the
+    // OS protocol handler without a visible navigation.
+    const srcDesc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src')
+    if (srcDesc?.set) {
+      const origSrcSet = srcDesc.set
+      Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+        ...srcDesc,
+        set(this: HTMLIFrameElement, value: string) {
+          if (typeof value === 'string' && value.startsWith('decentraland://')) {
+            w.__capturedDeepLink = value
+            return
+          }
+          origSrcSet.call(this, value)
+        }
+      })
+    }
+
+    // Fallback: Location.prototype.assign
     const origAssign = Location.prototype.assign
     Location.prototype.assign = function (url: string | URL) {
       const str = typeof url === 'string' ? url : url.toString()
@@ -71,8 +71,7 @@ export async function installDeeplinkCapture(page: Page): Promise<void> {
       return origAssign.call(this, url)
     }
 
-    // Intercept Location.prototype.replace — some dapps use replace to prevent
-    // back-button navigation to the signing page.
+    // Fallback: Location.prototype.replace
     const origReplace = Location.prototype.replace
     Location.prototype.replace = function (url: string | URL) {
       const str = typeof url === 'string' ? url : url.toString()
@@ -83,8 +82,7 @@ export async function installDeeplinkCapture(page: Page): Promise<void> {
       return origReplace.call(this, url)
     }
 
-    // Intercept window.open for completeness — the dapp might open the deep
-    // link in a new tab/window.
+    // Fallback: window.open
     const origOpen = window.open.bind(window)
     window.open = function (url?: string | URL, target?: string, features?: string): WindowProxy | null {
       const str = typeof url === 'string' ? url : (url?.toString() ?? '')
