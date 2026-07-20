@@ -62,7 +62,6 @@ public class DeeplinkLoginVerificationTests : BaseTest
         }
 
         Views.MainMenu.WaitFor(120);
-        Thread.Sleep(20_000);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
