@@ -36,20 +36,19 @@ export function runExplorer(options: RunExplorerOptions = {}): ChildProcess {
 }
 
 /**
- * Shells out to a C# fixture that connects via AltTester and asserts the player
- * is in-world. Resolves on exit code 0; rejects otherwise.
+ * Shells out to a C# test filter expression. Resolves on exit code 0; rejects otherwise.
  */
-function runDotnetVerification(testName: string): Promise<void> {
+function runDotnetVerification(filter: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'dotnet',
-      ['test', EXPLORER_TESTS_DIR, '--filter', `Name=${testName}`, '--logger', 'console;verbosity=normal'],
+      ['test', EXPLORER_TESTS_DIR, '--filter', filter, '--logger', 'console;verbosity=normal'],
       { stdio: 'inherit' }
     )
     child.on('error', reject)
     child.on('exit', code => {
       if (code === 0) resolve()
-      else reject(new Error(`dotnet test (${testName}) exited with code ${code}`))
+      else reject(new Error(`dotnet test (${filter}) exited with code ${code}`))
     })
   })
 }
@@ -58,12 +57,13 @@ function runDotnetVerification(testName: string): Promise<void> {
  * Verifies in-world state after a standard token-bridge auto-login.
  */
 export function verifyExplorerInWorld(): Promise<void> {
-  return runDotnetVerification('TestExplorerIsInWorldFromTokenBridge')
+  return runDotnetVerification('Name=TestExplorerIsInWorldFromTokenBridge')
 }
 
 /**
- * Verifies in-world state after a deeplink-sourced token-bridge auto-login.
+ * Runs the full deeplink login verification suite: in-world state, authenticated
+ * session (profile menu / sign-out), backpack, and navmap accessibility.
  */
 export function verifyExplorerInWorldFromDeeplink(): Promise<void> {
-  return runDotnetVerification('TestExplorerIsInWorldFromDeeplinkLogin')
+  return runDotnetVerification('ClassName~DeeplinkLoginVerificationTests')
 }
