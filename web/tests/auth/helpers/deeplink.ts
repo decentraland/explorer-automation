@@ -166,7 +166,8 @@ export async function fetchIdentity(identityId: string): Promise<DeepLinkIdentit
     signal: AbortSignal.timeout(15_000)
   })
   if (!res.ok) {
-    throw new Error(`fetchIdentity(${identityId}) failed: ${res.status} ${await res.text()}`)
+    const body = await res.text()
+    throw new Error(`fetchIdentity failed: HTTP ${res.status} — ${body.slice(0, 200)}`)
   }
   const json = (await res.json()) as { identity: DeepLinkIdentity }
   return json.identity

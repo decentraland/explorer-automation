@@ -5,7 +5,7 @@ import {
   setupMockedWallet,
   mockNoProfileOnCatalysts,
   installAutoWalletMockInitScript,
-  applyPersonalSignOverride
+  installPersonalSignOverrideInitScript
 } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { AuthPage } from '../pages/AuthPage.js'
@@ -18,7 +18,7 @@ import {
   waitForDeepLinkRedirect,
   parseDeepLinkUrl
 } from '../helpers/deeplink.js'
-import { writeDeeplinkBridge, removeDeeplinkBridge } from '../helpers/deeplink-bridge.js'
+import { writeDeeplinkBridge, removeDeeplinkBridge, deeplinkBridgeExists } from '../helpers/deeplink-bridge.js'
 import { runExplorer, verifyExplorerInWorldFromDeeplink } from '../helpers/explorer-runner.js'
 import type { ChildProcess } from 'node:child_process'
 
@@ -26,6 +26,11 @@ const { expect } = test
 const REDIRECT_TO = `${getBaseUrl()}/`
 
 test.describe('@cross deeplink → desktop handoff', () => {
+  // P1 fix: the cross flow covers profile creation (~110s), deeplink wait (up to 120s),
+  // Explorer launch, and dotnet/AltTester verification (several minutes). The global
+  // 120s timeout cannot cover this — size for the full chain.
+  test.describe.configure({ timeout: 600_000 })
+
   let explorer: ChildProcess | undefined
 
   test.beforeEach(async () => {
@@ -60,8 +65,8 @@ test.describe('@cross deeplink → desktop handoff', () => {
     const authRequestId = generateAuthRequestId()
     await installDeeplinkCapture(page)
     await installAutoWalletMockInitScript(page, account.address)
+    await installPersonalSignOverrideInitScript(page)
     await page.goto(buildDeeplinkLoginPath(authRequestId), { waitUntil: 'load' })
-    await applyPersonalSignOverride(page)
 
     const deepLinkUrl = await waitForDeepLinkRedirect(page, 120_000)
     const params = parseDeepLinkUrl(deepLinkUrl)
@@ -74,7 +79,14 @@ test.describe('@cross deeplink → desktop handoff', () => {
     await writeDeeplinkBridge(deepLinkUrl)
 
     // ── Launch Explorer and verify in-world ──
-    explorer = runExplorer({ alttester: true })
+    // Use `clear: true` to wipe the launcher's Thirdweb auth cache, ensuring the
+    // test can only pass if the bridge file is consumed (not stale cached auth).
+    explorer = runExplorer({ alttester: true, clear: true })
     await verifyExplorerInWorldFromDeeplink()
+
+    // Verify the bridge file was consumed (deleted) by DeeplinkSentinel — proves
+    // the Explorer actually read and processed the deeplink, not stale auth state.
+    const bridgeStillExists = await deeplinkBridgeExists()
+    expect(bridgeStillExists).toBe(false)
   })
 })

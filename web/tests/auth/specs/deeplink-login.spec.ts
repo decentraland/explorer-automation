@@ -5,7 +5,7 @@ import {
   setupMockedWallet,
   mockNoProfileOnCatalysts,
   installAutoWalletMockInitScript,
-  applyPersonalSignOverride
+  installPersonalSignOverrideInitScript
 } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { AuthPage } from '../pages/AuthPage.js'
@@ -71,12 +71,13 @@ test.describe('@web @auth deeplink login', () => {
     // ── Drive the deeplink flow ──
     const authRequestId = generateAuthRequestId()
 
-    // Install the deep link interceptor and auto-wallet-mock BEFORE navigating
-    // so the init scripts are active when the auth dapp fires the redirect.
+    // Install the deep link interceptor, auto-wallet-mock, and personal_sign
+    // override BEFORE navigating — init scripts only fire on subsequent navigations,
+    // and the override must be in place before the auth dapp requests personal_sign.
     await installDeeplinkCapture(page)
     await installAutoWalletMockInitScript(page, account.address)
+    await installPersonalSignOverrideInitScript(page)
     await page.goto(buildDeeplinkLoginPath(authRequestId), { waitUntil: 'load' })
-    await applyPersonalSignOverride(page)
 
     // The auth dapp auto-posts the identity and fires the deep link when the
     // user is connected with a complete profile — no manual interaction needed.
@@ -121,8 +122,8 @@ test.describe('@web @auth deeplink login', () => {
     const account = privateKeyToAccount(privateKey)
     await installDeeplinkCapture(page)
     await installAutoWalletMockInitScript(page, account.address)
+    await installPersonalSignOverrideInitScript(page)
     await page.goto(buildDeeplinkLoginPath(authRequestId), { waitUntil: 'load' })
-    await applyPersonalSignOverride(page)
 
     const deepLinkUrl = await waitForDeepLinkRedirect(page, 120_000)
     const params = parseDeepLinkUrl(deepLinkUrl)

@@ -40,7 +40,7 @@ export function getTokenBridgePath(): string {
 export async function writeTokenBridge(content: string): Promise<void> {
   const bridgePath = getTokenBridgePath()
   await fs.mkdir(path.dirname(bridgePath), { recursive: true })
-  await fs.writeFile(bridgePath, content, 'utf8')
+  await fs.writeFile(bridgePath, content, { encoding: 'utf8', mode: 0o600 })
 }
 
 export async function tokenBridgeExists(): Promise<boolean> {

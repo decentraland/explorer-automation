@@ -3,7 +3,7 @@ namespace ExplorerAutomation.Tests.Tests;
 /// <summary>
 /// Fixture invoked from the TypeScript / Playwright `@cross` deeplink suite.
 ///
-///     dotnet test explorer/Tests --filter "ClassName~DeeplinkLoginVerificationTests"
+///     dotnet test explorer/Tests --filter "FullyQualifiedName~DeeplinkLoginVerificationTests"
 ///
 /// After the deeplink login completes, the Explorer does NOT auto-jump into the
 /// world. It stays on the auth screen in the cached-account state ("Jump Into
@@ -62,6 +62,14 @@ public class DeeplinkLoginVerificationTests : BaseTest
         }
 
         Views.MainMenu.WaitFor(120);
+
+        // Match BaseTest.EnsureInWorld(): SidebarController subscribes onClick
+        // listeners in OnViewInstantiated, which fires asynchronously after the
+        // SidebarView GameObject appears. Clicks during that gap are silently
+        // dropped. The subsequent tests immediately click sidebar buttons
+        // (ProfileButton, BackpackButton, MapButton) so this settle wait is
+        // necessary to avoid flakes.
+        Thread.Sleep(20_000);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 

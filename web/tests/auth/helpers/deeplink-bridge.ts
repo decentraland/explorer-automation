@@ -42,11 +42,20 @@ export interface DeeplinkBridgeDTO {
   deeplink: string
 }
 
+export async function deeplinkBridgeExists(): Promise<boolean> {
+  try {
+    await fs.access(getDeeplinkBridgePath())
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function writeDeeplinkBridge(deeplinkUrl: string): Promise<void> {
   const bridgePath = getDeeplinkBridgePath()
   await fs.mkdir(path.dirname(bridgePath), { recursive: true })
   const dto: DeeplinkBridgeDTO = { deeplink: deeplinkUrl }
-  await fs.writeFile(bridgePath, JSON.stringify(dto), 'utf8')
+  await fs.writeFile(bridgePath, JSON.stringify(dto), { encoding: 'utf8', mode: 0o600 })
 }
 
 export async function removeDeeplinkBridge(): Promise<void> {

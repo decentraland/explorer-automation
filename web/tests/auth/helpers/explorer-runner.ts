@@ -65,5 +65,5 @@ export function verifyExplorerInWorld(): Promise<void> {
  * session (profile menu / sign-out), backpack, and navmap accessibility.
  */
 export function verifyExplorerInWorldFromDeeplink(): Promise<void> {
-  return runDotnetVerification('ClassName~DeeplinkLoginVerificationTests')
+  return runDotnetVerification('FullyQualifiedName~DeeplinkLoginVerificationTests')
 }
