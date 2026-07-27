@@ -6,7 +6,8 @@ import {
   mockNoProfileOnCatalysts,
   installAutoWalletMockInitScript,
   installWalletRpcSpy,
-  SIGNING_RPC_METHODS
+  SIGNING_RPC_METHODS,
+  READ_ONLY_RPC_METHODS
 } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
@@ -86,11 +87,19 @@ test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user 
   // that directly rather than inferring it from a missing outcome — the page
   // could equally have prompted the wallet and failed locally.
   const rpcCalls = await readRpcCalls()
+  const seen = JSON.stringify(rpcCalls)
+
+  // Hard invariant: nothing that signs or broadcasts. `dcl_personal_sign` is in
+  // that set — forwarding the request's own method to the wallet is the most
+  // direct way this regresses.
   const signingCalls = rpcCalls.filter(method => SIGNING_RPC_METHODS.has(method.toLowerCase()))
-  expect(
-    signingCalls,
-    `the retired flow must never ask the wallet to sign (saw: ${rpcCalls.join(', ') || 'no calls'})`
-  ).toEqual([])
+  expect(signingCalls, `the retired flow must never ask the wallet to sign (saw: ${seen})`).toEqual([])
+
+  // Catch-all: reject anything outside the benign read-only set, so a method
+  // nobody thought to deny still fails here. If this trips on a genuinely
+  // harmless probe, add it to READ_ONLY_RPC_METHODS — don't weaken the check.
+  const unexpectedCalls = rpcCalls.filter(method => !READ_ONLY_RPC_METHODS.has(method.toLowerCase()))
+  expect(unexpectedCalls, `the retired flow made a non-read-only wallet call (saw: ${seen})`).toEqual([])
 
   // And the request itself is untouched: auth-api still reports it pending.
   // An explicit 204 distinguishes "no outcome was posted" from "auth-api was

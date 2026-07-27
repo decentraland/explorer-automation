@@ -176,16 +176,44 @@ export async function applyPersonalSignOverride(page: Page): Promise<void> {
 }
 
 /**
- * EIP-1193 methods that make the wallet produce a signature or broadcast.
+ * Methods that make the wallet produce a signature or broadcast.
  * Lowercased — compare against a lowercased method name.
+ *
+ * `dcl_personal_sign` is not an EIP-1193 method and no wallet implements it,
+ * but it belongs here: it is the auth server's own request method, and the
+ * most likely way the retired sign-in regresses is the request page forwarding
+ * that method verbatim to `window.ethereum.request`. Leaving it out let such a
+ * call be recorded and then filtered away before the assertion.
  */
 export const SIGNING_RPC_METHODS = new Set([
   'personal_sign',
+  'dcl_personal_sign',
   'eth_sign',
   'eth_signtypeddata',
   'eth_signtypeddata_v3',
   'eth_signtypeddata_v4',
   'eth_sendtransaction'
+])
+
+/**
+ * Wallet reads a page may legitimately make while restoring a session —
+ * account and chain lookups that neither sign nor broadcast. Lowercased.
+ *
+ * This is the allowlist counterpart to {@link SIGNING_RPC_METHODS}. A denylist
+ * can only reject what it already knows about, which is how `dcl_personal_sign`
+ * slipped through; a spec asserting "this flow must not touch the wallet" gets
+ * a stronger guarantee by rejecting everything outside this set, so a method
+ * nobody thought to enumerate fails the test instead of passing it.
+ */
+export const READ_ONLY_RPC_METHODS = new Set([
+  'eth_accounts',
+  'eth_requestaccounts',
+  'eth_chainid',
+  'net_version',
+  'wallet_getpermissions',
+  'eth_getbalance',
+  'eth_blocknumber',
+  'eth_call'
 ])
 
 /**
