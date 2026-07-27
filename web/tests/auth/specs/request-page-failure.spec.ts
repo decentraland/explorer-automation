@@ -5,13 +5,14 @@ import {
   setupMockedWallet,
   mockNoProfileOnCatalysts,
   installAutoWalletMockInitScript,
-  applyPersonalSignOverride
+  installWalletRpcSpy,
+  SIGNING_RPC_METHODS
 } from '../helpers/wallet.js'
 import { getBaseUrl } from '../../../shared/helpers/env.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
-import { createAuthRequest, pollAuthOutcome } from '../helpers/auth-server.js'
+import { createAuthRequest, fetchOutcomeStatus } from '../helpers/auth-server.js'
 import { getEphemeralMessage } from '../../../shared/helpers/identity.js'
 
 /**
@@ -69,8 +70,11 @@ test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user 
   expect(requestId).toBeTruthy()
 
   await installAutoWalletMockInitScript(page, account.address)
+  // Watch every wallet RPC the page makes. Deliberately no
+  // `applyPersonalSignOverride` here: it would answer `personal_sign` from its
+  // own wrapper, hiding the exact call this test needs to catch.
+  const readRpcCalls = await installWalletRpcSpy(page)
   await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' })
-  await applyPersonalSignOverride(page)
 
   await page.locator('[data-testid="outdated-client-error"]').waitFor({ state: 'visible', timeout: 30_000 })
 
@@ -78,7 +82,18 @@ test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user 
   // loop this view exists to break.
   await expect(page.locator('[data-testid="client-login-error-try-again-button"]')).toBeHidden()
 
-  // Nothing reached the wallet, so the request must stay unfulfilled —
-  // auth-api keeps answering 204 and the poll runs out its deadline.
-  await expect(pollAuthOutcome(requestId, 10_000)).rejects.toThrow(/timed out/i)
+  // The rejection has to happen before the wallet is involved at all. Assert
+  // that directly rather than inferring it from a missing outcome — the page
+  // could equally have prompted the wallet and failed locally.
+  const rpcCalls = await readRpcCalls()
+  const signingCalls = rpcCalls.filter(method => SIGNING_RPC_METHODS.has(method.toLowerCase()))
+  expect(
+    signingCalls,
+    `the retired flow must never ask the wallet to sign (saw: ${rpcCalls.join(', ') || 'no calls'})`
+  ).toEqual([])
+
+  // And the request itself is untouched: auth-api still reports it pending.
+  // An explicit 204 distinguishes "no outcome was posted" from "auth-api was
+  // unreachable", which a poll-until-timeout cannot.
+  expect(await fetchOutcomeStatus(requestId), 'the request must still be pending').toBe(204)
 })

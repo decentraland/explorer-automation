@@ -176,6 +176,61 @@ export async function applyPersonalSignOverride(page: Page): Promise<void> {
 }
 
 /**
+ * EIP-1193 methods that make the wallet produce a signature or broadcast.
+ * Lowercased — compare against a lowercased method name.
+ */
+export const SIGNING_RPC_METHODS = new Set([
+  'personal_sign',
+  'eth_sign',
+  'eth_signtypeddata',
+  'eth_signtypeddata_v3',
+  'eth_signtypeddata_v4',
+  'eth_sendtransaction'
+])
+
+/**
+ * Records every `window.ethereum.request` method the page invokes, so a spec
+ * can assert positively that a flow never reached the wallet instead of
+ * inferring it from an absent outcome (an outcome can also be absent because
+ * the wallet was called and failed locally).
+ *
+ * Install BEFORE the `page.goto` under test — this registers an init script,
+ * so it only covers subsequent navigations. Returns a reader for the recorded
+ * method names, in call order; filter with `SIGNING_RPC_METHODS` for the
+ * signing subset.
+ *
+ * Don't pair this with `applyPersonalSignOverride` on the flow being watched:
+ * that override replaces `request` with a wrapper that answers `personal_sign`
+ * itself, so the very call worth catching would never reach the spy underneath
+ * it.
+ */
+export async function installWalletRpcSpy(page: Page): Promise<() => Promise<string[]>> {
+  await page.addInitScript(() => {
+    type Args = { method: string; params?: unknown[] }
+    type Request = ((args: Args) => Promise<unknown>) & { __spied?: boolean }
+    const w = window as unknown as { ethereum?: { request: Request }; __walletRpcCalls?: string[] }
+    w.__walletRpcCalls = []
+
+    // Web3Mock installs — and can re-install — `window.ethereum` after load, so
+    // keep re-wrapping instead of latching onto the first provider seen. The
+    // `__spied` marker keeps a stable provider from being wrapped repeatedly.
+    setInterval(() => {
+      const eth = w.ethereum
+      if (!eth || eth.request.__spied) return
+      const original = eth.request.bind(eth)
+      const spied: Request = async args => {
+        w.__walletRpcCalls?.push(args.method)
+        return original(args)
+      }
+      spied.__spied = true
+      eth.request = spied
+    }, 10)
+  })
+
+  return async () => page.evaluate(() => (window as unknown as { __walletRpcCalls?: string[] }).__walletRpcCalls ?? [])
+}
+
+/**
  * Heavier rebind: re-runs the synpress `connectToDapp` + `importWalletFromPrivateKey`
  * sequence on the current page in addition to applying the personal_sign
  * override. Use this when you need the wallet mock fully re-bootstrapped after
