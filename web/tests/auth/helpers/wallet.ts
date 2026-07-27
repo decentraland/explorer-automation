@@ -199,6 +199,18 @@ export const SIGNING_RPC_METHODS = new Set([
  * method names, in call order; filter with `SIGNING_RPC_METHODS` for the
  * signing subset.
  *
+ * Attachment is **synchronous**, via accessors installed at document_start:
+ * one on `window.ethereum` so a provider assigned at any later point is
+ * instrumented in the same tick as its assignment, and one on the provider's
+ * own `request` so a reassignment (Web3Mock re-mocking, an override) is
+ * re-wrapped the same way. A provider already present at document_start is
+ * wrapped outright. This matters because the RequestPage probes wallet state
+ * during page load: an attach that only ran on a timer could miss a call made
+ * between the provider appearing and the next tick — exactly the regression
+ * this spy exists to catch. The interval below is a fallback for the one case
+ * accessors can't cover (something redefining the property with its own
+ * descriptor), never the primary mechanism.
+ *
  * Don't pair this with `applyPersonalSignOverride` on the flow being watched:
  * that override replaces `request` with a wrapper that answers `personal_sign`
  * itself, so the very call worth catching would never reach the spy underneath
@@ -208,22 +220,70 @@ export async function installWalletRpcSpy(page: Page): Promise<() => Promise<str
   await page.addInitScript(() => {
     type Args = { method: string; params?: unknown[] }
     type Request = ((args: Args) => Promise<unknown>) & { __spied?: boolean }
-    const w = window as unknown as { ethereum?: { request: Request }; __walletRpcCalls?: string[] }
-    w.__walletRpcCalls = []
+    type Provider = { request: Request }
+    type SpiedGetter = (() => Request) & { __spiedAccessor?: boolean }
 
-    // Web3Mock installs — and can re-install — `window.ethereum` after load, so
-    // keep re-wrapping instead of latching onto the first provider seen. The
-    // `__spied` marker keeps a stable provider from being wrapped repeatedly.
-    setInterval(() => {
-      const eth = w.ethereum
-      if (!eth || eth.request.__spied) return
-      const original = eth.request.bind(eth)
+    const w = window as unknown as { ethereum?: Provider; __walletRpcCalls?: string[] }
+    const calls: string[] = []
+    w.__walletRpcCalls = calls
+
+    const wrap = (fn: Request, provider: Provider): Request => {
+      if (typeof fn !== 'function' || fn.__spied) return fn
       const spied: Request = async args => {
-        w.__walletRpcCalls?.push(args.method)
-        return original(args)
+        if (args && typeof args.method === 'string') calls.push(args.method)
+        return fn.call(provider, args)
       }
       spied.__spied = true
-      eth.request = spied
+      return spied
+    }
+
+    const instrument = (provider: Provider | undefined): Provider | undefined => {
+      if (!provider || typeof provider !== 'object') return provider
+      const descriptor = Object.getOwnPropertyDescriptor(provider, 'request')
+      if ((descriptor?.get as SpiedGetter | undefined)?.__spiedAccessor) return provider
+
+      let current = wrap(provider.request, provider)
+      const get: SpiedGetter = () => current
+      get.__spiedAccessor = true
+      try {
+        Object.defineProperty(provider, 'request', {
+          configurable: true,
+          enumerable: true,
+          get,
+          set: (next: Request) => {
+            current = wrap(next, provider)
+          }
+        })
+      } catch {
+        // `request` is locked down — best effort, then leave it to the sweep.
+        try {
+          provider.request = current
+        } catch {
+          /* nothing else to try */
+        }
+      }
+      return provider
+    }
+
+    let providerRef = instrument(w.ethereum)
+    try {
+      Object.defineProperty(window, 'ethereum', {
+        configurable: true,
+        enumerable: true,
+        get: () => providerRef,
+        set: (next: Provider) => {
+          providerRef = instrument(next)
+        }
+      })
+    } catch {
+      /* the property refused redefinition — the sweep is the fallback */
+    }
+
+    // Fallback only: re-instrument if either accessor is clobbered by code that
+    // redefines the property with its own descriptor.
+    setInterval(() => {
+      const provider = w.ethereum
+      if (provider && !provider.request?.__spied) instrument(provider)
     }, 10)
   })
 
