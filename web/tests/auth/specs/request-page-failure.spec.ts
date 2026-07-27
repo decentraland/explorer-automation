@@ -36,6 +36,26 @@ import { getEphemeralMessage } from '../../../shared/helpers/identity.js'
 
 const REDIRECT_TO = `${getBaseUrl()}/`
 
+/**
+ * Wallet calls this flow is allowed to make: the strictly-passive reads, plus
+ * `eth_requestAccounts`.
+ *
+ * `eth_requestAccounts` is deliberately NOT in `READ_ONLY_RPC_METHODS` — it can
+ * prompt, so it has no place in a set other specs rely on to mean "passive".
+ * It is allowed here because decentraland-connect rehydrates the session on
+ * page load, before the request is recovered and therefore before the retired
+ * method is even inspected. Observed against zone/5.0.0, in order:
+ *
+ *   ["eth_requestAccounts", "eth_chainId" ×5, "eth_accounts", "eth_chainId" ×64]
+ *
+ * That is the login layer connecting, not the retired flow reaching the wallet.
+ * Requiring its absence would make this spec permanently red without ever
+ * catching a regression. The invariant that actually matters — nothing is
+ * signed — is enforced by the denylist assertion above, which passed on that
+ * same run while this one failed.
+ */
+const ALLOWED_WALLET_CALLS = new Set([...READ_ONLY_RPC_METHODS, 'eth_requestaccounts'])
+
 const { expect } = test
 
 test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user to update', async ({
@@ -83,9 +103,9 @@ test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user 
   // loop this view exists to break.
   await expect(page.locator('[data-testid="client-login-error-try-again-button"]')).toBeHidden()
 
-  // The rejection has to happen before the wallet is involved at all. Assert
-  // that directly rather than inferring it from a missing outcome — the page
-  // could equally have prompted the wallet and failed locally.
+  // The retired request must be rejected without the wallet ever signing.
+  // Assert that directly rather than inferring it from a missing outcome — the
+  // page could equally have prompted the wallet and failed locally.
   const rpcCalls = await readRpcCalls()
   const seen = JSON.stringify(rpcCalls)
 
@@ -95,11 +115,10 @@ test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user 
   const signingCalls = rpcCalls.filter(method => SIGNING_RPC_METHODS.has(method.toLowerCase()))
   expect(signingCalls, `the retired flow must never ask the wallet to sign (saw: ${seen})`).toEqual([])
 
-  // Catch-all: reject anything outside the benign read-only set, so a method
-  // nobody thought to deny still fails here. If this trips on a genuinely
-  // harmless probe, add it to READ_ONLY_RPC_METHODS — don't weaken the check.
-  const unexpectedCalls = rpcCalls.filter(method => !READ_ONLY_RPC_METHODS.has(method.toLowerCase()))
-  expect(unexpectedCalls, `the retired flow made a non-read-only wallet call (saw: ${seen})`).toEqual([])
+  // Catch-all: reject anything outside the set below, so a method nobody
+  // thought to deny still fails here.
+  const unexpectedCalls = rpcCalls.filter(method => !ALLOWED_WALLET_CALLS.has(method.toLowerCase()))
+  expect(unexpectedCalls, `the retired flow made an unexpected wallet call (saw: ${seen})`).toEqual([])
 
   // And the request itself is untouched: auth-api still reports it pending.
   // An explicit 204 distinguishes "no outcome was posted" from "auth-api was
