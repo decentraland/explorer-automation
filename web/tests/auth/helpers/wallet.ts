@@ -196,18 +196,23 @@ export const SIGNING_RPC_METHODS = new Set([
 ])
 
 /**
- * Wallet reads a page may legitimately make while restoring a session —
- * account and chain lookups that neither sign nor broadcast. Lowercased.
+ * Strictly passive wallet reads: they return existing state and cannot prompt
+ * the user, request permission, or change anything. Lowercased.
  *
  * This is the allowlist counterpart to {@link SIGNING_RPC_METHODS}. A denylist
  * can only reject what it already knows about, which is how `dcl_personal_sign`
  * slipped through; a spec asserting "this flow must not touch the wallet" gets
  * a stronger guarantee by rejecting everything outside this set, so a method
  * nobody thought to enumerate fails the test instead of passing it.
+ *
+ * Keep the bar at *passive*, not merely *non-signing*. `eth_requestAccounts`
+ * and `wallet_requestPermissions` are deliberately absent: both initiate a
+ * connection or permission prompt, which is the wallet being reached even
+ * though no signature is produced. Adding a prompting method here would let a
+ * flow that must not touch the wallet at all pass silently.
  */
 export const READ_ONLY_RPC_METHODS = new Set([
   'eth_accounts',
-  'eth_requestaccounts',
   'eth_chainid',
   'net_version',
   'wallet_getpermissions',
