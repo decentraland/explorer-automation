@@ -12,26 +12,39 @@ import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { QuickSetupPage } from '../pages/QuickSetupPage.js'
 import { createAuthRequest, pollAuthOutcome } from '../helpers/auth-server.js'
+import { getEphemeralMessage } from '../../../shared/helpers/identity.js'
 
 /**
  * Negative path for the RequestPage flow — companion to
- * `request-page.spec.ts`'s happy paths. Targets the auth site ↔ auth-api
+ * `request-page.spec.ts`'s happy path. Targets the auth site ↔ auth-api
  * contract; Explorer is not involved.
  *
- *   - decline: user denies the request; auth-api returns an outcome with
- *     no successful `result` (typically an `error` field).
+ * decentraland/auth#437 retired the `dcl_personal_sign` sign-in in auth-site
+ * 5.0.0. A client that hasn't migrated to the identity handoff still sends it,
+ * and auth-api still mints the request — so the rejection has to happen on the
+ * auth site, and it has to be a dead end. The generic recover error won't do:
+ * its "Try Again" re-opens the client, which re-creates the same rejected
+ * request, looping the user with no way out. Instead the user is told to
+ * update their app, with no retry offered.
+ *
+ * Needs auth-site >= 5.0.0 on the host under test — earlier builds still
+ * render the VerifySignIn approve/deny screen this test exists to prove is
+ * gone. Validate against `.zone` (`WEB_BASE_URL`) while the release rolls out.
  */
 
 const REDIRECT_TO = `${getBaseUrl()}/`
 
 const { expect } = test
 
-test('@web @auth RequestPage login (dcl_personal_sign) — decline', async ({ page, ethereumWalletMock }) => {
+test('@web @auth RequestPage retired sign-in (dcl_personal_sign) tells the user to update', async ({
+  page,
+  ethereumWalletMock
+}) => {
   const privateKey = generatePrivateKey()
   const account = privateKeyToAccount(privateKey)
 
   // Register a DCL profile for our wallet so the RequestPage probe doesn't
-  // bounce the dapp back to /auth/login.
+  // bounce the dapp back to /auth/login before it can reject the method.
   const unmockProfile = await mockNoProfileOnCatalysts(page)
   await setupMockedWallet(page, ethereumWalletMock, { privateKey, redirectTo: REDIRECT_TO })
   await new AuthPage(page).clickMetaMaskButton()
@@ -44,24 +57,28 @@ test('@web @auth RequestPage login (dcl_personal_sign) — decline', async ({ pa
   await new LandingPage(page).waitForUrl()
   await unmockProfile()
 
-  const { requestId } = await createAuthRequest('dcl_personal_sign', ['Hello, world!'])
+  // Exactly what an unmigrated Explorer sends: the retired method carrying an
+  // identity-authorization payload. Two guards would reject this, and the
+  // allowlist check runs first — that ordering is what routes it to the
+  // "update your app" view instead of the generic impersonation error. If this
+  // ever lands on a different view, check that ordering before the testid.
+  const ephemeralAccount = privateKeyToAccount(generatePrivateKey())
+  const expiration = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const ephemeralMessage = getEphemeralMessage(ephemeralAccount.address, expiration)
+  const { requestId } = await createAuthRequest('dcl_personal_sign', [ephemeralMessage])
   expect(requestId).toBeTruthy()
 
   await installAutoWalletMockInitScript(page, account.address)
   await page.goto(`/auth/requests/${requestId}`, { waitUntil: 'load' })
   await applyPersonalSignOverride(page)
 
-  // Deny button. Testid mirrors the approve testid from request-page.spec.ts.
-  // Verify against the running site if the dapp uses a different name.
-  const denyBtn = page.locator(
-    '[data-testid="verify-sign-in-deny-button"], [data-testid="verify-sign-in-cancel-button"], [data-testid="verify-sign-in-reject-button"]'
-  )
-  await denyBtn.first().waitFor({ state: 'visible', timeout: 30_000 })
-  await denyBtn.first().click()
+  await page.locator('[data-testid="outdated-client-error"]').waitFor({ state: 'visible', timeout: 30_000 })
 
-  const outcome = await pollAuthOutcome(requestId, 30_000)
-  expect(outcome.sender.toLowerCase()).toBe(account.address.toLowerCase())
-  // Decline produces no signature. `result` should be absent (the auth-api
-  // returns an `error` field instead).
-  expect(outcome.result).toBeFalsy()
+  // Terminal by design — no retry affordance, so the user can't re-enter the
+  // loop this view exists to break.
+  await expect(page.locator('[data-testid="client-login-error-try-again-button"]')).toBeHidden()
+
+  // Nothing reached the wallet, so the request must stay unfulfilled —
+  // auth-api keeps answering 204 and the poll runs out its deadline.
+  await expect(pollAuthOutcome(requestId, 10_000)).rejects.toThrow(/timed out/i)
 })
