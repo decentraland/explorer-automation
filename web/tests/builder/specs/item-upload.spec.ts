@@ -1,11 +1,15 @@
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { BrowserContext, Page } from '@playwright/test'
 import { test, expect } from '../../../shared/fixtures/base-test.js'
 import { newWalletContext } from '../helpers/wallet-context.js'
 import { deleteCollectionCascade, sweepStaleQaCollections } from '../helpers/builder-server.js'
 import { builderTestWalletKey } from '../helpers/test-wallet.js'
-import { createCollectionViaUi } from '../helpers/flows.js'
+import {
+  createCollectionViaUi,
+  fillWearableDetails,
+  FIXTURE_FILES,
+  MODEL_PROCESSING_TIMEOUT
+} from '../helpers/flows.js'
 import { selectDropdownOption } from '../helpers/semantic.js'
 import { inflateGlb } from '../helpers/glb.js'
 import { CollectionsPage } from '../pages/CollectionsPage.js'
@@ -13,12 +17,6 @@ import { CollectionDetailPage } from '../pages/CollectionDetailPage.js'
 import { CreateCollectionModal } from '../pages/CreateCollectionModal.js'
 import { CreateSingleItemModal } from '../pages/CreateSingleItemModal.js'
 import { ItemEditorPage } from '../pages/ItemEditorPage.js'
-
-const FIXTURE_FILES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/files')
-
-// GLB import runs Babylon validation, thumbnail rendering, and a builder-api
-// size calculation before the details step appears.
-const MODEL_PROCESSING_TIMEOUT = 90_000
 
 /**
  * Item upload flows (wearable / emote / smart wearable) — builder-server
@@ -73,12 +71,7 @@ test.describe('@builder item upload', () => {
   test('uploads a wearable GLB and creates an item with category and rarity', async () => {
     await collectionDetail.addItemsButton().click()
     await createItemModal.uploadFile(path.join(FIXTURE_FILES, 'wearable-pants.glb'))
-    await expect(createItemModal.nameField()).toBeVisible({ timeout: MODEL_PROCESSING_TIMEOUT })
-    await createItemModal.nameField().fill('QA wearable pants')
-    await createItemModal.bodyShapeOption('both').click()
-    await selectDropdownOption(createItemModal.raritySelect(), 'Common')
-    await selectDropdownOption(createItemModal.categorySelect(), 'Lower Body')
-    await createItemModal.saveButton().click({ timeout: 60_000 })
+    await fillWearableDetails(createItemModal, 'QA wearable pants')
     await expect(createItemModal.root()).toBeHidden({ timeout: 90_000 })
     await expect(collectionDetail.itemRow('QA wearable pants')).toBeVisible({ timeout: 20_000 })
   })

@@ -70,12 +70,34 @@ export interface RemoteCollection {
   id: string
   name: string
   is_published: boolean
+  is_approved: boolean
   created_at: string
 }
 
 export interface RemoteItem {
   id: string
   name: string
+}
+
+export interface RemoteCuration {
+  id: string
+  collection_id: string
+  status: 'pending' | 'approved' | 'rejected'
+}
+
+export async function getCollection(privateKey: `0x${string}`, collectionId: string): Promise<RemoteCollection> {
+  return signedRequest<RemoteCollection>(privateKey, 'GET', `/collections/${collectionId}`)
+}
+
+/** Latest CollectionCuration for the collection — null when none exists yet. */
+export async function getCuration(privateKey: `0x${string}`, collectionId: string): Promise<RemoteCuration | null> {
+  return signedRequest<RemoteCuration | null>(privateKey, 'GET', `/collections/${collectionId}/curation`)
+}
+
+/** Committee member addresses per the builder-server (mirrors the on-chain Committee). */
+export async function getCommittee(privateKey: `0x${string}`): Promise<string[]> {
+  const data = await signedRequest<Array<{ address: string }>>(privateKey, 'GET', '/committee')
+  return data.map(member => member.address.toLowerCase())
 }
 
 /** Collections owned by the key's address (includes unpublished — signed read). */

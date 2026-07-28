@@ -1,4 +1,5 @@
 import type { Page, Locator } from '@playwright/test'
+import { withEnv } from '../../../shared/helpers/url.js'
 
 /**
  * Item editor (`/builder/item-editor?item=…`, components/ItemEditorPage).
@@ -16,20 +17,42 @@ import type { Page, Locator } from '@playwright/test'
 export class ItemEditorPage {
   constructor(private readonly page: Page) {}
 
+  async goto(itemId: string, collectionId: string): Promise<void> {
+    await this.page.goto(withEnv(`item-editor?item=${itemId}&collection=${collectionId}`))
+  }
+
+  /**
+   * Curator review bar (ItemEditorPage/TopPanel — renders only for committee
+   * members with ?reviewing=true). Buttons ← item_editor.top_panel.{approve,reject}.
+   */
+  approveButton(): Locator {
+    return this.page.locator('.TopPanel').getByRole('button', { name: 'Approve' })
+  }
+
+  rejectButton(): Locator {
+    return this.page.locator('.TopPanel').getByRole('button', { name: 'Reject' })
+  }
+
+  /**
+   * RightPanel "Basics" description textarea (Collapsables default open;
+   * the optional utility textarea renders after it, hence .first()).
+   * TODO(testid): propose a testid for the description field.
+   */
+  descriptionField(): Locator {
+    return this.page.locator('.RightPanel textarea').first()
+  }
+
+  /** RightPanel footer save (NetworkButton "Save", disabled until dirty). */
+  saveButton(): Locator {
+    return this.page.locator('.RightPanel').getByRole('button', { name: 'Save' })
+  }
+
   emoteControls(): Locator {
     return this.page.locator('.emote-controls')
   }
 
   emotePlayToggle(): Locator {
     return this.emoteControls().locator('button').first()
-  }
-
-  emotePlayingIcon(): Locator {
-    return this.emoteControls().locator('[data-testid="PauseIcon"]')
-  }
-
-  emoteIdleIcon(): Locator {
-    return this.emoteControls().locator('[data-testid="PlayArrowIcon"]')
   }
 
   /**

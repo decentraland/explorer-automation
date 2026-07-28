@@ -75,6 +75,16 @@ export class CollectionDetailPage {
     return this.page.locator('.ui.modal').getByRole('button', { name: /^(ok|confirm)$/i })
   }
 
+  /** "Publish Collection" ← collection_detail_page.publish (NetworkButton, unpublished only). */
+  publishButton(): Locator {
+    return this.root().getByRole('button', { name: 'Publish Collection' })
+  }
+
+  /** "Publish Updates" ← collection_detail_page.push_changes (renders when status is UNSYNCED). */
+  publishUpdatesButton(): Locator {
+    return this.root().getByRole('button', { name: 'Publish Updates' })
+  }
+
   itemRow(itemName: string): Locator {
     return this.page.getByRole('row').filter({ hasText: itemName })
   }
