@@ -166,6 +166,21 @@ export async function pollAuthOutcome(requestId: string, timeoutMs = DEFAULT_POL
 }
 
 /**
+ * Status of a single outcome read: `204` while the request is still pending,
+ * `200` once a wallet has signed or rejected it.
+ *
+ * Use this to assert "still pending" positively. Inferring it from
+ * `pollAuthOutcome` running out its deadline is weaker — that timeout also
+ * fires when auth-api is unreachable or flapping, so it can't tell "nothing
+ * was ever posted" apart from "we couldn't find out". A transport failure here
+ * throws instead of quietly reading as success.
+ */
+export async function fetchOutcomeStatus(requestId: string): Promise<number> {
+  const res = await fetch(`${authServerUrl()}/requests/${requestId}`, { signal: AbortSignal.timeout(10_000) })
+  return res.status
+}
+
+/**
  * Extracts the tx hash from an `eth_sendTransaction` outcome, throwing if
  * the wallet returned an error rather than a signature. Helper exists so
  * on-chain specs don't need a local `if (!result) throw` (which Playwright's
