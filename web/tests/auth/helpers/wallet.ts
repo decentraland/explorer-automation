@@ -176,6 +176,38 @@ export async function applyPersonalSignOverride(page: Page): Promise<void> {
 }
 
 /**
+ * Installs the personal_sign override as an init script so it takes effect
+ * BEFORE page JS executes. This avoids the race where the auth dapp requests
+ * `personal_sign` between load completion and a post-navigation
+ * `page.evaluate()` call.
+ *
+ * Polls for `window.ethereum` and `window.__signMessage` (exposed by
+ * `setupMockedWallet`) then patches `request` in-place. Must be called
+ * BEFORE `page.goto()` — `addInitScript` only fires on subsequent navigations.
+ */
+export async function installPersonalSignOverrideInitScript(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const poll = setInterval(() => {
+      const w = window as unknown as {
+        ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> }
+        __signMessage?: (hex: string) => Promise<string>
+      }
+      if (w.ethereum?.request && w.__signMessage) {
+        const original = w.ethereum.request.bind(w.ethereum)
+        const signMsg = w.__signMessage
+        w.ethereum.request = async (args: { method: string; params?: unknown[] }) => {
+          if (args.method === 'personal_sign' && Array.isArray(args.params) && typeof args.params[0] === 'string') {
+            return signMsg(args.params[0])
+          }
+          return original(args)
+        }
+        clearInterval(poll)
+      }
+    }, 10)
+  })
+}
+
+/**
  * Methods that make the wallet produce a signature or broadcast.
  * Lowercased — compare against a lowercased method name.
  *
@@ -330,7 +362,7 @@ export async function installWalletRpcSpy(page: Page): Promise<() => Promise<str
  * navigation (e.g. cross-site nav). Avoid for routes that probe wallet state
  * mid-load (e.g. `/auth/requests/<id>`) — the synpress calls re-introduce the
  * default address mid-handshake and can crash signing flows; use
- * `installAutoWalletMockInitScript` + `applyPersonalSignOverride` instead.
+ * `installAutoWalletMockInitScript` + `installPersonalSignOverrideInitScript` instead.
  */
 export async function rebindWalletMock(
   page: Page,
