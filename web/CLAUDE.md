@@ -308,6 +308,17 @@ On-chain specs **self-skip** if any of these is missing or placeholder, via a `h
 
 Historically `?env=dev` wasn't a way out either: the dev RequestPage signed `personal_sign` eagerly on page load (unlike prod, which waited for a user click), so `applyPersonalSignOverride` arrived too late and viem threw "unknown RPC error". That eager sign was the `dcl_personal_sign` auto-sign branch, deleted with the rest of the sign-in in auth-site 5.0.0 (auth#437) — none of the surviving flows sign before a click. Re-verify against the deployed build before relying on that, since the note predates the removal.
 
+## Builder dapp tests
+
+Load-bearing invariants for `tests/builder/` (learned live against dev, 2026-07-28):
+
+- **Tag collision**: `@builder` is a substring of `@builder-api`, and `\b` does NOT separate them ('-' is a non-word char). The `builder` project's `grepInvert: /@builder-api|@on-chain/` is load-bearing — same lesson as `@web`/`@webgpu`.
+- **Wallet model**: collection-creating flows sign in as `WALLET_A_PRIVATE_KEY` (ephemeral fallback keeps zero-env runs green); isolation tests (empty state, foreign-collection visibility) always generate ephemeral keys. Cleanup discipline for the shared wallet: tracked cascade deletes of exactly what each test created, plus an age-gated (1h) QA-prefix stale sweep — never blanket-delete its collections.
+- **Locators**: the builder has ~zero data-testids in collection flows. Priority: decentraland-dapps modal-registry class (`.CreateCollectionModal`, …) → i18n text from builder `en.json` → the few real testids. decentraland-ui renders text `Field`s as `.dcl.field` but `SelectField`s as `.dcl.select-field`.
+- **Preview-iframe state is untrustworthy**: play/pause icon state hangs off events the WearablePreview iframe doesn't always echo back on dev. Assert on physics (frame-slider progression), and wrap state-dependent interactions in state-forcing `expect(async () => …).toPass()` units (emote thumbnail-save race, transient 3MB-rejection error, auto-play-on-entry nondeterminism).
+- **Never wait for networkidle on builder pages** — after publish, the forum-post saga retries forever, keeping the network permanently busy.
+- Collection detail splits items across tabs (`?tab=wearable` default / `?tab=emote`); an emote row is invisible on the default tab.
+
 ## Cross-platform handoff (`@cross`)
 
 Currently skipped (`test.describe.skip`). When enabled:

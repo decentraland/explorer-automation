@@ -21,6 +21,16 @@ declare module '@synthetixio/ethereum-wallet-mock/playwright' {
     PlaywrightTestArgs & PlaywrightTestOptions & { ethereumWalletMock: EWM },
     PlaywrightWorkerArgs & PlaywrightWorkerOptions
   >
+
+  /**
+   * Absolute path to the @depay/web3-mock UMD bundle and the in-page bootstrap
+   * Synpress injects per context (dist/playwright/index.js:279). Exported at
+   * runtime but missing from the package's typings; used by
+   * tests/builder/helpers/wallet-context.ts to reproduce the context init for
+   * secondary (multi-wallet) browser contexts.
+   */
+  export const web3MockPath: string
+  export function mockEthereum(): void
 }
 
 declare global {
