@@ -36,10 +36,10 @@ public abstract class BaseTest
             throw;
         }
 
-        // Opt-in fixture-level perf capture. Driven by EXPLORER_PERF_RECORD=1 set by
-        // the chassis workflow; local runs leave it unset and skip the AutoPilot
-        // PerfSampler call entirely so non-CI builds without the perf module loaded
-        // don't blow up.
+        // Opt-in fixture-level perf capture. Driven by EXPLORER_PERF_RECORD=1, which the
+        // chassis workflow only sets when explicitly asked (Windows runs, or a macOS run
+        // dispatched with record_perf). Unset means the AutoPilot PerfSampler call is
+        // skipped entirely, so builds without the perf module loaded don't blow up.
         if (Environment.GetEnvironmentVariable(PERF_ENV) != "1") return;
 
         var fixtureName = TestContext.CurrentContext.Test.ClassName ?? "unknown-fixture";
@@ -56,17 +56,28 @@ public abstract class BaseTest
         _perfCsvPath = Path.Combine(dir, "perf.csv");
         _perfSummaryPath = Path.Combine(dir, "perf-summary.txt");
 
-        AltDriver.CallStaticMethod<string>(
-            "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "Begin",
-            "DCL.Diagnostics.AutoPilot",
-            new object[] { _perfCsvPath, _perfSummaryPath });
+        try
+        {
+            AltDriver.CallStaticMethod<string>(
+                "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "Begin",
+                "DCL.Diagnostics.AutoPilot",
+                new object[] { _perfCsvPath, _perfSummaryPath });
+        }
+        catch (Exception ex)
+        {
+            // Most likely a build that doesn't ship PerfSampler. Perf is an opt-in
+            // side-channel, so warn and leave _perfStarted false — the functional tests
+            // in this fixture run as if record_perf had never been requested.
+            Reporter.Log($"WARNING: PerfSampler.Begin failed, perf capture disabled for this fixture:\n{ex}");
+            return;
+        }
 
         _perfStarted = true;
         Reporter.Log($"PerfSampler.Begin -> {_perfSummaryPath}");
     }
 
     [OneTimeTearDown]
-    [AllureAfter("Attach perf summary")]
+    [AllureAfter("Attach perf capture")]
     public void AttachPerf()
     {
         if (!_perfStarted) return;
@@ -83,29 +94,27 @@ public abstract class BaseTest
             // AltTester wraps the Player-side exception in a TargetInvocationException;
             // ex.Message is the unhelpful "Exception has been thrown by the target of an
             // invocation." Log ToString() so the inner trace from AltTester's error
-            // payload makes it into the Allure report.
+            // payload makes it into the Allure report. Never rethrow: perf is an opt-in
+            // side-channel and must not fail a functional fixture.
             Reporter.Log($"PerfSampler.End call failed (Player crash?):\n{ex}");
-
-            // Best-effort: PerfSampler closes the CSV BEFORE writing the summary, so a
-            // summary-side crash still leaves a complete perf.csv on disk. Attach what
-            // we have so a chassis run with a broken summary writer is still
-            // post-mortemable.
-            if (File.Exists(_perfCsvPath))
-                AllureApi.AddAttachment("perf.csv", "text/csv", File.ReadAllBytes(_perfCsvPath));
-            return;
         }
 
+        // PerfSampler closes the CSV before writing its summary, so a missing summary
+        // means End didn't finish — whatever landed in the CSV is still valid, just short.
         if (!File.Exists(_perfSummaryPath))
-            throw new AssertionException($"PerfSampler.End did not produce summary at {_perfSummaryPath}");
+            Reporter.Log($"WARNING: PerfSampler.End produced no summary at {_perfSummaryPath}; perf.csv may be truncated.");
 
-        // Attach raw data. The perf window is fixture-level (one OneTimeSetUp ->
-        // N test methods -> OneTimeTearDown) but Allure renders attachments per-test;
-        // downstream analysis (percentiles, CV across runs, baseline comparison)
-        // consumes perf.csv directly from the artifact bundle with numpy/pandas
-        // rather than reimplementing it here.
-        AllureApi.AddAttachment("perf-summary.txt", "text/plain", File.ReadAllBytes(_perfSummaryPath));
+        // Only the raw per-frame CSV is attached; perf-summary.txt deliberately is not.
+        // Its "0.1% worst" is identically equal to max at our capture lengths (PerfSampler
+        // takes max(1, (int)(n * fraction)) worst frames, which floors to 1 below n=1000,
+        // and our fixtures produce 88-407 frames), and "1% worst" rests on 1-4 frames.
+        // Surfacing those numbers in Allure invites reading them as tail statistics.
+        // Percentiles are recomputed from this CSV offline instead — docs/perf-analysis.py.
+        // The summary file itself still reaches the artifact bundle via explorer-perf/**.
         if (File.Exists(_perfCsvPath))
             AllureApi.AddAttachment("perf.csv", "text/csv", File.ReadAllBytes(_perfCsvPath));
+        else
+            Reporter.Log($"WARNING: no perf.csv at {_perfCsvPath}");
     }
 
     [SetUp]
