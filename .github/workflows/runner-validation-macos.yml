@@ -37,10 +37,11 @@ on:
         description: 'Direct URL to a Decentraland_macos.zip. Empty = latest reachable unity-explorer PR build.'
         type: string
         required: false
-        # Pinned to unity-explorer PR #8826 (PerfSampler extraction for AltTester reuse,
-        # latest build pr-22547-ed80a74). Same pin as the Windows workflow so the perf
-        # hook in BaseTest.OneTimeSetUp resolves DCL.PerformanceAndDiagnostics.AutoPilot
-        # .PerfSampler on both platforms. Revert to '' to fall back to candidate probing.
+        # Pinned to a known-good macOS build (pr-22547-ed80a74) purely so the chassis has
+        # a deterministic target while it is being validated. That build also ships
+        # PerfSampler, which is what the optional record_perf input needs — plain runs
+        # don't care either way. To be replaced by per-PR SHA resolution when the real
+        # trigger is wired up; revert to '' to fall back to candidate probing.
         default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
       test_filter:
         description: 'NUnit --filter expression. Default runs the InWorld category only. The Auth/OTP fixtures are intentionally excluded here — they depend on the email-OTP login flow which is not yet stable on the macos-14 chassis; run them with an explicit filter override once fixed.'
@@ -49,6 +50,11 @@ on:
         default: 'Category=InWorld'
       dry_run:
         description: 'Skip mf explorer test invocation (chassis validation only).'
+        type: boolean
+        required: false
+        default: false
+      record_perf:
+        description: 'Record fixture-level perf samples (PerfSampler) and attach them to the report. Off by default on macOS: the paravirt chassis produces unreliable numbers, and recording costs artifact + S3 storage for data nobody reads. Requires a build that ships DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler.'
         type: boolean
         required: false
         default: false
@@ -104,11 +110,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           OVERRIDE: ${{ inputs.build_url }}
-          # See runner-validation-windows.yml for why this hard fallback
-          # exists. TL;DR: workflow_dispatch.inputs defaults don't apply to
-          # push events; without PINNED_DEFAULT the probe loop below picks
-          # whatever recent PR is green on Unity Cloud Build, which often
-          # doesn't ship PerfSampler.
+          # This hard fallback exists because workflow_dispatch.inputs defaults
+          # don't apply to push events; without PINNED_DEFAULT the probe loop
+          # below picks whatever recent PR is green on Unity Cloud Build, which
+          # makes chassis runs non-reproducible.
           PINNED_DEFAULT: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
         run: |
           set -euo pipefail
@@ -118,7 +123,7 @@ jobs:
             exit 0
           fi
           if [ -n "${PINNED_DEFAULT:-}" ]; then
-            echo "::notice::Using pinned default build URL (PR #8826 PerfSampler build)."
+            echo "::notice::Using pinned default build URL (known-good chassis build)."
             echo "build_url=${PINNED_DEFAULT}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -605,7 +610,13 @@ jobs:
           # with a shell wrapper that exports DYLD only for its own
           # final `exec` of the real binary. That way the shim loads
           # exclusively into the Explorer process and nowhere else.
-          EXPLORER_PERF_RECORD: '1'
+          #
+          # Perf capture is opt-in via the record_perf dispatch input. BaseTest only calls
+          # PerfSampler when EXPLORER_PERF_RECORD is exactly '1', so the default (and every
+          # push-triggered run, where dispatch inputs are empty) skips it and pays no
+          # artifact/S3 cost. The Windows chassis — where the numbers are actually stable,
+          # because it owns a dedicated GPU image — sets it unconditionally.
+          EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
           # Stable, upload-artifact-friendly path for PerfSampler output.
           # BaseTest reads this and writes <fixture>/perf.csv + perf-summary.txt here.
           # Picked up by the artifact step below — so the CSV survives even if
@@ -842,6 +853,7 @@ jobs:
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-report/**
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
+            # Empty unless the run was dispatched with record_perf.
             ${{ runner.temp }}/explorer-perf/**
             ~/explorer-samples/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
