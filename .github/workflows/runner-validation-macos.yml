@@ -547,15 +547,10 @@ jobs:
             # (Unity's CFBundle-aware paths and Player.log line prefix
             # would otherwise change to "Explorer.real").
             #
-            # MetaForge's direct-exec path picks the first file under
-            # Contents/MacOS alphabetically (StringComparer.Ordinal);
-            # ASCII '.' (0x2E) < every letter, so "Explorer.real" sorts
-            # BEFORE "Explorer" and would win. We name the real binary
-            # ".real-explorer-binary" (leading dot) so it sorts to the
-            # very top — but MetaForge then needs to skip dotfiles.
-            # Simpler: pin the name to something that sorts AFTER
-            # "Explorer" alphabetically, e.g. "ExplorerReal", and trust
-            # the wrapper to be found first.
+            # The real binary must be named so it sorts AFTER "Explorer"
+            # by ordinal file name: MetaForge's direct-exec path selects
+            # the first non-dotfile under Contents/MacOS that way, and it
+            # has to land on our wrapper. "ExplorerReal" satisfies that.
             REAL="$EXPLORER_APP/Contents/MacOS/ExplorerReal"
             mv "$BIN" "$REAL"
             cat > "$BIN" <<'EOF'
