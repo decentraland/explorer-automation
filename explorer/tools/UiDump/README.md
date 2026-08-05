@@ -92,3 +92,21 @@ SidebarSettingsButton  id=-13980  path=/MainUIContainer(Clone)/UILayout/Sidebar/
 - The grid hover overlay's Equip/Unequip Buttons do not respond to synthetic clicks/taps
   in this build; equip via double-click (`dclick`) instead. The outfit slots' hover
   buttons (Save/Equip/Delete) DO respond when hovered and clicked in one session.
+
+## Batch mode (`repl`) — use this, not repeated single-shots
+
+Every single-shot invocation pays MSBuild + process spawn + driver handshake (~5-20s).
+`repl` reads commands line-by-line from stdin over ONE driver connection:
+
+```bash
+printf 'click SidebarChatButton\nwaitfor ChatPanel 10\nsub //ChatPanel//* --all\nshot /tmp/chat.png\nquit\n' \
+  | ./uidump.sh repl
+```
+
+- `./uidump.sh` runs the prebuilt Release DLL (rebuilds automatically when Program.cs changed).
+- Extra commands available inside a batch: `sleep <seconds>`, `waitfor <name|//path> [timeoutS]`
+  (prefer `waitfor` over blind `sleep`), `echo <marker>`, `quit`.
+- Each command echoes `-- done (<rc>): <line>` so output can be correlated with input.
+- Errors don't abort the batch; they print `ERR: ...` and continue.
+- The driver connection closes at EOF — the one-pairing-at-a-time rule still holds; never run
+  a batch while `dotnet test` is running.

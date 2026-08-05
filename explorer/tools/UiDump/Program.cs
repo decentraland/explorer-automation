@@ -46,8 +46,20 @@ public static class Program
 
         try
         {
-            switch (args[0].ToLowerInvariant())
-            {
+            if (args[0].ToLowerInvariant() is "repl" or "-")
+                return RunRepl(driver);
+            return Dispatch(driver, args);
+        }
+        finally
+        {
+            try { driver.Stop(); } catch { /* connection teardown is best-effort */ }
+        }
+    }
+
+    private static int Dispatch(AltDriver driver, string[] args)
+    {
+        switch (args[0].ToLowerInvariant())
+        {
                 case "tree":
                     return RunTree(driver, args.Length > 1 ? args[1] : null, args.Contains("--all"));
                 case "shot":
@@ -118,14 +130,109 @@ public static class Program
                         return 2;
                     }
                     return RunSub(driver, args[1], args.Contains("--all"));
+                case "sleep":
+                    if (args.Length < 2 || !double.TryParse(args[1], out var seconds))
+                    {
+                        Console.Error.WriteLine("sleep requires a duration in seconds, e.g. sleep 1.5");
+                        return 2;
+                    }
+                    Thread.Sleep(TimeSpan.FromSeconds(seconds));
+                    return 0;
+                case "waitfor":
+                    if (args.Length < 2)
+                    {
+                        Console.Error.WriteLine("waitfor requires <name-or-id-or-//path> [timeoutSeconds], e.g. waitfor ChatPanel 10");
+                        return 2;
+                    }
+                    var timeout = args.Length > 2 && double.TryParse(args[2], out var t) ? t : 10;
+                    return RunWaitFor(driver, args[1], timeout);
+                case "echo":
+                    Console.WriteLine(string.Join(' ', args.Skip(1)));
+                    return 0;
                 default:
                     PrintUsage();
                     return 2;
-            }
         }
-        finally
+    }
+
+    /// <summary>
+    /// Batch mode: one driver connection for many commands, read line-by-line from stdin.
+    /// Cuts the per-invocation MSBuild + spawn + handshake tax (~5-20s) to ~0 for every
+    /// command after the first. The connection still closes at EOF/quit, so the
+    /// one-driver-pairing-at-a-time rule holds.
+    /// </summary>
+    private static int RunRepl(AltDriver driver)
+    {
+        Console.Error.WriteLine("REPL ready — one command per line, 'quit' to exit.");
+        var lastRc = 0;
+        string line;
+        while ((line = Console.In.ReadLine()) != null)
         {
-            try { driver.Stop(); } catch { /* connection teardown is best-effort */ }
+            line = line.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+            if (line is "quit" or "exit")
+                break;
+
+            try
+            {
+                lastRc = Dispatch(driver, Tokenize(line));
+                if (lastRc != 0)
+                    Console.Error.WriteLine($"ERR rc={lastRc}: {line}");
+            }
+            catch (Exception ex)
+            {
+                lastRc = 1;
+                Console.Error.WriteLine($"ERR: {line} → {ex.GetBaseException().Message}");
+            }
+
+            // One marker per command so callers can correlate output with input lines.
+            Console.WriteLine($"-- done ({lastRc}): {line}");
+            Console.Out.Flush();
+            Console.Error.Flush();
+        }
+
+        return lastRc;
+    }
+
+    private static string[] Tokenize(string line)
+    {
+        var tokens = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var inQuotes = false;
+        foreach (var ch in line)
+        {
+            if (ch == '"')
+                inQuotes = !inQuotes;
+            else if (ch == ' ' && !inQuotes)
+            {
+                if (current.Length > 0)
+                {
+                    tokens.Add(current.ToString());
+                    current.Clear();
+                }
+            }
+            else
+                current.Append(ch);
+        }
+        if (current.Length > 0)
+            tokens.Add(current.ToString());
+        return tokens.ToArray();
+    }
+
+    private static int RunWaitFor(AltDriver driver, string nameOrId, double timeoutSeconds)
+    {
+        var by = nameOrId.StartsWith("//") ? By.PATH : By.NAME;
+        try
+        {
+            var found = driver.WaitForObject(by, nameOrId, timeout: timeoutSeconds, interval: 0.4);
+            Console.WriteLine($"Found {found.name} (id={found.id}) after wait.");
+            return 0;
+        }
+        catch
+        {
+            Console.Error.WriteLine($"waitfor: '{nameOrId}' not present after {timeoutSeconds}s.");
+            return 1;
         }
     }
 
@@ -141,6 +248,10 @@ public static class Program
               UiDump click <name-or-id>           click an object by GameObject name (or numeric AltTester id)
               UiDump sub <altPath> [--all]        list objects matching an AltTester By.PATH query (cheap — no
                                                   full-scene enumeration); --all includes disabled objects
+              UiDump repl                         batch mode: read any of the above (plus sleep <s>,
+                                                  waitfor <name|//path> [timeoutS], echo ...) line-by-line from
+                                                  stdin over ONE driver connection. Prefer this over repeated
+                                                  single-shot invocations — each separate launch costs seconds.
             """);
     }
 
