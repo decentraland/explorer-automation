@@ -9,14 +9,128 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     #region Elements
 
     public readonly Clickable WearablesTabButton = new(By.PATH, "//TabSelector/Avatar");
-    public readonly Clickable EmotesTabButton    = new(By.PATH, "//TabSelector/Emotes");
-    public readonly Writable  SearchBar          = new(By.PATH, "//BackpackSection//SearchBar");
+    public readonly Clickable EmotesTabButton = new(By.PATH, "//TabSelector/Emotes");
+    // NOTE: verify exact GameObject name via AltTester inspector if path fails
+    public readonly Clickable SavedOutfitsTabButton = new(By.PATH, "//TabSelector/ToggleOutfits");
+    public readonly Writable SearchBar = new(By.PATH, "//BackpackSection//SearchBar");
 
     #endregion
 
     #region Views
 
+    public WearablesTab Wearables { get; } = new();
     public EmotesTab Emotes { get; } = new();
+    public SavedOutfitsTab SavedOutfits { get; } = new();
+
+    /// <summary>
+    /// Sub-view for the wearables tab within the backpack, containing a scrollable grid
+    /// of owned wearables that can be equipped via hover.
+    /// </summary>
+    public class WearablesTab : BaseView
+    {
+        #region Elements
+
+        // NOTE: verify grid item GameObject name via AltTester inspector if paths fail
+        private const int GRID_ITEM_COUNT = 16;
+
+        public WearableGridItem[] GridItems { get; }
+
+        public readonly Clickable AvatarSlotHair = new(By.PATH, "//SlotsContainer/AvatarSlotHair");
+
+        #endregion
+
+        #region Setup
+
+        public WearablesTab() : base(new(By.ID, "TODO"))
+        {
+            GridItems = new WearableGridItem[GRID_ITEM_COUNT];
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
+            {
+                var basePath = $"//BackpackGrid/BackpackWearableGridItem(Clone)[{GRID_ITEM_COUNT - i - 1}]";
+                GridItems[i] = new WearableGridItem(
+                    new(By.PATH, basePath),
+                    new(By.PATH, $"{basePath}/FullBackpack/HoverBackground/Equip"));
+            }
+        }
+
+        #endregion
+
+        #region Views
+
+        /// <summary>
+        /// Clickable view representing a single wearable in the grid,
+        /// with an equip button revealed on hover.
+        /// </summary>
+        public class WearableGridItem(Clickable root, Clickable equipLocator) : BaseClickableView(root)
+        {
+            #region Elements
+
+            public Clickable EquipButton { get; } = equipLocator;
+
+            #endregion
+        }
+
+        #endregion
+
+        #region Helper methods
+
+        [AllureStep("Click wearable grid item")]
+        public void ClickGridItem(int index)
+        {
+            GridItems[index].Click();
+            Reporter.Log($"Clicked wearable grid item {index}");
+        }
+
+        [AllureStep("Equip wearable grid item via hover and click")]
+        public void ClickGridItemEquip(int index)
+        {
+            // Hover to reveal the HoverBackground overlay, then click the Equip button.
+            // Unlike emotes (which support a double-click shortcut), wearables require
+            // the real hover path to reach the equip action.
+            var altObj = GridItems[index].WaitFor();
+            altObj.PointerEnter();
+            Thread.Sleep(300);
+            GridItems[index].EquipButton.Click();
+            Reporter.Log($"Hovered and clicked equip on wearable grid item {index}");
+        }
+
+        [AllureStep("Click search result wearable and equip")]
+        public void ClickSearchResultAndEquip(int index)
+        {
+            // When search filters to a single visible item, AltTester sees no siblings so
+            // the object has no index suffix. With multiple visible results, [n] applies.
+            var basePath = index == 0
+                ? "//BackpackGrid/BackpackWearableGridItem(Clone)"
+                : $"//BackpackGrid/BackpackWearableGridItem(Clone)[{index}]";
+            var result = new WearableGridItem(
+                new(By.PATH, basePath),
+                new(By.PATH, $"{basePath}/FullBackpack/HoverBackground/Equip"));
+            result.WaitFor();
+            result.Click();
+            Thread.Sleep(300);
+            result.EquipButton.Click();
+            Reporter.Log($"Clicked search result {index} and equipped");
+        }
+
+        [AllureStep("Click first item in BackpackGrid after slot filter and equip")]
+        public void ClickFirstBackpackItem()
+        {
+            var item = new Clickable(By.PATH, "//BackpackGrid/BackpackItem(Clone)[15]");
+            var equip = new Clickable(By.PATH, "//BackpackGrid/BackpackItem(Clone)[15]/FullBackpack/HoverBackground/Equip");
+            var unequip = new Clickable(By.PATH, "//BackpackGrid/BackpackItem(Clone)[15]/FullBackpack/HoverBackground/Unequip");
+            item.Click();
+            Reporter.Log("Clicked first BackpackItem in grid");
+            equip.WaitFor();
+            equip.Click();
+            Reporter.Log("Equip button clicked");
+            unequip.WaitFor();
+            unequip.Click();
+            Reporter.Log("Unequip button clicked");
+
+        }
+
+        #endregion
+    }
 
     /// <summary>
     /// Sub-view for the emotes tab within the backpack, containing emote slots (equipped)
@@ -26,7 +140,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     {
         #region Elements
 
-        private const int SLOT_COUNT      = 10;
+        private const int SLOT_COUNT = 10;
         private const int GRID_ITEM_COUNT = 16;
 
         public EmoteSlot[] Slots { get; }
@@ -83,7 +197,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             #region Elements
 
-            public Clickable EquipButton   { get; } = equipLocator;
+            public Clickable EquipButton { get; } = equipLocator;
             public Clickable UnequipButton { get; } = unequipLocator;
 
             #endregion
@@ -194,6 +308,73 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             {
                 Reporter.Log($"Emote slot {slotIndex} already empty, skipping");
             }
+        }
+
+        #endregion
+    }
+
+    /// <summary>
+    /// Sub-view for the saved outfits tab within the backpack, containing a grid of
+    /// previously saved outfit combinations that can be selected and equipped.
+    /// </summary>
+    public class SavedOutfitsTab : BaseView
+    {
+        #region Elements
+
+        // NOTE: verify grid item GameObject name and container path via AltTester inspector
+        private const int GRID_ITEM_COUNT = 6;
+
+        public OutfitGridItem[] GridItems { get; }
+
+        #endregion
+
+        #region Setup
+
+        public SavedOutfitsTab() : base(new(By.ID, "TODO"))
+        {
+            GridItems = new OutfitGridItem[GRID_ITEM_COUNT];
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
+            {
+                var basePath = $"//OutfitsSection/OutfitGridItem(Clone)[{i}]";
+                GridItems[i] = new OutfitGridItem(
+                    new(By.PATH, basePath),
+                    new(By.PATH, $"{basePath}//EquipButton"));
+            }
+        }
+
+        #endregion
+
+        #region Views
+
+        /// <summary>
+        /// Clickable view representing a single saved outfit card in the grid,
+        /// with a dedicated equip button.
+        /// </summary>
+        public class OutfitGridItem(Clickable root, Clickable equipLocator) : BaseClickableView(root)
+        {
+            #region Elements
+
+            public Clickable EquipButton { get; } = equipLocator;
+
+            #endregion
+        }
+
+        #endregion
+
+        #region Helper methods
+
+        [AllureStep("Click outfit grid item")]
+        public void ClickGridItem(int index)
+        {
+            GridItems[index].Click();
+            Reporter.Log($"Clicked outfit grid item {index}");
+        }
+
+        [AllureStep("Click equip on outfit grid item")]
+        public void ClickGridItemEquip(int index)
+        {
+            GridItems[index].EquipButton.Click();
+            Reporter.Log($"Clicked equip on outfit grid item {index}");
         }
 
         #endregion

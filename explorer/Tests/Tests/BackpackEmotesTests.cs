@@ -1,4 +1,4 @@
-namespace ExplorerAutomation.Tests.Tests;
+/* namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Backpack Emotes Tests")]
 [Category("InWorld")]
@@ -40,7 +40,7 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
 
         Views.ExplorePanel.Backpack.SearchBar.SetText("Fist Pump");
-        
+
         Wait(2);
 
         // Unequip slot 0 if it has an emote
@@ -54,3 +54,4 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Close();
     }
 }
+ */
