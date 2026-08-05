@@ -20,6 +20,8 @@ public class ViewContainer
     public PassportView                 Passport                 { get; } = new();
     public ConfirmationDialogView       ConfirmationDialog       { get; } = new();
     public ControlsPanelView            ControlsPanel            { get; } = new();
+    public ChatPanelView                Chat                     { get; } = new();
+    public EmotesWheelView              EmotesWheel              { get; } = new();
 
     [AllureBefore("Initialize View Objects")]
     public static void Initialize()

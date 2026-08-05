@@ -105,16 +105,48 @@ public static class Program
                     }
                     return RunHover(driver, args[1]);
                 case "settext":
+                case "settextns":
                     if (args.Length < 3)
                     {
-                        Console.Error.WriteLine("settext requires <name-or-id> <text>.");
+                        Console.Error.WriteLine("settext/settextns requires <name-or-id> <text>.");
                         return 2;
                     }
+                    var submit = args[0].ToLowerInvariant() == "settext";
                     var textTarget = FindByNameOrId(driver, args[1]);
                     if (textTarget == null)
                         return 1;
-                    textTarget.SetText(args[2], submit: true);
-                    Console.WriteLine($"Set text '{args[2]}' on {textTarget.name} (id={textTarget.id}).");
+                    textTarget.SetText(args[2], submit);
+                    Console.WriteLine($"Set text '{args[2]}' on {textTarget.name} (id={textTarget.id}, submit={submit}).");
+                    return 0;
+                case "getprop":
+                    if (args.Length < 4)
+                    {
+                        Console.Error.WriteLine("getprop requires <name-or-id> <component> <property> [assembly].");
+                        return 2;
+                    }
+                    var getTarget = FindByNameOrId(driver, args[1]);
+                    if (getTarget == null)
+                        return 1;
+                    var getValue = getTarget.GetComponentProperty<object>(args[2], args[3], args.Length > 4 ? args[4] : null);
+                    Console.WriteLine($"{getTarget.name} (id={getTarget.id}) {args[2]}.{args[3]} = {getValue}");
+                    return 0;
+                case "setprop":
+                    if (args.Length < 5)
+                    {
+                        Console.Error.WriteLine("setprop requires <name-or-id> <component> <property> <value> [assembly].");
+                        return 2;
+                    }
+                    var setTarget = FindByNameOrId(driver, args[1]);
+                    if (setTarget == null)
+                        return 1;
+                    object setValue = args[4] switch
+                    {
+                        _ when double.TryParse(args[4], out var d) => d,
+                        _ when bool.TryParse(args[4], out var b) => b,
+                        _ => args[4],
+                    };
+                    setTarget.SetComponentProperty(args[2], args[3], setValue, args.Length > 5 ? args[5] : null);
+                    Console.WriteLine($"Set {args[2]}.{args[3]} = {args[4]} on {setTarget.name} (id={setTarget.id}).");
                     return 0;
                 case "key":
                     if (args.Length < 2)

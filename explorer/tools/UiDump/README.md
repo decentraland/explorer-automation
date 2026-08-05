@@ -56,6 +56,15 @@ dotnet run -- hovertap  OutfitSlot_2 "//OutfitsView//OutfitSlot_2/LoadedState/Ho
 # Press a key (AltKeyCode name) / set text on an input field
 dotnet run -- key I
 dotnet run -- settext "//BackpackSection//SearchBar" "Punk"
+
+# settext fires the submit path (which chat handles as "send", twice on this build);
+# settextns sets the text without submitting.
+dotnet run -- settextns "//ChatInputBox//CustomInputField" "draft text"
+
+# Read / write a component property (value is parsed as number, bool, then string).
+# Writing UnityEngine.UI.Slider.value fires onValueChanged like a user drag would.
+dotnet run -- getprop TimeSlider UnityEngine.UI.Slider value UnityEngine.UI
+dotnet run -- setprop TimeSlider UnityEngine.UI.Slider value 0.75 UnityEngine.UI
 ```
 
 Add `--no-build` after `run` to skip the rebuild once the tool is built.

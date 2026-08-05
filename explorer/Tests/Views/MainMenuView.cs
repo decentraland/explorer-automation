@@ -44,6 +44,7 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
 
     public NotificationsPanel Notifications { get; } = new();
     public HelpMenu Help { get; } = new();
+    public SkyboxMenu Skybox { get; } = new();
 
     #endregion
 
@@ -76,6 +77,67 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
         public readonly Clickable FaqButton                 = new(By.NAME, "FAQButton");
         public readonly Clickable ContactSupportButton      = new(By.NAME, "ContactSupportButton");
         public readonly Clickable DiscordButton             = new(By.NAME, "DiscordButton");
+
+        #endregion
+    }
+
+    /// <summary>
+    /// "Night/day" skybox widget opened by the sidebar skybox button. Lives disabled under
+    /// SidebarSkyboxButton/SkyboxWidget while closed. Contains the Auto day-cycle toggle and
+    /// the custom time-of-day slider. Quirks verified live on build dev_b97439fc:
+    ///   - The slider's Increase/Decrease arrow buttons are dead UI (never wired up by
+    ///     SkyboxMenuController in this build) — change the time via the slider value instead.
+    ///   - The slider only reacts while the Auto toggle is off (interactable gating).
+    ///   - Rapidly re-opening right after an Escape-close can wedge the menu (it stops
+    ///     opening); opening any other panel and closing it un-wedges the state machine.
+    /// </summary>
+    public class SkyboxMenu() : BaseView(new(By.NAME, "SkyboxMenuView"))
+    {
+        #region Elements
+
+        public readonly Readable  TitleLabel            = new(By.PATH, "//SkyboxMenuView/Title");
+        public readonly Clickable AutoProgressionToggle = new(By.NAME, "TimeProgressionToggle");
+        public readonly Locatable TimeSlider            = new(By.NAME, "TimeSlider");
+        public readonly Readable  TimeLabel             = new(By.PATH, "//SkyboxMenuView/Time/Text/Time");
+
+        #endregion
+
+        #region Helper methods
+
+        /// <summary>
+        /// Ensures the Auto day-cycle toggle is in the requested state. Asserted through the
+        /// Toggle component's isOn (the On/Off visual children lag behind the click because
+        /// of the ToggleView animation, so they are not a reliable synchronous signal).
+        /// </summary>
+        [AllureStep("Set skybox auto time progression")]
+        public void SetAutoProgression(bool enabled)
+        {
+            var isOn = AutoProgressionToggle.WaitFor()
+                .GetComponentProperty<bool>("UnityEngine.UI.Toggle", "isOn", "UnityEngine.UI");
+            if (isOn == enabled)
+            {
+                Reporter.Log($"Auto time progression already {(enabled ? "on" : "off")}");
+                return;
+            }
+
+            AutoProgressionToggle.Click();
+            AutoProgressionToggle.WaitFor().WaitForComponentProperty(
+                "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI", timeout: 5);
+            Reporter.Log($"Auto time progression turned {(enabled ? "on" : "off")}");
+        }
+
+        /// <summary>
+        /// Sets the time-of-day slider (0..1 over a 24h day; 0.5 = 12:00). Writing the Slider
+        /// value fires onValueChanged, which is exactly what a user drag does — the skybox
+        /// time and the HH:mm label update synchronously.
+        /// </summary>
+        [AllureStep("Set skybox time of day")]
+        public void SetTimeNormalized(float normalizedTime)
+        {
+            TimeSlider.WaitFor().SetComponentProperty(
+                "UnityEngine.UI.Slider", "value", normalizedTime, "UnityEngine.UI");
+            Reporter.Log($"Skybox time slider set to {normalizedTime:F2}");
+        }
 
         #endregion
     }
