@@ -48,7 +48,10 @@ internal static class ScreenshotCapture
             if (bmp.Width > maxWidth)
             {
                 var height = Math.Max(1, (int)Math.Round(bmp.Height * (maxWidth / (double)bmp.Width)));
-                scaled = bmp.Resize(new SKImageInfo(maxWidth, height), SKSamplingOptions.Default)
+                // Mitchell cubic resampling — SKSamplingOptions.Default is nearest-neighbor in
+                // SkiaSharp 3.x, which aliases small UI text (chat lines, name labels — the very
+                // content these shots exist to let a human verify) when downscaling retina/4K frames.
+                scaled = bmp.Resize(new SKImageInfo(maxWidth, height), new SKSamplingOptions(SKCubicResampler.Mitchell))
                          ?? throw new InvalidOperationException(
                              $"Failed to resize {bmp.Width}x{bmp.Height} screenshot to width {maxWidth}.");
                 source = scaled;

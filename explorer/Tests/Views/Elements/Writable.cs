@@ -14,13 +14,18 @@ public record Writable(By by, string name) : Clickable(by, name)
         altObject.SetText(text, submit);
     }
 
+    public string GetText(float timeout = 10.0f) => GetText(timeout, verificationShot: true);
+
+    // Shot-suppressed overload for polling loops in views (e.g. waiting for an input pre-fill):
+    // per-poll reads must not capture — the caller takes one shot when its wait completes.
     [AllureStep("Get text from object")]
-    public string GetText(float timeout = 10.0f)
+    internal string GetText(float timeout, bool verificationShot)
     {
         // Suppress the WaitFor shot — the verification moment is the text read, captured below.
         var altObject = WaitFor(timeout, verificationShot: false);
         var text = altObject.GetText();
-        Reporter.TakeVerificationShot($"text_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"text_{ShotName}");
         return text;
     }
 }

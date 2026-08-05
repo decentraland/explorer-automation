@@ -86,14 +86,24 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     [AllureStep("Wait for the passport header to show a name")]
     public bool WaitForUserName(string expected, double timeoutSeconds = 10)
     {
+        // Shot-suppressed reads inside the poll loop: a capture per iteration would both spam
+        // the report and eat the fixed wall-clock deadline (each capture is a synchronous
+        // round-trip). The single verification shot is taken once the wait completes, in
+        // either outcome, so the report shows the header state the assert ran against.
+        var matched = false;
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         while (DateTime.UtcNow < deadline)
         {
-            if (UserNameText.GetText() == expected)
-                return true;
+            if (UserNameText.GetText(20D, verificationShot: false) == expected)
+            {
+                matched = true;
+                break;
+            }
             Thread.Sleep(500);
         }
-        return false;
+
+        Reporter.TakeVerificationShot($"{(matched ? "text" : "timeout")}_UserName");
+        return matched;
     }
 
     #endregion
@@ -128,9 +138,13 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
         [AllureStep("Wait for the name input to pre-fill")]
         public void WaitForPrefill(double timeoutSeconds = 5)
         {
+            // Shot-suppressed reads inside the poll loop (see WaitForUserName); one shot at
+            // completion shows the pre-filled input the subsequent SetText relies on.
             var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-            while (DateTime.UtcNow < deadline && string.IsNullOrEmpty(NameInput.GetText()))
+            while (DateTime.UtcNow < deadline && string.IsNullOrEmpty(NameInput.GetText(10.0f, verificationShot: false)))
                 Thread.Sleep(250);
+
+            Reporter.TakeVerificationShot("text_NameEditorInput");
         }
 
         #endregion

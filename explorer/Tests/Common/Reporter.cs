@@ -61,7 +61,14 @@ public static class Reporter
     private const int VERIFY_SHOT_MAX_WIDTH = 1200;
     private const int VERIFY_SHOT_JPEG_QUALITY = 60;
 
-    // Opt-out toggle for CI: VERIFY_SCREENSHOTS unset/anything => on, "0"/"false" => off.
+    // AltTester's screenShotQuality is a resolution percentage: 50 halves each dimension on
+    // the Unity side, cutting the synchronous wire transfer + decode cost of every shot by
+    // ~4x. The output is a <=1200px JPEG anyway, so a half-res capture of a 2.5K/4K frame
+    // still exceeds the target width; smaller frames just skip the downscale.
+    private const int VERIFY_SHOT_CAPTURE_QUALITY = 50;
+
+    // Opt-out toggle for CI: VERIFY_SCREENSHOTS unset/anything-else => on,
+    // "0"/"false"/"off"/"no" (case-insensitive) => off.
     private static readonly bool _verificationShotsEnabled = IsVerifyScreenshotsEnabled();
 
     // Armed only between BaseTest.SetUp and BaseTest.TearDown so fixture plumbing
@@ -73,9 +80,9 @@ public static class Reporter
 
     private static bool IsVerifyScreenshotsEnabled()
     {
-        var value = Environment.GetEnvironmentVariable("VERIFY_SCREENSHOTS");
-        return !string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
-               && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+        var value = Environment.GetEnvironmentVariable("VERIFY_SCREENSHOTS")?.Trim();
+        string[] disabledValues = ["0", "false", "off", "no"];
+        return value is null || !disabledValues.Contains(value, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Arms verification shots and resets the per-test counter. Called from BaseTest.SetUp.</summary>
@@ -107,7 +114,7 @@ public static class Reporter
         {
             var attachmentName = $"{SanitizeShotLabel(label)}_{Interlocked.Increment(ref _verificationShotSeq)}";
 
-            using var bmp = ScreenshotCapture.CaptureBitmap(quality: 100);
+            using var bmp = ScreenshotCapture.CaptureBitmap(quality: VERIFY_SHOT_CAPTURE_QUALITY);
             var jpegBytes = ScreenshotCapture.EncodeJpegScaled(bmp, VERIFY_SHOT_MAX_WIDTH, VERIFY_SHOT_JPEG_QUALITY);
 
             AllureApi.AddAttachment(name: attachmentName, type: "image/jpeg", content: jpegBytes, fileExtension: ".jpg");

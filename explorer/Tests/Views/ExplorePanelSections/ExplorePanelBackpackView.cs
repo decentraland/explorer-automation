@@ -50,7 +50,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            if (targetView.IsPresent())
+            // Shot-suppressed probe — the WaitFor below takes the verification shot.
+            if (targetView.IsPresent(verificationShot: false))
             {
                 targetView.WaitFor();
                 return;
@@ -106,7 +107,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Hover grid item")]
         public AltObject Hover()
         {
-            var altObj = WaitFor();
+            // Shot-suppressed wait: hovering is an action (like Click), not a verification.
+            var altObj = WaitFor(20D, verificationShot: false);
             altObj.PointerEnter();
             Thread.Sleep(400);
             return altObj;
@@ -119,7 +121,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Equip grid item via double-click")]
         public void DoubleClickEquip()
         {
-            var altObj = WaitFor();
+            // Shot-suppressed wait: double-click equip is an action, not a verification.
+            var altObj = WaitFor(20D, verificationShot: false);
             altObj.Click();
             Thread.Sleep(80);
             altObj.Click();
@@ -130,11 +133,15 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         /// Hover-probes the item: an equipped item shows Unequip in its hover overlay,
         /// an unequipped one shows Equip.
         /// </summary>
+        public bool IsEquipped() => IsEquipped(verificationShot: true);
+
+        // Shot-suppressed overload for probe loops (FindUnequippedGridItem) — the probe is
+        // control flow, not a test verification, so it must not multiply attachments.
         [AllureStep("Check whether grid item is equipped")]
-        public bool IsEquipped()
+        internal bool IsEquipped(bool verificationShot)
         {
             Hover();
-            return UnequipButton.IsPresent();
+            return UnequipButton.IsPresent(verificationShot);
         }
 
         #endregion
@@ -226,9 +233,13 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             for (var attempt = 0; attempt < 3; attempt++)
             {
-                if (CategoryFilterChip.IsPresent() && CategoryFilterLabel.GetText() == "Hair")
+                // Shot-suppressed probes inside the retry loop — the single verification shot
+                // below captures the breadcrumb state the helper actually verified.
+                if (CategoryFilterChip.IsPresent(verificationShot: false)
+                    && CategoryFilterLabel.GetText(20D, verificationShot: false) == "Hair")
                 {
                     Reporter.Log("Hair category filter is applied");
+                    Reporter.TakeVerificationShot("applied_HairCategoryFilter");
                     return;
                 }
 
@@ -248,9 +259,12 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             for (var i = 0; i < probeLimit; i++)
             {
-                if (!GridItems[i].IsEquipped())
+                // Shot-suppressed probes — this is target selection, not a test verification.
+                // One shot below records the picked item's hover overlay (Equip visible).
+                if (!GridItems[i].IsEquipped(verificationShot: false))
                 {
                     Reporter.Log($"Grid item {i} is not equipped — using it");
+                    Reporter.TakeVerificationShot($"unequipped_GridItem_{i}");
                     return GridItems[i];
                 }
             }
@@ -359,9 +373,12 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Wait for grid item to finish loading")]
         public void WaitForGridItemLoaded(int index)
         {
-            var gridItem = GridItems[index].WaitFor();
+            // Suppress the "appeared" shot — the verified state is IsLoading == false, so the
+            // single shot is taken after that wait (a mid-load frame would misrepresent it).
+            var gridItem = GridItems[index].WaitFor(20D, verificationShot: false);
             gridItem.WaitForComponentProperty<bool>(
                 "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack", timeout: 10);
+            Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
             Reporter.Log($"Grid item {index} finished loading");
         }
 
@@ -411,9 +428,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             for (var i = 0; i < probeLimit; i++)
             {
-                if (!GridItems[i].EquippedSlotBadge.IsPresent())
+                // Shot-suppressed probes — target selection, not a test verification.
+                if (!GridItems[i].EquippedSlotBadge.IsPresent(verificationShot: false))
                 {
                     Reporter.Log($"Emote grid item {i} is not equipped — using it");
+                    Reporter.TakeVerificationShot($"unequipped_EmoteGridItem_{i}");
                     return i;
                 }
             }
@@ -494,9 +513,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             for (var i = 0; i < SLOT_COUNT; i++)
             {
-                if (Slots[i].EmptyState.IsPresent())
+                // Shot-suppressed probes — slot selection, not a test verification.
+                if (Slots[i].EmptyState.IsPresent(verificationShot: false))
                 {
                     Reporter.Log($"Outfit slot {i + 1} is empty");
+                    Reporter.TakeVerificationShot($"empty_OutfitSlot_{i + 1}");
                     return Slots[i];
                 }
             }
@@ -552,7 +573,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             [AllureStep("Hover outfit slot")]
             public AltObject Hover()
             {
-                var altObj = WaitFor();
+                // Shot-suppressed wait: hovering is an action (like Click), not a verification.
+                var altObj = WaitFor(20D, verificationShot: false);
                 altObj.PointerEnter();
                 Thread.Sleep(400);
                 return altObj;

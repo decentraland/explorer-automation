@@ -21,12 +21,14 @@ public record Locatable(By by, string name)
         }
     }
 
-    [AllureStep("Wait for object to appear")]
     public AltObject WaitFor(double timeout = 20D) => WaitFor(timeout, verificationShot: true);
 
-    // Shot-suppressed overload for action helpers (Click/SetText) and verifications that take
-    // their own shot afterwards (GetText) — actions must not capture, and verifications must
-    // not capture twice.
+    // Shot-suppressed overload for action helpers (Click/SetText), polling/probe loops in views,
+    // and verifications that take their own shot afterwards (GetText) — actions and per-poll reads
+    // must not capture, and verifications must not capture twice. The [AllureStep] lives here (not
+    // on the public delegator) so every caller — including the suppressed action paths — still
+    // reports the "Wait for object to appear" sub-step exactly once.
+    [AllureStep("Wait for object to appear")]
     internal AltObject WaitFor(double timeout, bool verificationShot)
     {
         Reporter.Log($"Waiting for object {this} to appear.");
@@ -62,8 +64,13 @@ public record Locatable(By by, string name)
         }
     }
 
+    public bool IsPresent() => IsPresent(verificationShot: true);
+
+    // Shot-suppressed overload for control-flow probes and retry loops in views (e.g. "is this
+    // tab already open?", equip-state probing) — those are not test verifications, so they must
+    // not multiply near-identical attachments. The caller takes one shot at its own completion.
     [AllureStep("Check if object present")]
-    public bool IsPresent()
+    internal bool IsPresent(bool verificationShot)
     {
         bool present;
         try
@@ -78,7 +85,8 @@ public record Locatable(By by, string name)
 
         // Presence checks back asserts in either direction, so capture the frame for both
         // outcomes — the label records which state was observed.
-        Reporter.TakeVerificationShot($"{(present ? "present" : "absent")}_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"{(present ? "present" : "absent")}_{ShotName}");
         return present;
     }
 }

@@ -112,17 +112,22 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
         [AllureStep("Set skybox auto time progression")]
         public void SetAutoProgression(bool enabled)
         {
-            var isOn = AutoProgressionToggle.WaitFor()
+            // Shot-suppressed waits: the verified state is the Toggle's isOn value, so the
+            // single verification shot is taken once the toggle is confirmed in the requested
+            // state (either already there, or after the click's WaitForComponentProperty).
+            var isOn = AutoProgressionToggle.WaitFor(20D, verificationShot: false)
                 .GetComponentProperty<bool>("UnityEngine.UI.Toggle", "isOn", "UnityEngine.UI");
             if (isOn == enabled)
             {
                 Reporter.Log($"Auto time progression already {(enabled ? "on" : "off")}");
+                Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
                 return;
             }
 
             AutoProgressionToggle.Click();
-            AutoProgressionToggle.WaitFor().WaitForComponentProperty(
+            AutoProgressionToggle.WaitFor(20D, verificationShot: false).WaitForComponentProperty(
                 "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI", timeout: 5);
+            Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
             Reporter.Log($"Auto time progression turned {(enabled ? "on" : "off")}");
         }
 

@@ -48,10 +48,13 @@ public class EmotesWheelView : BaseView
     {
         for (var i = 0; i < SLOT_COUNT; i++)
         {
-            if (!Slots[i].Thumbnail.IsPresent())
+            // Shot-suppressed probes — slot selection, not a test verification. One shot at
+            // the pick records the wheel state with the chosen slot's thumbnail loaded.
+            if (!Slots[i].Thumbnail.IsPresent(verificationShot: false))
                 continue;
 
             Reporter.Log($"Playing emote from wheel slot {i}");
+            Reporter.TakeVerificationShot($"loaded_EmoteWheelSlot_{i}");
             Slots[i].PlayButton.Click();
             return i;
         }

@@ -12,13 +12,18 @@ public record Readable(By by, string name) : Locatable(by, name)
     /// </summary>
     /// <param name="timeout">Maximum seconds to wait for the element to appear.</param>
     /// <returns>The text displayed by the element.</returns>
+    public string GetText(double timeout = 20D) => GetText(timeout, verificationShot: true);
+
+    // Shot-suppressed overload for polling loops in views (e.g. waiting for a label to refresh):
+    // per-poll reads must not capture — the caller takes one shot when its wait completes.
     [AllureStep("Get text from object")]
-    public string GetText(double timeout = 20D)
+    internal string GetText(double timeout, bool verificationShot)
     {
         // Suppress the WaitFor shot — the verification moment is the text read, captured below.
         var altObject = WaitFor(timeout, verificationShot: false);
         var text = altObject.GetText();
-        Reporter.TakeVerificationShot($"text_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"text_{ShotName}");
         return text;
     }
 }

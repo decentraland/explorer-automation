@@ -71,9 +71,12 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
             for (var poll = 0; poll < 6; poll++)
             {
                 Thread.Sleep(500);
-                if (HasOwnMessageContaining(expected))
+                // Shot-suppressed probe inside the poll loop — the single verification shot
+                // is taken below, once the message is confirmed visible.
+                if (HasOwnMessageContaining(expected, verificationShot: false))
                 {
                     Reporter.Log($"Message '{text}' visible in chat history (attempt {attempt})");
+                    Reporter.TakeVerificationShot("present_OwnChatMessage");
                     return;
                 }
             }
@@ -87,18 +90,19 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
 
     /// <summary>
     /// True if any currently loaded own chat entry contains the given rendered-text fragment.
+    /// This scan bypasses the hooked element layer (raw FindObjects + GetText), so it attaches
+    /// its own verification shot for either outcome, mirroring <see cref="Locatable.IsPresent()"/>.
     /// </summary>
-    [AllureStep("Check chat history for own message")]
-    public bool HasOwnMessageContaining(string fragment)
-    {
-        var entries = CommonStuff.AltDriver.FindObjects(By.PATH, OWN_ENTRY_PATH + "/MessageBubbleElement/MessageContentElement");
-        foreach (var entry in entries)
-        {
-            if (entry.GetText().Contains(fragment))
-                return true;
-        }
+    public bool HasOwnMessageContaining(string fragment) => HasOwnMessageContaining(fragment, verificationShot: true);
 
-        return false;
+    // Shot-suppressed overload for the SendMessage poll loop — per-poll probes must not capture.
+    [AllureStep("Check chat history for own message")]
+    private bool HasOwnMessageContaining(string fragment, bool verificationShot)
+    {
+        var found = FindOwnMessageIndex(fragment) >= 0;
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"{(found ? "present" : "absent")}_OwnChatMessage");
+        return found;
     }
 
     /// <summary>
