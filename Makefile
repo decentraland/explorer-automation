@@ -68,6 +68,17 @@ scenes-syncpack:
 explorer-build:
 	dotnet build $(TESTS_DIR)
 
+## Run the explorer suite (needs AltTester Desktop + instrumented client), then build + open the Allure report. Usage: make explorer-test [FILTER="FullyQualifiedName~ExplorePanelTests"]
+explorer-test:
+	rm -rf $(TESTS_DIR)/bin/Debug/net10.0/allure-results
+	-dotnet test $(TESTS_DIR) $(if $(FILTER),--filter "$(FILTER)") --logger "console;verbosity=normal"
+	$(MAKE) explorer-report
+
+## Build the Allure HTML report from the last explorer run and open it in the browser.
+explorer-report:
+	allure generate --clean --single-file $(TESTS_DIR)/bin/Debug/net10.0/allure-results -o $(TESTS_DIR)/allure-report
+	open $(TESTS_DIR)/allure-report/index.html
+
 # ─────────────── web (Playwright) ──────────────────────────────────────────────
 
 ## Run the web suite (headless).

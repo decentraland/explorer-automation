@@ -58,11 +58,9 @@ public abstract class BaseTest
         var testResult = TestContext.CurrentContext.Result.Outcome.Status;
         Reporter.Log($"Test {TestContext.CurrentContext.Test.Name} completed with status: {testResult}");
 
-        if (testResult == NUnit.Framework.Interfaces.TestStatus.Failed)
-        {
-            Reporter.Log("Test failed - taking screenshot for debugging");
-            Reporter.TakeScreenshot("" + TestContext.CurrentContext.Test.Name + "_Failed");
-        }
+        // Screenshot every outcome (not just failures) so the Allure report carries the
+        // final frame of each test for visual pass/skip/fail validation.
+        Reporter.TakeScreenshot($"{TestContext.CurrentContext.Test.Name}_{testResult}");
     }
 
     #endregion
