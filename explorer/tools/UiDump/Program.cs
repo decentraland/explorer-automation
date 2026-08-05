@@ -64,6 +64,60 @@ public static class Program
                         return 2;
                     }
                     return RunClick(driver, args[1]);
+                case "hoverclick":
+                    if (args.Length < 3)
+                    {
+                        Console.Error.WriteLine("hoverclick requires <hover name-or-id> <click name-or-id> (single driver session).");
+                        return 2;
+                    }
+                    return RunHoverClick(driver, args[1], args[2], useTap: false);
+                case "hovertap":
+                    if (args.Length < 3)
+                    {
+                        Console.Error.WriteLine("hovertap requires <hover name-or-id> <tap name-or-id> (single driver session).");
+                        return 2;
+                    }
+                    return RunHoverClick(driver, args[1], args[2], useTap: true);
+                case "dclick":
+                    if (args.Length < 2)
+                    {
+                        Console.Error.WriteLine("dclick requires a name or numeric id.");
+                        return 2;
+                    }
+                    return RunClick(driver, args[1], doubleClick: true);
+                case "hover":
+                    if (args.Length < 2)
+                    {
+                        Console.Error.WriteLine("hover requires a name or numeric id, e.g. UiDump hover OutfitSlot_1");
+                        return 2;
+                    }
+                    return RunHover(driver, args[1]);
+                case "settext":
+                    if (args.Length < 3)
+                    {
+                        Console.Error.WriteLine("settext requires <name-or-id> <text>.");
+                        return 2;
+                    }
+                    var textTarget = FindByNameOrId(driver, args[1]);
+                    if (textTarget == null)
+                        return 1;
+                    textTarget.SetText(args[2], submit: true);
+                    Console.WriteLine($"Set text '{args[2]}' on {textTarget.name} (id={textTarget.id}).");
+                    return 0;
+                case "key":
+                    if (args.Length < 2)
+                    {
+                        Console.Error.WriteLine("key requires an AltKeyCode name, e.g. UiDump key I");
+                        return 2;
+                    }
+                    return RunKey(driver, args[1]);
+                case "sub":
+                    if (args.Length < 2)
+                    {
+                        Console.Error.WriteLine("sub requires an AltTester path, e.g. UiDump sub \"//BackpackGrid/BackpackItem(Clone)[0]//*\"");
+                        return 2;
+                    }
+                    return RunSub(driver, args[1], args.Contains("--all"));
                 default:
                     PrintUsage();
                     return 2;
@@ -85,6 +139,8 @@ public static class Program
                                                   namePattern filters case-insensitively; --all includes disabled objects
               UiDump shot <path.png>              save a screenshot of the live client
               UiDump click <name-or-id>           click an object by GameObject name (or numeric AltTester id)
+              UiDump sub <altPath> [--all]        list objects matching an AltTester By.PATH query (cheap — no
+                                                  full-scene enumeration); --all includes disabled objects
             """);
     }
 
@@ -210,7 +266,135 @@ public static class Program
         return 0;
     }
 
-    private static int RunClick(AltDriver driver, string nameOrId)
+    private static int RunHoverClick(AltDriver driver, string hoverNameOrId, string clickNameOrId, bool useTap)
+    {
+        var hoverTarget = FindByNameOrId(driver, hoverNameOrId);
+        if (hoverTarget == null)
+            return 1;
+
+        hoverTarget.PointerEnter();
+        Thread.Sleep(300);
+
+        var clickTarget = FindByNameOrId(driver, clickNameOrId);
+        if (clickTarget == null)
+            return 1;
+
+        if (useTap)
+            clickTarget.Tap();
+        else
+            clickTarget.Click();
+        Console.WriteLine(
+            $"Hovered {hoverTarget.name} (id={hoverTarget.id}), {(useTap ? "tapped" : "clicked")} {clickTarget.name} (id={clickTarget.id}) at ({clickTarget.x},{clickTarget.y}).");
+        return 0;
+    }
+
+    private static AltObject FindByNameOrId(AltDriver driver, string nameOrId)
+    {
+        if (nameOrId.StartsWith("//"))
+        {
+            try
+            {
+                return driver.FindObject(By.PATH, nameOrId);
+            }
+            catch (Exception pathEx)
+            {
+                Console.Error.WriteLine($"Could not find '{nameOrId}' by PATH ({pathEx.Message}).");
+                return null;
+            }
+        }
+
+        try
+        {
+            return driver.FindObject(By.NAME, nameOrId);
+        }
+        catch (Exception)
+        {
+            try
+            {
+                return driver.FindObject(By.ID, nameOrId);
+            }
+            catch (Exception idEx)
+            {
+                Console.Error.WriteLine($"Could not find '{nameOrId}' by NAME or ID ({idEx.Message}).");
+                return null;
+            }
+        }
+    }
+
+    private static int RunHover(AltDriver driver, string nameOrId)
+    {
+        AltObject target;
+        try
+        {
+            target = driver.FindObject(By.NAME, nameOrId);
+        }
+        catch (Exception)
+        {
+            try
+            {
+                target = driver.FindObject(By.ID, nameOrId);
+            }
+            catch (Exception idEx)
+            {
+                Console.Error.WriteLine($"Could not find object by NAME or ID ({idEx.Message}).");
+                return 1;
+            }
+        }
+
+        target.PointerEnter();
+        Console.WriteLine($"PointerEnter on {target.name} (id={target.id}) at screen ({target.x},{target.y}).");
+        return 0;
+    }
+
+    private static int RunKey(AltDriver driver, string keyName)
+    {
+        if (!Enum.TryParse<AltKeyCode>(keyName, ignoreCase: true, out var keyCode))
+        {
+            Console.Error.WriteLine($"Unknown AltKeyCode '{keyName}'.");
+            return 2;
+        }
+
+        driver.PressKey(keyCode);
+        Console.WriteLine($"Pressed {keyCode}.");
+        return 0;
+    }
+
+    private static int RunSub(AltDriver driver, string altPath, bool includeDisabled)
+    {
+        // FindObjects with By.PATH is resolved app-side against the query only — unlike
+        // `tree`, it does not enumerate the whole scene, so it is safe on heavy worlds.
+        var matches = driver.FindObjects(By.PATH, altPath, enabled: !includeDisabled);
+        Console.Error.WriteLine($"{matches.Count} matched for path {altPath}");
+
+        var fetchComponents = matches.Count <= COMPONENT_FETCH_CAP;
+        var fetchText = matches.Count <= TEXT_FETCH_CAP;
+        foreach (var element in matches)
+        {
+            var line = $"{element.name}  id={element.id}";
+            if (!element.enabled)
+                line += "  [disabled]";
+
+            if (fetchComponents)
+            {
+                var components = SafeGetKeyComponents(element);
+                if (components.Count > 0)
+                    line += $"  comps={string.Join(",", components)}";
+
+                if (fetchText && components.Any(c => c.Contains("Text") || c.Contains("InputField")))
+                {
+                    var text = SafeGetText(element);
+                    if (text != null)
+                        line += $"  text=\"{Truncate(text, 80)}\"";
+                }
+            }
+
+            Console.WriteLine(line);
+        }
+
+        return 0;
+    }
+
+    private static int RunClick(AltDriver driver, string nameOrId, bool doubleClick = false)
     {
         AltObject target;
         try
@@ -231,7 +415,14 @@ public static class Program
         }
 
         target.Click();
-        Console.WriteLine($"Clicked {target.name} (id={target.id}) at screen ({target.x},{target.y}).");
+        if (doubleClick)
+        {
+            // Two rapid clicks so Unity's IPointerClickHandler sees clickCount == 2
+            // (BackpackItemView treats a double-click as Equip).
+            Thread.Sleep(80);
+            target.Click();
+        }
+        Console.WriteLine($"{(doubleClick ? "Double-clicked" : "Clicked")} {target.name} (id={target.id}) at screen ({target.x},{target.y}).");
         return 0;
     }
 }

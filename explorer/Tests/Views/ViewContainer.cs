@@ -18,6 +18,7 @@ public class ViewContainer
     public ProfileMenuView              ProfileMenu              { get; } = new();
     public ExplorePanelView             ExplorePanel             { get; } = new();
     public PassportView                 Passport                 { get; } = new();
+    public ConfirmationDialogView       ConfirmationDialog       { get; } = new();
 
     [AllureBefore("Initialize View Objects")]
     public static void Initialize()

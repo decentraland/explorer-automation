@@ -35,6 +35,27 @@ dotnet run -- shot /tmp/ui.png
 # Use the numeric id from `tree` output when the name is ambiguous.
 dotnet run -- click SidebarSettingsButton
 dotnet run -- click -550714
+
+# List objects matching an AltTester By.PATH query. Much cheaper than `tree` on heavy
+# worlds (no full-scene enumeration) and the only safe way to browse subtrees at
+# Genesis Plaza — a timed-out `tree` can wedge the app's AltTester connection.
+dotnet run -- sub "//BackpackSection//TabSelector/*" --all
+
+# Double-click (grid items treat clickCount == 2 as Equip)
+dotnet run -- dclick -863224
+
+# PointerEnter an object (reveals hover-only overlays). Hover state only lasts for the
+# lifetime of one driver session, so combine it with a click via hoverclick.
+dotnet run -- hover OutfitSlot_1
+
+# Hover one object then click/tap another within a single driver session.
+# Targets accept a name, a numeric id, or a By.PATH query starting with //.
+dotnet run -- hoverclick OutfitSlot_2 "//OutfitsView//OutfitSlot_2/LoadedState/Hover"
+dotnet run -- hovertap  OutfitSlot_2 "//OutfitsView//OutfitSlot_2/LoadedState/Hover"
+
+# Press a key (AltKeyCode name) / set text on an input field
+dotnet run -- key I
+dotnet run -- settext "//BackpackSection//SearchBar" "Punk"
 ```
 
 Add `--no-build` after `run` to skip the rebuild once the tool is built.
@@ -64,3 +85,10 @@ SidebarSettingsButton  id=-13980  path=/MainUIContainer(Clone)/UILayout/Sidebar/
 - Scene-embedded UI (SDK scene popups, e.g. quest/minigame modals) is **not** uGUI and does
   not appear in the dump, but it can still block raycasts and eat clicks on HUD buttons.
   If a click reports success but nothing opens, screenshot first and look for a scene popup.
+- Backpack grids pool their tiles: after a search or on partial pages, stale tiles stay
+  **enabled** but mask-clipped, so `BackpackItem(Clone)` sibling counts and indexes lie.
+  Only tiles with an enabled `FullBackpack` child carry real content — anchor queries and
+  clicks there (e.g. `//BackpackGrid/BackpackItem(Clone)/FullBackpack`).
+- The grid hover overlay's Equip/Unequip Buttons do not respond to synthetic clicks/taps
+  in this build; equip via double-click (`dclick`) instead. The outfit slots' hover
+  buttons (Save/Equip/Delete) DO respond when hovered and clicked in one session.
