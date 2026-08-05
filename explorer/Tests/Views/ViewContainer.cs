@@ -19,6 +19,7 @@ public class ViewContainer
     public ExplorePanelView             ExplorePanel             { get; } = new();
     public PassportView                 Passport                 { get; } = new();
     public ConfirmationDialogView       ConfirmationDialog       { get; } = new();
+    public ControlsPanelView            ControlsPanel            { get; } = new();
 
     [AllureBefore("Initialize View Objects")]
     public static void Initialize()

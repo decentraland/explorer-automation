@@ -35,15 +35,9 @@ public class ExplorePanelTests : BaseTest
         Views.ExplorePanel.Close();
     }
 
-    [Test]
-    public void TestOpenMapFromSidebar()
-    {
-        Views.MainMenu.MapButton.Click();
-
-        Views.ExplorePanel.Navmap.WaitFor();
-
-        Views.ExplorePanel.Close();
-    }
+    // NOTE: there is no TestOpenMapFromSidebar — this build's sidebar has no Map button
+    // (verified via UiDump `--all` dumps of the sidebar). Map coverage lives in
+    // ShortcutsTests.TestOpenMapWithShortcut and in TestSwitchBetweenAllTabs below (Map tab).
 
     [Test]
     public void TestOpenBackpackFromSidebar()

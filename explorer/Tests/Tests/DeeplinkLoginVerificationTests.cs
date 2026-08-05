@@ -67,8 +67,8 @@ public class DeeplinkLoginVerificationTests : BaseTest
         // listeners in OnViewInstantiated, which fires asynchronously after the
         // SidebarView GameObject appears. Clicks during that gap are silently
         // dropped. The subsequent tests immediately click sidebar buttons
-        // (ProfileButton, BackpackButton, MapButton) so this settle wait is
-        // necessary to avoid flakes.
+        // (ProfileButton, BackpackButton) so this settle wait is necessary
+        // to avoid flakes.
         Thread.Sleep(20_000);
         Reporter.Log("Player is in-world and main menu is ready");
     }
@@ -107,7 +107,9 @@ public class DeeplinkLoginVerificationTests : BaseTest
     [Test]
     public void TestMapAccessibleAfterDeeplinkLogin()
     {
-        Views.MainMenu.MapButton.Click();
+        // This build's sidebar has no Map button (verified via UiDump `--all` dumps), so the
+        // M shortcut is the stable entry point to the navmap.
+        PressKey(AltKeyCode.M);
         Views.ExplorePanel.WaitFor();
 
         Assert.That(Views.ExplorePanel.Navmap.IsPresent(), Is.True,
