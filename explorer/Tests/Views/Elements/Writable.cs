@@ -9,14 +9,18 @@ public record Writable(By by, string name) : Clickable(by, name)
     [AllureStep("Set text on object")]
     public void SetText(string text, bool submit = true, float timeout = 10.0f)
     {
-        var altObject = WaitFor(timeout);
+        // Shot-suppressed wait: SetText is an action, not a verification, so no screenshot here.
+        var altObject = WaitFor(timeout, verificationShot: false);
         altObject.SetText(text, submit);
     }
 
     [AllureStep("Get text from object")]
     public string GetText(float timeout = 10.0f)
     {
-        var altObject = WaitFor(timeout);
-        return altObject.GetText();
+        // Suppress the WaitFor shot — the verification moment is the text read, captured below.
+        var altObject = WaitFor(timeout, verificationShot: false);
+        var text = altObject.GetText();
+        Reporter.TakeVerificationShot($"text_{ShotName}");
+        return text;
     }
 }

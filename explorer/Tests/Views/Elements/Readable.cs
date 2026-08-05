@@ -15,7 +15,10 @@ public record Readable(By by, string name) : Locatable(by, name)
     [AllureStep("Get text from object")]
     public string GetText(double timeout = 20D)
     {
-        var altObject = WaitFor(timeout);
-        return altObject.GetText();
+        // Suppress the WaitFor shot — the verification moment is the text read, captured below.
+        var altObject = WaitFor(timeout, verificationShot: false);
+        var text = altObject.GetText();
+        Reporter.TakeVerificationShot($"text_{ShotName}");
+        return text;
     }
 }

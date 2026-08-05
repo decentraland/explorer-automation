@@ -34,6 +34,36 @@ internal static class ScreenshotCapture
         return data.ToArray();
     }
 
+    /// <summary>
+    /// Encodes the bitmap as JPEG, downscaling to <paramref name="maxWidth"/> (aspect preserved)
+    /// when wider. Used for verification-shot attachments where report size matters more than
+    /// pixel fidelity — full-res PNG attachments previously produced multi-hundred-MB reports.
+    /// </summary>
+    public static byte[] EncodeJpegScaled(SKBitmap bmp, int maxWidth, int quality)
+    {
+        SKBitmap scaled = null;
+        try
+        {
+            var source = bmp;
+            if (bmp.Width > maxWidth)
+            {
+                var height = Math.Max(1, (int)Math.Round(bmp.Height * (maxWidth / (double)bmp.Width)));
+                scaled = bmp.Resize(new SKImageInfo(maxWidth, height), SKSamplingOptions.Default)
+                         ?? throw new InvalidOperationException(
+                             $"Failed to resize {bmp.Width}x{bmp.Height} screenshot to width {maxWidth}.");
+                source = scaled;
+            }
+
+            using var img = SKImage.FromBitmap(source);
+            using var data = img.Encode(SKEncodedImageFormat.Jpeg, quality);
+            return data.ToArray();
+        }
+        finally
+        {
+            scaled?.Dispose();
+        }
+    }
+
     public static SKBitmap Crop(SKBitmap source, SKRect clip)
     {
         var rect = SKRectI.Round(clip);

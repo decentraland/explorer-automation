@@ -56,6 +56,77 @@ public static class Reporter
         }
     }
 
+    #region Verification screenshots
+
+    private const int VERIFY_SHOT_MAX_WIDTH = 1200;
+    private const int VERIFY_SHOT_JPEG_QUALITY = 60;
+
+    // Opt-out toggle for CI: VERIFY_SCREENSHOTS unset/anything => on, "0"/"false" => off.
+    private static readonly bool _verificationShotsEnabled = IsVerifyScreenshotsEnabled();
+
+    // Armed only between BaseTest.SetUp and BaseTest.TearDown so fixture plumbing
+    // (EnsureInWorld boot waits, the pre-test auth-screen probe, teardown) stays shot-free.
+    private static bool _verificationShotsArmed;
+
+    // Per-test sequence so attachment names are deterministic and ordered; reset in SetUp.
+    private static int _verificationShotSeq;
+
+    private static bool IsVerifyScreenshotsEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable("VERIFY_SCREENSHOTS");
+        return !string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
+               && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Arms verification shots and resets the per-test counter. Called from BaseTest.SetUp.</summary>
+    public static void StartVerificationShots()
+    {
+        _verificationShotSeq = 0;
+        _verificationShotsArmed = true;
+    }
+
+    /// <summary>Disarms verification shots. Called from BaseTest.TearDown before the final-frame screenshot.</summary>
+    public static void StopVerificationShots()
+    {
+        _verificationShotsArmed = false;
+    }
+
+    /// <summary>
+    /// Captures the current frame and attaches it to the current Allure step as a
+    /// downscaled JPEG named "&lt;label&gt;_&lt;n&gt;". Intended to be called exactly once
+    /// at the completion of a visual verification (element appeared/gone/present/text read) —
+    /// never from inside polling loops and never for plain actions like Click/SetText.
+    /// Capture failures are logged and swallowed so a broken screenshot path can't fail a test.
+    /// </summary>
+    public static void TakeVerificationShot(string label)
+    {
+        if (!_verificationShotsEnabled || !_verificationShotsArmed || CommonStuff.AltDriver == null)
+            return;
+
+        try
+        {
+            var attachmentName = $"{SanitizeShotLabel(label)}_{Interlocked.Increment(ref _verificationShotSeq)}";
+
+            using var bmp = ScreenshotCapture.CaptureBitmap(quality: 100);
+            var jpegBytes = ScreenshotCapture.EncodeJpegScaled(bmp, VERIFY_SHOT_MAX_WIDTH, VERIFY_SHOT_JPEG_QUALITY);
+
+            AllureApi.AddAttachment(name: attachmentName, type: "image/jpeg", content: jpegBytes, fileExtension: ".jpg");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to take verification screenshot '{label}': {ex.Message}");
+        }
+    }
+
+    private static string SanitizeShotLabel(string label)
+    {
+        var chars = label.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_').ToArray();
+        var sanitized = new string(chars);
+        return sanitized.Length <= 80 ? sanitized : sanitized[..80];
+    }
+
+    #endregion
+
     public static void AttachPng(string name, byte[] pngBytes)
     {
         AllureApi.AddAttachment(name: name, type: "image/png", content: pngBytes);

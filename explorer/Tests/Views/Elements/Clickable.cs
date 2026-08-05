@@ -9,7 +9,8 @@ public record Clickable(By by, string name) : Locatable(by, name)
     [AllureStep("Click on object")]
     public void Click()
     {
-        var altObject = WaitFor();
+        // Shot-suppressed wait: Click is an action, not a verification, so no screenshot here.
+        var altObject = WaitFor(20D, verificationShot: false);
         altObject.Click();
         Thread.Sleep(200);
     }

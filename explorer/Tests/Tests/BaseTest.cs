@@ -49,12 +49,21 @@ public abstract class BaseTest
         // Skip when sitting on the auth screen — Escape there can exit/transition.
         if (!Views.AuthenticationMainScreen.IsPresent())
             PressEscape();
+
+        // Arm verification screenshots LAST so the counter starts at the test body and the
+        // setup plumbing above (auth-screen probe, Escape) stays shot-free. EnsureInWorld's
+        // boot waits run in OneTimeSetUp while shots are disarmed, so they never capture.
+        Reporter.StartVerificationShots();
     }
 
     [TearDown]
     [AllureAfter("Clean up after each test")]
     public void TearDown()
     {
+        // Disarm first so teardown (and the final-frame screenshot below) never produces
+        // verification shots — no double-capture on failure paths.
+        Reporter.StopVerificationShots();
+
         var testResult = TestContext.CurrentContext.Result.Outcome.Status;
         Reporter.Log($"Test {TestContext.CurrentContext.Test.Name} completed with status: {testResult}");
 
