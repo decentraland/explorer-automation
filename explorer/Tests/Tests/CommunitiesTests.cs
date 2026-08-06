@@ -12,8 +12,7 @@ public class CommunitiesTests : BaseTest
     [Test]
     public void TestCommunitiesPanelContent()
     {
-        Views.MainMenu.CommunitiesButton.Click();
-        Views.ExplorePanel.Communities.WaitFor();
+        OpenCommunities();
 
         Assert.That(Views.ExplorePanel.Communities.CreateCommunityButton.IsPresent(), Is.True,
             "Left column should offer the CREATE A COMMUNITY button");
@@ -36,8 +35,7 @@ public class CommunitiesTests : BaseTest
     [Test]
     public void TestOpenInvitesAndRequests()
     {
-        Views.MainMenu.CommunitiesButton.Click();
-        Views.ExplorePanel.Communities.WaitFor();
+        OpenCommunities();
 
         Views.ExplorePanel.Communities.InvitesAndRequestsButton.Click();
         Views.ExplorePanel.Communities.InvitesAndRequests.WaitFor();
@@ -58,8 +56,7 @@ public class CommunitiesTests : BaseTest
     [Test]
     public void TestSearchCommunities()
     {
-        Views.MainMenu.CommunitiesButton.Click();
-        Views.ExplorePanel.Communities.WaitFor();
+        OpenCommunities();
 
         Views.ExplorePanel.Communities.SearchBar.SetText("Decentraland");
         Wait(2); // wait for the remote search to resolve
@@ -85,8 +82,7 @@ public class CommunitiesTests : BaseTest
     [Test]
     public void TestOpenCommunityDetail()
     {
-        Views.MainMenu.CommunitiesButton.Click();
-        Views.ExplorePanel.Communities.WaitFor();
+        OpenCommunities();
 
         // The pooled grid can leave any given card index below the viewport fold (see
         // CommunityResultCard doc comment), so try the first few cards until a click on a
@@ -126,5 +122,17 @@ public class CommunitiesTests : BaseTest
         Views.ExplorePanel.Communities.CommunityDetail.WaitForGone();
 
         Views.ExplorePanel.Close();
+    }
+
+    /// <summary>
+    /// Opens the Communities section via the keyboard shortcut. Deliberately NOT the
+    /// sidebar button — see PlacesTests.OpenPlaces for the stale open-section-state
+    /// rationale. The sidebar-click entry path is covered by ExplorePanelTests/ShortcutsTests.
+    /// </summary>
+    private void OpenCommunities()
+    {
+        ClickUntil(() => PressKey(AltKeyCode.O),
+                   () => Views.ExplorePanel.Communities.IsPresent());
+        Views.ExplorePanel.Communities.WaitFor();
     }
 }

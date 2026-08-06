@@ -108,11 +108,55 @@ public class ChatTests : BaseTest
     }
 
     /// <summary>
+    /// Leaves the chat closed AND the sidebar toggle in sync after every test, so no test
+    /// inherits the Escape-close desync from a predecessor (see OpenChat docs; no upstream
+    /// issue filed for the desync as of 2026-08). The probe click resolves the toggle state
+    /// deterministically: if the toggle was in sync the click opens the panel and we close
+    /// it again via the button (still in sync); if it was desynced (Escape-close) the click
+    /// is exactly the no-op that resyncs it.
+    /// </summary>
+    [TearDown]
+    public void NormalizeChatState()
+    {
+        // Runs before BaseTest.TearDown (NUnit runs derived teardowns first): disarm
+        // verification shots so this plumbing doesn't attach screenshots, and bail if the
+        // fixture never made it in-world.
+        Reporter.StopVerificationShots();
+        if (ExceptionFromOneTimeSetUp != null)
+            return;
+
+        // If the test (or its failure path) left the chat open, close it via the sidebar
+        // button — the path that keeps the toggle in sync.
+        if (Views.Chat.ConversationsToolbar.IsPresent())
+        {
+            Views.MainMenu.ChatButton.Click();
+            if (!TryWaitForToolbarGone(3))
+            {
+                PressEscape(); // last resort; the probe below repairs the desync this causes
+                TryWaitForToolbarGone(3);
+            }
+        }
+
+        // Probe click.
+        Views.MainMenu.ChatButton.Click();
+        if (TryWaitForToolbar(2))
+        {
+            Views.MainMenu.ChatButton.Click();
+            TryWaitForToolbarGone(3);
+        }
+        else
+        {
+            Reporter.Log("Probe click was a no-op — sidebar chat toggle was desynced (Escape-close bug), now resynced");
+        }
+    }
+
+    /// <summary>
     /// Opens the chat via the sidebar button. The button's internal toggle state desyncs
     /// when the panel was last closed with Escape: the next click is consumed as a "close"
     /// no-op and only the following click reopens the panel (reproduced deterministically
     /// via UiDump on build dev_b97439fc — open/Escape/click cycles fail on every other
-    /// click). Hence the retry.
+    /// click). NormalizeChatState resyncs the toggle after every test, so the retry here
+    /// is a safety net for the first test of the fixture, not an expected path.
     /// </summary>
     private void OpenChat()
     {

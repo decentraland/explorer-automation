@@ -11,8 +11,7 @@ public class EventsTests : BaseTest
     [Test]
     public void TestSwitchEventsDay()
     {
-        Views.MainMenu.EventsButton.Click();
-        Views.ExplorePanel.Events.WaitFor();
+        OpenEvents();
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
 
         // Clicking a non-today day selector swaps the calendar for the single-day list.
@@ -43,22 +42,27 @@ public class EventsTests : BaseTest
     [Test]
     public void TestOpenEventDetail()
     {
-        Views.MainMenu.EventsButton.Click();
-        Views.ExplorePanel.Events.WaitFor();
+        OpenEvents();
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
         Wait(2); // day columns populate asynchronously
 
         // The Today column only holds big cards while events are live, so fall back to
         // tomorrow's first (always-scheduled) small card when nothing is live right now.
-        var card = Views.ExplorePanel.Events.TodayBigCards[0];
-        if (!card.IsPresent())
+        // Card resolution + name capture happen inside the retry: the calendar re-binds
+        // cards while events stream in, silently dropping clicks and moving anchors.
+        var eventName = string.Empty;
+        ClickUntil(() =>
         {
-            Reporter.Log("No live event card in the Today column — using tomorrow's first card");
-            card = Views.ExplorePanel.Events.TomorrowSmallCards[0];
-        }
+            var card = Views.ExplorePanel.Events.TodayBigCards[0];
+            if (!card.IsPresent())
+            {
+                Reporter.Log("No live event card in the Today column — using tomorrow's first card");
+                card = Views.ExplorePanel.Events.TomorrowSmallCards[0];
+            }
 
-        var eventName = card.EventName.GetText();
-        card.Click();
+            eventName = card.EventName.GetText();
+            card.Click();
+        }, () => Views.ExplorePanel.Events.EventDetail.IsPresent());
 
         Views.ExplorePanel.Events.EventDetail.WaitFor();
         Assert.That(Views.ExplorePanel.Events.EventDetail.EventName.GetText(), Is.EqualTo(eventName),
@@ -76,8 +80,7 @@ public class EventsTests : BaseTest
     [Test]
     public void TestCreateEventButtonPresent()
     {
-        Views.MainMenu.EventsButton.Click();
-        Views.ExplorePanel.Events.WaitFor();
+        OpenEvents();
 
         // Presence-only on purpose: clicking CREATE EVENT opens the event-creation flow in
         // an external browser, which steals OS focus from the client and breaks AltTester
@@ -89,5 +92,17 @@ public class EventsTests : BaseTest
         Reporter.Log("Create Event and Today buttons present in the Events header");
 
         Views.ExplorePanel.Close();
+    }
+
+    /// <summary>
+    /// Opens the Events section via the keyboard shortcut. Deliberately NOT the sidebar
+    /// button — see PlacesTests.OpenPlaces for the stale open-section-state rationale.
+    /// The sidebar-click entry path is covered by ExplorePanelTests/ShortcutsTests.
+    /// </summary>
+    private void OpenEvents()
+    {
+        ClickUntil(() => PressKey(AltKeyCode.X),
+                   () => Views.ExplorePanel.Events.IsPresent());
+        Views.ExplorePanel.Events.WaitFor();
     }
 }

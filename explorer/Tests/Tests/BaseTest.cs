@@ -144,6 +144,31 @@ public abstract class BaseTest
         Thread.Sleep(TimeSpan.FromSeconds(seconds));
     }
 
+    /// <summary>
+    /// Clicks and polls for the expected UI response, retrying the click when nothing
+    /// happens. Pooled grids/lists (places cards, event calendar, backpack tiles) re-bind
+    /// entries while results stream in, and a click that lands mid-rebuild is silently
+    /// dropped — a recurring source of flakes. The click action is re-run each attempt so
+    /// it can re-resolve its target. Callers should follow with an authoritative WaitFor
+    /// so a genuine failure still produces the standard error.
+    /// </summary>
+    protected void ClickUntil(Action click, Func<bool> responded, int attempts = 3, double timeoutPerAttempt = 5)
+    {
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            click();
+            for (var elapsed = 0.0; elapsed < timeoutPerAttempt; elapsed += 0.5)
+            {
+                if (responded())
+                    return;
+                Wait(0.5);
+            }
+
+            if (attempt < attempts)
+                Reporter.Log($"Click produced no UI response (attempt {attempt}/{attempts}) — likely landed during a grid rebuild, retrying");
+        }
+    }
+
     #region Input Helpers
 
     [AllureStep("Press key")]
