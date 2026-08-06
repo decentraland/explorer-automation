@@ -1,75 +1,109 @@
-name: Runner Validation (macOS)
+name: InWorld Suite
 
-# macOS counterpart to runner-validation-windows.yml — runs the InWorld
-# NUnit category against the macOS Explorer build on GitHub-hosted
-# `macos-14`. Same chassis as run-visual-suite.yml (which has been green
-# for weeks), so install steps are well-trodden: dotnet, AltTester .dmg,
-# MetaForge, allure, account provisioning, S3 upload.
+# Reusable workflow that owns the mechanics of the InWorld NUnit suite on
+# GitHub-hosted `macos-14`: prereq install, audio workarounds, AltTester
+# license, Explorer install, `mf explorer test`, Allure upload, PR comment.
+# Mirrors run-visual-suite.yml, which runs the same chassis.
 #
-# Why a separate workflow from the Windows version:
-#   - macOS install steps (bash / brew / dmg / Homebrew preinstalls) and
-#     Windows install steps (PowerShell / Inno Setup / MSI / side-loads)
-#     diverge too widely to share usefully.
-#   - macos-14 is ephemeral GitHub-hosted; the Windows runner is persistent
-#     self-hosted with manual driver pinning. Cleanup/concurrency semantics
-#     differ.
+# Callers:
+#   - decentraland/unity-explorer      → `/in-world-tests` PR-comment
+#                                        dispatcher (in-world-tests.yml)
+#   - decentraland/explorer-automation → manual workflow_dispatch
 #
-# Triggers:
-#   - workflow_dispatch (manual, with overrides for build_url + test filter)
-#   - push on feat/win-gpu-test-runner-workflow if this YAML or
-#     explorer/Tests changes (fast iteration during PR review)
+# macOS-only. A Windows counterpart is planned in PR #12 and stays a separate
+# workflow: the install steps (bash/brew/dmg vs PowerShell/Inno Setup/MSI) and
+# the runner lifecycle (ephemeral GitHub-hosted vs persistent self-hosted with
+# manual driver pinning) diverge too widely to share usefully.
 #
-# Required secrets (mirrors Windows):
-#   - ALTTESTER_LICENSE                        AltTester Pro license key
-#   - REPOS_READ_ONLY_TOKEN                    PAT — read on decentraland/MetaForge
-#   - DEV_EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
-#   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
-#   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
-#   - DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+# Required secrets (caller passes via `secrets: inherit`):
+#   - ALTTESTER_LICENSE                    AltTester Pro license key
+#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge
+#   - EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
+#   - EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
+#   - EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
+#   - EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
 #
-# Required vars:
-#   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL   Public-facing prefix of the bucket
+# Required vars on the caller's repo (`vars.*` inside a workflow_call run
+# resolves against the caller's repo):
+#   - EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL   Public-facing prefix of the bucket
 
 on:
+  workflow_call:
+    inputs:
+      build_url:
+        description: 'Direct URL to a Decentraland_macos.zip Explorer build.'
+        type: string
+        required: true
+      filter:
+        description: 'NUnit filter for `mf explorer test --filter`. Empty falls back to "Category=InWorld". Auth/OTP fixtures are excluded by that default — they need the email-OTP flow, unstable on macos-14; run them via an explicit filter.'
+        type: string
+        required: false
+        default: ''
+      pr_number:
+        description: 'PR number on the *caller* repo, used for the S3 path and the result comment. Empty → manual segment, summary-only.'
+        type: string
+        required: false
+        default: ''
+      tests_ref:
+        description: 'explorer-automation ref for tests + explorer/ci files. Empty falls back to main.'
+        type: string
+        required: false
+        default: ''
+      commit_sha:
+        description: 'Short SHA of the caller PR head, surfaced in the PR comment + S3 path. Empty → run-<run_id>.'
+        type: string
+        required: false
+        default: ''
+      branch_label:
+        description: 'Branch name shown in the PR comment. Empty → tests_ref or main.'
+        type: string
+        required: false
+        default: ''
+      record_perf:
+        description: 'Record fixture-level perf samples (PerfSampler). Off by default: paravirt numbers are unreliable.'
+        type: boolean
+        required: false
+        default: false
+      dry_run:
+        description: 'Skip the mf explorer test invocation (chassis validation only).'
+        type: boolean
+        required: false
+        default: false
+
   workflow_dispatch:
     inputs:
       build_url:
-        description: 'Direct URL to a Decentraland_macos.zip. Empty = latest reachable unity-explorer PR build.'
+        description: 'Direct URL to a Decentraland_macos.zip. Empty = latest reachable unity-explorer PR build (probe).'
         type: string
         required: false
-        # Pinned to a known-good macOS build (pr-22547-ed80a74) purely so the chassis has
-        # a deterministic target while it is being validated. That build also ships
-        # PerfSampler, which is what the optional record_perf input needs — plain runs
-        # don't care either way. To be replaced by per-PR SHA resolution when the real
-        # trigger is wired up; revert to '' to fall back to candidate probing.
-        default: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
-      test_filter:
-        description: 'NUnit --filter expression. Default runs the InWorld category only. The Auth/OTP fixtures are intentionally excluded here — they depend on the email-OTP login flow which is not yet stable on the macos-14 chassis; run them with an explicit filter override once fixed.'
+        default: ''
+      filter:
+        description: 'NUnit filter. Empty = Category=InWorld.'
         type: string
         required: false
-        default: 'Category=InWorld'
-      dry_run:
-        description: 'Skip mf explorer test invocation (chassis validation only).'
+        default: ''
+      record_perf:
         type: boolean
         required: false
         default: false
-      record_perf:
-        description: 'Record fixture-level perf samples (PerfSampler) and attach them to the report. Off by default on macOS: the paravirt chassis produces unreliable numbers, and recording costs artifact + S3 storage for data nobody reads. Requires a build that ships DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler.'
+      dry_run:
         type: boolean
         required: false
         default: false
 
+  # TEMPORARY validation trigger — removed before merge (Task 5).
   push:
     branches: [feat/macOS-inWorld-workflow]
     paths:
-      - '.github/workflows/runner-validation-macos.yml'
+      - '.github/workflows/run-inworld-suite.yml'
       - 'explorer/Tests/**'
+      - 'explorer/ci/**'
 
-# macos-14 runners are ephemeral, but serializing keeps concurrent runs on
-# the same PR from racing on the S3 path. cancel-in-progress=true is safe
-# (no persistent state to clean up like on the Windows self-hosted runner).
+# macos-14 runners are ephemeral, but serializing keeps concurrent runs for
+# the same caller PR from racing on the S3 path. cancel-in-progress is safe:
+# there is no persistent runner state to unwind.
 concurrency:
-  group: runner-validation-macos-${{ github.ref }}
+  group: run-inworld-suite-${{ github.ref }}-${{ inputs.pr_number || 'local' }}
   cancel-in-progress: true
 
 permissions:
@@ -77,65 +111,70 @@ permissions:
   pull-requests: write
 
 jobs:
-  resolve:
-    name: Resolve build URL
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      build_url: ${{ steps.build.outputs.build_url }}
-      pr_number: ${{ steps.pr.outputs.number }}
+  run:
+    name: InWorld suite (macOS)
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    env:
+      BUILD_URL_INPUT: ${{ inputs.build_url || '' }}
+      PR_NUMBER_INPUT: ${{ inputs.pr_number || '' }}
+      TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      TESTS_REF: ${{ inputs.tests_ref || '' }}
+      COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || format('run-{0}', github.run_id) }}
+      BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || 'main') }}
+      # vars.* inside a workflow_call run reads the *caller's* repo vars
+      PUBLIC_URL_PREFIX: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      # 'false' keeps AltTester Unity logging at Warn per GlobalSetup. Flip to
+      # 'true' only when triaging AltTester issues — Debug level adds ~30 MB of
+      # polling chatter per run.
+      ALT_VERBOSE_LOGS: 'false'
+
     steps:
-      - name: Resolve PR number
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_REF: ${{ github.ref_name }}
+      - name: Validate inputs
         run: |
           set -euo pipefail
-          PR_NUMBER=$(gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --head "$HEAD_REF" \
-            --state open \
-            --json number \
-            --jq '.[0].number // ""' 2>/dev/null || echo "")
-          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          if [ -n "$PR_NUMBER" ]; then
-            echo "::notice::Resolved PR #${PR_NUMBER} for branch ${HEAD_REF}"
-          else
-            echo "::notice::No open PR found for branch ${HEAD_REF}; using manual segment in S3 path."
+          for v_name in TESTS_REF BRANCH_LABEL; do
+            v_val="${!v_name}"
+            if [ -z "$v_val" ]; then continue; fi
+            if ! printf '%s' "$v_val" | grep -Eq '^[A-Za-z0-9._/-]+$' \
+               || [ "${v_val#-}" != "$v_val" ]; then
+              echo "::error::$v_name='$v_val' contains characters that are not allowed. Allowed: A-Z a-z 0-9 . _ / -, and must not start with '-'."
+              exit 1
+            fi
+          done
+
+          # Only a caller-supplied URL is untrusted input. Empty means the
+          # resolve step builds the URL from a hardcoded artifact host below.
+          if [ -n "${BUILD_URL_INPUT:-}" ]; then
+            case "$BUILD_URL_INPUT" in
+              https://explorer-artifacts.decentraland.org/*|https://explorer-artifacts.decentraland.zone/*|https://github.com/decentraland/*|https://objects.githubusercontent.com/*) ;;
+              *)
+                echo "::error::build_url='$BUILD_URL_INPUT' is not from a trusted host (decentraland artifact bucket or GitHub release)."
+                exit 1
+                ;;
+            esac
           fi
 
-      - name: Resolve Explorer build URL
+      - name: Resolve build URL
         id: build
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-          OVERRIDE: ${{ inputs.build_url }}
-          # This hard fallback exists because workflow_dispatch.inputs defaults
-          # don't apply to push events; without PINNED_DEFAULT the probe loop
-          # below picks whatever recent PR is green on Unity Cloud Build, which
-          # makes chassis runs non-reproducible.
-          PINNED_DEFAULT: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/feat/test-automation/autopilot-alttester/pr-22547-ed80a74/Decentraland_macos.zip'
         run: |
           set -euo pipefail
-          if [ -n "${OVERRIDE:-}" ]; then
-            echo "::notice::Using user-supplied build URL."
-            echo "build_url=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+          if [ -n "${BUILD_URL_INPUT:-}" ]; then
+            echo "::notice::Using caller-supplied build URL."
+            echo "build_url=${BUILD_URL_INPUT}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ -n "${PINNED_DEFAULT:-}" ]; then
-            echo "::notice::Using pinned default build URL (known-good chassis build)."
-            echo "build_url=${PINNED_DEFAULT}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Same probe loop as the Windows resolve, just swapping the
-          # artifact filename. PR/branch builds are the only ones with the
-          # AltTester scripting define enabled (release builds strip it).
+          # Probe: newest green unity-explorer PR builds (only PR/branch builds
+          # ship the AltTester scripting define). Same loop as run-visual-suite's
+          # Windows sibling, artifact name swapped.
           ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
           CANDIDATES_JSON=$(gh api \
             "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?event=pull_request&status=success&per_page=20" \
             --jq '[.workflow_runs[] | {head_branch, head_sha, run_number}]')
-
           BUILD_URL=""
           for i in 0 1 2 3 4; do
             CAND=$(echo "$CANDIDATES_JSON" | jq -r ".[$i]")
@@ -152,55 +191,59 @@ jobs:
             fi
             echo "::warning::Candidate ${BRANCH}/pr-${RUN}-${SHA7} returned HTTP ${HTTP} — trying next."
           done
-
           if [ -z "$BUILD_URL" ]; then
             echo "::error::No reachable unity-explorer PR build found in the last 20 successful Unity Cloud Build runs."
             exit 1
           fi
-
           echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
 
-  run:
-    name: Runner validation (InWorld smoke)
-    needs: resolve
-    runs-on: macos-14
-    timeout-minutes: 60
+      - name: Resolve PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_NUMBER_INPUT:-}" ]; then
+            echo "number=${PR_NUMBER_INPUT}" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            PR_NUMBER=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$HEAD_REF" --state open --json number --jq '.[0].number // ""' 2>/dev/null || echo "")
+            echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "number=" >> "$GITHUB_OUTPUT"
 
-    env:
-      BUILD_URL: ${{ needs.resolve.outputs.build_url }}
-      TEST_FILTER: ${{ inputs.test_filter || 'Category=InWorld' }}
-      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
-      COMMIT_SHA: ${{ github.sha }}
-      PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
-      # Temporarily bumped to 'true' (2026-05-21) while diagnosing the
-      # SplashScreen.WaitForGone(60) timeout on macos-14 — Debug-level
-      # AltTester server logs surface the per-command exchange in Player.log
-      # so we can see exactly where bootstrap stalls. Flip back to 'false'
-      # once macOS is stable to avoid the ~30 MB/run polling chatter.
-      ALT_VERBOSE_LOGS: 'true'
-
-    steps:
+      # `repository` is mandatory: a bare checkout inside a workflow_call run
+      # resolves to the CALLER's repo. `mf explorer test` runs in cwd-mode
+      # against this workspace, so tests and explorer/ci/* must come from the
+      # same explorer-automation ref.
       - uses: actions/checkout@v4
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       - name: Compute identifiers
         id: ids
         env:
-          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          # github.repository inside a workflow_call run resolves to the caller's repo
+          PR_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
-          SHORT_SHA="${COMMIT_SHA:0:7}"
+          # S3 path is namespaced by caller repo so unity-explorer and
+          # explorer-automation reports never collide. Non-PR runs get a
+          # `manual-<run id>` segment so successive dispatches don't
+          # overwrite each other.
+          REPO_SLUG="${PR_REPO//\//-}"
           PR_SEGMENT="${PR_NUMBER:-manual-${GITHUB_RUN_ID}}"
-          S3_PATH="@dcl/decentraland-explorer-automation/runner-validation-macos/${PR_SEGMENT}/${SHORT_SHA}"
-          REPORT_URL="${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
+          S3_PATH="@dcl/${REPO_SLUG}/inworld/${PR_SEGMENT}/${COMMIT_SHA}"
           {
             echo "s3_path=${S3_PATH}"
-            echo "report_url=${REPORT_URL}"
-            echo "short_sha=${SHORT_SHA}"
+            echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
           } >> "$GITHUB_OUTPUT"
 
-      # Lifted wholesale from run-visual-suite.yml (Mac visual reusable),
-      # which has been green for weeks. Installs dotnet 10, AltTester via
-      # the .dmg flow, allure via npm.
+      # Lifted wholesale from run-visual-suite.yml (Mac visual reusable).
+      # Installs dotnet 10, AltTester via the .dmg flow, allure via npm.
       - name: Install runtime prerequisites
         run: |
           set -euo pipefail
@@ -229,87 +272,37 @@ jobs:
           allure --version
           gh --version
 
-      # Make BlackHole-2ch the only viable input/output device coreaudiod hands to
-      # cpal, AND collect the diagnostics needed to physically remove the
-      # paravirt HAL on the next iteration if this isn't enough.
-      #
-      # Background: rust_audio (com.decentraland.livekit-sdk) calls
-      # cpal::supports_input on every device returned by
-      # kAudioHardwarePropertyDevices during VoiceChatPlugin init. On
-      # GH-hosted macos-14 paravirt the "Apple Virtual Sound Device" (Built-in
-      # transport, default in+out) responds to enumeration but its AudioUnit
-      # blocks on AudioUnitSetProperty → mach_msg to coreaudiod indefinitely,
-      # hanging the Unity main thread (see ~/explorer-samples/sample-*.txt
-      # from run 26258559596).
-      #
-      # This step combines two CI-side tactics for the run:
-      #   (A) DIAGNOSTIC — inventory /Library/Audio/Plug-Ins/HAL/,
-      #       /System/Library/Audio/Plug-Ins/HAL/, and kextstat so the next
-      #       iteration can decide whether to `sudo mv` an HAL plug-in aside
-      #       or `kextunload` a driver to make the paravirt device disappear
-      #       from coreaudiod's enumeration entirely.
-      #   (B) IN-FLIGHT FIX ATTEMPT — install switchaudio-osx and set
-      #       BlackHole as default input + output. cpal enumerates ALL
-      #       devices (not just default), so this alone shouldn't fix the
-      #       hang — but if Decentraland's rust_audio wrapper has a
-      #       fast-return-on-first-good-device pattern, or if cpal happens
-      #       to walk devices in default-first order on macOS, (B) alone
-      #       may be sufficient. Cheap to test in the same run as (A).
-      - name: Install BlackHole + set default + paravirt HAL diagnostics
+      # rust_audio (com.decentraland.livekit-sdk) calls cpal::supports_input on
+      # every device returned by kAudioHardwarePropertyDevices during
+      # VoiceChatPlugin init. On GH-hosted macos-14 paravirt the "Apple Virtual
+      # Sound Device" answers enumeration but its AudioUnit blocks forever on
+      # mach_msg to coreaudiod, wedging the Unity main thread. BlackHole (here)
+      # plus the compiled CoreAudio shim (next step) are the fix: BlackHole
+      # gives cpal a working default device, the shim hides the paravirt one.
+      - name: Route audio to BlackHole (paravirt device is broken)
         run: |
           set -euo pipefail
 
-          # ── Install both pieces: the virtual device AND the CLI used to
-          # set defaults. Cask install pulls the BlackHole AudioServerPlugin
-          # into /Library/Audio/Plug-Ins/HAL/; the formula provides the
-          # SwitchAudioSource binary used below.
+          # The cask installs the BlackHole AudioServerPlugin into
+          # /Library/Audio/Plug-Ins/HAL/; the formula provides SwitchAudioSource.
           brew install --cask blackhole-2ch
           brew install switchaudio-osx
 
-          # AudioServerPlugin is loaded by coreaudiod on demand. Restarting
-          # the daemon forces it to rescan /Library/Audio/Plug-Ins/HAL so
-          # BlackHole becomes visible before we set it as default.
+          # AudioServerPlugin is loaded by coreaudiod on demand. Restarting the
+          # daemon forces a rescan of /Library/Audio/Plug-Ins/HAL so BlackHole
+          # is visible before we set it as default.
           sudo killall coreaudiod 2>/dev/null || true
           sleep 3
 
-          # ── (A) DIAGNOSTIC: where does "Apple Virtual Sound Device" live? ──
-          # If it's an AudioServerPlugin bundle in /Library/Audio/Plug-Ins/HAL,
-          # we can `sudo mv` it aside in a follow-up iteration. If it's in
-          # /System/... it's SIP-protected. If it's a kext, kextunload is
-          # the lever (also typically SIP-restricted but worth probing).
-          echo "::group::HAL plug-ins: /Library/Audio/Plug-Ins/HAL/"
-          ls -la /Library/Audio/Plug-Ins/HAL/ 2>/dev/null || echo "(missing)"
-          echo "::endgroup::"
-          echo "::group::HAL plug-ins: /System/Library/Audio/Plug-Ins/HAL/"
-          ls -la /System/Library/Audio/Plug-Ins/HAL/ 2>/dev/null || echo "(missing)"
-          echo "::endgroup::"
-          echo "::group::Loaded audio/sound/virt kexts (kextstat)"
-          kextstat 2>/dev/null | grep -iE 'sound|audio|virt|hda|coreaudio' \
-            || echo "(no matches)"
-          echo "::endgroup::"
-          echo "::group::Filesystem search for paravirt sound bundles"
-          find /Library /System/Library -maxdepth 6 \
-               \( -iname '*virtual*sound*' \
-               -o -iname '*virtio*sound*' \
-               -o -iname 'AppleVirtual*' \) \
-               2>/dev/null | head -30 || true
-          echo "::endgroup::"
-
-          # ── (B) IN-FLIGHT FIX: make BlackHole the default in + out ──
           # Default selection writes to
-          # ~/Library/Preferences/Audio/com.apple.audio.SystemSettings.plist
-          # and is picked up by coreaudiod immediately (no second restart,
-          # no reboot). cpal still enumerates the full device list, so this
-          # only helps if rust_audio's wrapper short-circuits on the first
-          # working device or cpal happens to walk default-first on macOS.
+          # ~/Library/Preferences/Audio/com.apple.audio.SystemSettings.plist and
+          # is picked up by coreaudiod immediately (no second restart, no reboot).
           SwitchAudioSource -s "BlackHole 2ch" -t input
           SwitchAudioSource -s "BlackHole 2ch" -t output
-          # -t system controls the "Default System Output Device" slot used
-          # for alert sounds. In run 26276740988 Apple Virtual Sound Device
-          # held it after -t input/-t output were flipped to BlackHole.
-          # Not load-bearing for the rust_audio hang (cpal doesn't query
-          # system-output), but flip it for hygiene — fewer references to
-          # the paravirt device anywhere in coreaudiod's state.
+          # -t system is the "Default System Output Device" slot used for alert
+          # sounds. Not load-bearing for the rust_audio hang (cpal doesn't query
+          # it), but the paravirt device otherwise keeps holding it — flip it so
+          # coreaudiod's state has as few references to it as possible.
           SwitchAudioSource -s "BlackHole 2ch" -t system \
             || echo "(system-default switch unsupported on this version — non-fatal)"
 
@@ -317,10 +310,6 @@ jobs:
           echo "Default input:  $(SwitchAudioSource -c -t input)"
           echo "Default output: $(SwitchAudioSource -c -t output)"
           echo "Default system: $(SwitchAudioSource -c -t system 2>/dev/null || echo '(n/a)')"
-          echo "::endgroup::"
-
-          echo "::group::system_profiler SPAudioDataType (final state)"
-          system_profiler SPAudioDataType
           echo "::endgroup::"
 
           # ── Sanity checks. Fail fast if either piece didn't land. ──
@@ -352,18 +341,14 @@ jobs:
           yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
           echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
 
-      # Replace the just-installed `metaforge` binary with one built from
-      # the feat/macos-direct-exec branch. Background: the released MetaForge
-      # invokes Explorer via /usr/bin/open on macOS, which strips DYLD_*
-      # at the SIP/LaunchServices boundary. We need DYLD_INSERT_LIBRARIES
-      # to reach the Explorer process so the CoreAudio enumeration shim
-      # (compiled below) can drop the broken paravirt audio device. The
-      # feature-branch build exposes `directExec: true` on the Explorer
-      # test launch path, which routes Process.Start at the bundle's
-      # Contents/MacOS/<binary> instead of going through `open`. This
-      # whole step disappears once the MetaForge PR lands and the
-      # tooling install.sh ships a release that includes the fix.
-      - name: Build patched MetaForge (feat/macos-direct-exec)
+      # Replace the just-installed `metaforge` binary with one built from the
+      # merged direct-exec fix. Released MetaForge launches Explorer through
+      # /usr/bin/open on macOS, which strips DYLD_* at the SIP/LaunchServices
+      # boundary, so the CoreAudio shim (compiled below) would never reach the
+      # Explorer process. The fix exposes `directExec: true` on the Explorer
+      # test launch path, routing Process.Start at the bundle's
+      # Contents/MacOS/<binary> instead.
+      - name: Build patched MetaForge (merged direct-exec fix)
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
@@ -371,13 +356,20 @@ jobs:
           SRC=/tmp/metaforge-src
           OUT=/tmp/metaforge-build
           rm -rf "$SRC" "$OUT"
-          git clone --depth 1 -b feat/macos-direct-exec \
-            "https://x-access-token:${GH_TOKEN}@github.com/decentraland/MetaForge.git" \
-            "$SRC"
+          # ── TODO(release): DELETE THIS ENTIRE STEP once a MetaForge release newer
+          # than v2.14.0 ships via tools/install.sh. The direct-exec fix (MetaForge
+          # PR #13) merged to main on 2026-08-06 as 1c8bc8f; the release is pending
+          # (GitHub CI issues at time of writing). Until then we build from the
+          # pinned merged SHA — NOT a branch, so branch deletion can't break us.
+          MERGED_SHA=1c8bc8f8022c6d4f130fd5fc9eb018a29163d9eb
+          git init "$SRC"
+          git -C "$SRC" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/decentraland/MetaForge.git"
+          git -C "$SRC" fetch --depth 1 origin "$MERGED_SHA"
+          git -C "$SRC" checkout FETCH_HEAD
           # MetaForgeCLI.csproj declares <SelfContained>true</SelfContained>
           # + <PublishSingleFile>true</PublishSingleFile> + compression, so
           # we must publish self-contained to match the released layout.
-          # `--self-contained false` errored with NETSDK1176 (compression
+          # `--self-contained false` errors with NETSDK1176 (compression
           # requires self-contained).
           dotnet publish "$SRC/MetaForgeCLI/MetaForgeCLI.csproj" \
             -c Release -r osx-arm64 \
@@ -427,40 +419,36 @@ jobs:
       - name: Pre-install Explorer build
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          BUILD_URL: ${{ steps.build.outputs.build_url }}
         run: |
           set -euo pipefail
           if [ -z "${BUILD_URL:-}" ]; then
-            echo "::error::BUILD_URL is empty (resolve job failed?)"
+            echo "::error::BUILD_URL is empty (build resolution failed?)"
             exit 1
           fi
           mf explorer install "$BUILD_URL" --non-interactive
 
-      # Build the CoreAudio enumeration shim and prepare Explorer to load
-      # it via DYLD_INSERT_LIBRARIES.
+      # Build the CoreAudio enumeration shim and prepare Explorer to load it
+      # via DYLD_INSERT_LIBRARIES.
       #
-      # Why: A1 + A2 in run 26280373031 conclusively ruled out the
-      # OS-side options for hiding the paravirt audio HAL on macos-14
-      # GH runners — Sealed System Volume blocks `sudo mv` of
-      # /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver even
-      # with SIP off, and kAudioDevicePropertyIsHidden is not
-      # client-settable ('nope' OSStatus). The only remaining
-      # CI-tunable lever is interposing the enumeration call inside
-      # the Explorer process so cpal never sees the broken device.
+      # There is no OS-side lever on macos-14 GH runners: the Sealed System
+      # Volume blocks `sudo mv` of
+      # /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver even with
+      # SIP off, and kAudioDevicePropertyIsHidden is not client-settable.
+      # Interposing the enumeration call inside the Explorer process so cpal
+      # never sees the broken device is the only remaining CI-tunable lever.
       #
-      # The shim itself (explorer/ci/audio_filter.c) interposes
+      # The shim (explorer/ci/audio_filter.c) interposes
       # AudioObjectGetPropertyData; when called with
-      # kAudioHardwarePropertyDevices on kAudioObjectSystemObject it
-      # drops Apple Virtual Sound Device and Null Audio Device from
-      # the returned AudioDeviceID[]. All other property reads pass
-      # through unchanged.
+      # kAudioHardwarePropertyDevices on kAudioObjectSystemObject it drops
+      # Apple Virtual Sound Device and Null Audio Device from the returned
+      # AudioDeviceID[]. All other property reads pass through unchanged.
       #
-      # codesign --remove-signature on the Explorer binary is a
-      # belt-and-suspenders safety: if Unity Cloud Build ever flips
-      # on Hardened Runtime without
-      # com.apple.security.cs.allow-dyld-environment-variables, dyld
-      # would silently drop DYLD_INSERT_LIBRARIES even on direct-exec.
-      # Stripping the signature removes that risk for CI runs (notarization
-      # / Gatekeeper aren't in play on a packaged-zip extraction anyway).
+      # codesign --remove-signature on the Explorer binary is belt-and-braces:
+      # if Unity Cloud Build ever enables Hardened Runtime without
+      # com.apple.security.cs.allow-dyld-environment-variables, dyld would
+      # silently drop DYLD_INSERT_LIBRARIES even on direct-exec. Notarization
+      # and Gatekeeper aren't in play on a packaged-zip extraction anyway.
       - name: Compile CoreAudio device-filter shim + strip Explorer signature
         run: |
           set -euo pipefail
@@ -468,15 +456,13 @@ jobs:
           OUT=/tmp/audio_filter.dylib
           [ -f "$SRC" ] || { echo "::error::shim source missing at $SRC"; exit 1; }
 
-          # Build a universal (arm64 + arm64e) dylib. macos-14 ships
-          # platform binaries (bash, /usr/bin/true, codesign, …) as
-          # arm64e (Apple Silicon pointer authentication); an arm64-only
-          # dylib refuses to load into them and dyld aborts the whole
-          # process. Since DYLD_INSERT_LIBRARIES is set at step `env`
-          # level, every child process — not just Explorer — must be
-          # able to load the shim, so we ship both slices in one fat
-          # Mach-O. Explorer is arm64 and binds the arm64 slice; the
-          # bash/coreutils chain binds the arm64e slice.
+          # Build a universal (arm64 + arm64e) dylib. macos-14 ships platform
+          # binaries (bash, /usr/bin/true, codesign, …) as arm64e (Apple
+          # Silicon pointer authentication); an arm64-only dylib refuses to
+          # load into them and dyld aborts the whole process. Any child
+          # process that inherits DYLD_INSERT_LIBRARIES must be able to load
+          # the shim, so ship both slices in one fat Mach-O: Explorer binds
+          # the arm64 slice, the bash/coreutils chain binds arm64e.
           clang -dynamiclib -O2 \
             -arch arm64 -arch arm64e \
             -framework CoreAudio -framework CoreFoundation \
@@ -484,8 +470,7 @@ jobs:
 
           echo "::group::Built dylib"
           file "$OUT"
-          # Confirm both slices are present — failures show up here as
-          # a single-arch line, easier to spot than a runtime dyld abort.
+          # A single-arch line here is easier to spot than a runtime dyld abort.
           lipo -info "$OUT" || true
           otool -L "$OUT"
           # The __interpose section is what makes DYLD_INSERT_LIBRARIES
@@ -494,28 +479,22 @@ jobs:
           otool -s __DATA __interpose "$OUT" || true
           echo "::endgroup::"
 
-          # Quick smoke-load to ensure dyld accepts the dylib + the
-          # constructor message appears. We use /usr/bin/true (a tiny
-          # SIP-restricted binary — its env strips DYLD_*, so on its own
-          # we wouldn't see the load; but with direct-exec of an
-          # unrestricted dotnet binary the constructor *would* fire).
+          # Quick smoke-load to ensure dyld accepts the dylib.
           echo "::group::Smoke load via dotnet --version"
           DYLD_INSERT_LIBRARIES="$OUT" dotnet --version 2>&1 || true
           echo "::endgroup::"
 
-          # Locate the Explorer .app installed in the previous step and
-          # strip its signature so DYLD_INSERT_LIBRARIES is honoured even
-          # if Hardened Runtime is enabled.
+          # Locate the Explorer .app installed in the previous step and strip
+          # its signature so DYLD_INSERT_LIBRARIES is honoured even if
+          # Hardened Runtime is enabled.
           # `find ... | head -1` under `set -o pipefail` is a trap: head
           # closes stdin after one line, find writes again, gets SIGPIPE,
           # and the pipeline returns non-zero. Use -print -quit so find
           # exits cleanly after the first match instead.
           #
           # `|| true` is required because `mf explorer install` may store
-          # the .app under a path we don't predict here (and on the very
-          # first install the parent dir may not yet exist on disk in the
-          # exact shape we assume) — in that case find returns non-zero
-          # and `set -e` would kill the whole step before we can fall
+          # the .app under a path we don't predict here — find then returns
+          # non-zero and `set -e` would kill the step before we can fall
           # through to the warning branch.
           EXPLORER_ROOT="$HOME/Library/Application Support/Decentraland"
           EXPLORER_APP=$(find "$EXPLORER_ROOT" \
@@ -533,14 +512,12 @@ jobs:
             codesign -dv --verbose=2 "$BIN" 2>&1 || true
             echo "::endgroup::"
 
-            # Replace the Explorer binary with a shell wrapper that
-            # injects DYLD_INSERT_LIBRARIES *only* for the real Explorer
-            # exec. Setting DYLD at workflow step `env` level (which we
-            # tried in run 26284244738) leaks the shim into every child
-            # process — bash, mf, dotnet, MSBuild, AspectInjector — and
-            # AspectInjector crashed because of it (see
-            # AspectInjector-2026-05-22-111030.ips), so `dotnet build` of
-            # the NUnit test project never completed.
+            # Replace the Explorer binary with a shell wrapper that injects
+            # DYLD_INSERT_LIBRARIES *only* for the real Explorer exec.
+            # Setting DYLD at workflow step `env` level leaks the shim into
+            # every child process — bash, mf, dotnet, MSBuild, AspectInjector —
+            # and AspectInjector crashes under it, taking `dotnet build` of the
+            # NUnit test project down with it.
             #
             # The wrapper exec's the real binary with `exec -a "$0"` so
             # argv[0] still looks like .../Decentraland.app/Contents/MacOS/Explorer
@@ -594,23 +571,21 @@ jobs:
         timeout-minutes: 40
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-          # NOTE: DYLD_INSERT_LIBRARIES is intentionally NOT set here.
-          # Run 26284244738 confirmed that exporting it at step env
-          # scope leaks the shim into every child process — including
-          # AspectInjector, the IL post-processor in the dotnet test
-          # build chain, which crashed
-          # (AspectInjector-2026-05-22-111030.ips) and took
-          # `dotnet build` of the NUnit test project down with it.
-          # Instead, the previous step replaces Contents/MacOS/Explorer
-          # with a shell wrapper that exports DYLD only for its own
-          # final `exec` of the real binary. That way the shim loads
-          # exclusively into the Explorer process and nowhere else.
+          BUILD_URL: ${{ steps.build.outputs.build_url }}
+          # DYLD_INSERT_LIBRARIES is intentionally NOT set here. At step-env
+          # scope it leaks into every child process — including AspectInjector,
+          # the IL post-processor in the dotnet test build chain, which crashes
+          # under it and takes `dotnet build` of the NUnit test project with it.
+          # The shim step instead replaces Contents/MacOS/Explorer with a
+          # wrapper that exports DYLD only for its own final `exec` of the real
+          # binary, so the shim loads into Explorer and nowhere else.
           #
-          # Perf capture is opt-in via the record_perf dispatch input. BaseTest only calls
-          # PerfSampler when EXPLORER_PERF_RECORD is exactly '1', so the default (and every
-          # push-triggered run, where dispatch inputs are empty) skips it and pays no
-          # artifact/S3 cost. The Windows chassis — where the numbers are actually stable,
-          # because it owns a dedicated GPU image — sets it unconditionally.
+          # Perf capture is opt-in via record_perf. BaseTest only calls
+          # PerfSampler when EXPLORER_PERF_RECORD is exactly '1', so the default
+          # (and every push-triggered run, where inputs are empty) skips it and
+          # pays no artifact/S3 cost. The Windows chassis — where the numbers
+          # are stable, because it owns a dedicated GPU image — sets it
+          # unconditionally.
           EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
           # Stable, upload-artifact-friendly path for PerfSampler output.
           # BaseTest reads this and writes <fixture>/perf.csv + perf-summary.txt here.
@@ -632,7 +607,7 @@ jobs:
           #   --landscape-terrain-enabled false : the LandscapePlugin renderer
           #     registration (BushOptimized/Rock/TreeOptimized) is where the
           #     macos-14 paravirt freezes; cutting terrain entirely sidesteps
-          #     the GPU stall we saw on PR #12 runs.
+          #     the GPU stall.
           #   --skybox-time-enabled false : mirrors what Visual passes; the
           #     time-of-day skybox simulation isn't load-bearing for InWorld
           #     smoke and saves a bit of paravirt headroom.
@@ -648,55 +623,6 @@ jobs:
           # '=' form is mandatory — Spectre.Console parses the space form
           # ("--app-args ...") as a new option starting at --landscape...
           # See MetaForge ExplorerTestSettings.AppArgs description.
-
-          # Background `sample(1)` watcher: captures full thread stacks of the
-          # Decentraland process at fixed intervals while the test runs.
-          # Must live INSIDE this step — the GH runner kills background
-          # subshells when the spawning step ends, so a dedicated "Start
-          # sampler" step would die before mf even launches Explorer.
-          # /usr/bin/sample is built into macOS, needs no root for processes
-          # the runner owns, and works on a fully frozen target — which is
-          # what we need to diagnose the post-VOICE_CHAT freeze on macos-14
-          # paravirt (Player.log stops mid-bootstrap and the AltGetServerVersion
-          # handshake times out). 30s cadence = a few snapshots over the ~6 min
-          # bootstrap; one sample is ~50-300 KB on disk.
-          mkdir -p "$HOME/explorer-samples"
-          (
-            # NB: CFBundleExecutable inside Decentraland.app is "Explorer",
-            # not "Decentraland" — Player.log line is `Explorer[PID:TID] ...`.
-            # Searching for `Decentraland.app/Contents/MacOS/Decentraland`
-            # never matches and we silently wait out the 2-min deadline.
-            WAIT_DEADLINE=$(( $(date +%s) + 120 ))
-            PID=""
-            while [ "$(date +%s)" -lt "$WAIT_DEADLINE" ]; do
-              PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null | head -1 || true)
-              if [ -n "$PID" ]; then break; fi
-              sleep 2
-            done
-            if [ -z "$PID" ]; then
-              echo "sampler: Decentraland process never appeared within 2 min" > "$HOME/explorer-samples/sampler.log"
-              exit 0
-            fi
-            echo "sampler: attaching to Decentraland pid=$PID" > "$HOME/explorer-samples/sampler.log"
-            MAX_SAMPLES=20
-            for i in $(seq 1 $MAX_SAMPLES); do
-              if ! kill -0 "$PID" 2>/dev/null; then
-                echo "sampler: pid=$PID gone after $((i-1)) samples" >> "$HOME/explorer-samples/sampler.log"
-                break
-              fi
-              TS=$(date +%H%M%S)
-              OUT="$HOME/explorer-samples/sample-${i}-${TS}.txt"
-              /usr/bin/sample "$PID" 5 -file "$OUT" -mayDie >/dev/null 2>&1 || true
-              if [ -f "$OUT" ]; then
-                SIZE=$(wc -c < "$OUT" | tr -d ' ')
-                echo "sampler: captured #${i} (${SIZE} bytes) -> ${OUT}" >> "$HOME/explorer-samples/sampler.log"
-              fi
-              sleep 30
-            done
-          ) &
-          SAMPLER_PID=$!
-          echo "Started background sampler pid=$SAMPLER_PID (logs in ~/explorer-samples/sampler.log)"
-
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
@@ -726,15 +652,15 @@ jobs:
         if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
 
       - name: Upload Allure report to S3
         id: s3
         if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
         env:
-          BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+          BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
           REPORT: ${{ steps.report.outputs.report_path }}
         run: |
@@ -748,7 +674,7 @@ jobs:
       # workflow console so failures are diagnosable without downloading the
       # artifact. Kept under `if: failure()` so green runs don't add noise.
       # Last 400 lines is enough to capture the [BOOT NN] sequence + the
-      # AltTester command exchange around the WaitForGone timeout.
+      # AltTester command exchange around a WaitForGone timeout.
       - name: Dump Player.log + AltTester-Server.log tail (on failure)
         if: failure()
         run: |
@@ -777,41 +703,18 @@ jobs:
           fi
           echo "::endgroup::"
 
-          # Take one last `sample` snapshot of the (probably frozen) Decentraland
-          # process for the failure case where the periodic sampler may have
-          # already finished its MAX_SAMPLES budget or missed the freeze window.
-          # This is best-effort — if the process is already gone (cleanup ran or
-          # Player crashed), we just print a notice and move on.
-          echo "::group::Decentraland post-mortem sample (10s)"
-          PID=$(pgrep -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null | head -1 || true)
-          if [ -n "$PID" ]; then
-            mkdir -p "$HOME/explorer-samples"
-            POSTMORTEM="$HOME/explorer-samples/sample-postmortem.txt"
-            /usr/bin/sample "$PID" 10 -file "$POSTMORTEM" -mayDie 2>&1 || true
-            if [ -f "$POSTMORTEM" ]; then
-              echo "Saved post-mortem sample to $POSTMORTEM ($(wc -c < "$POSTMORTEM" | tr -d ' ') bytes)"
-              echo "--- main-thread excerpt (first 80 lines after Thread 0x0 header) ---"
-              awk '/^Thread / { t++ } t==1 { print } t>1 { exit }' "$POSTMORTEM" | head -80
-            fi
-          else
-            echo "Decentraland process no longer running — nothing to sample"
-          fi
-          echo "::endgroup::"
-
           # macOS native crash reports — written by ReportCrash when a
           # process dies of a signal (segfault, abort, GPU fault from Metal).
-          # The "no longer running" branch above means we likely have one of
-          # these waiting. Filenames follow `Decentraland-YYYY-MM-DD-HHMMSS.ips`.
+          # Bundle is Decentraland.app but CFBundleExecutable is "Explorer",
+          # and macOS names .ips reports after the binary, not the bundle —
+          # so on a real crash the file is Explorer-YYYY-MM-DD-HHMMSS.ips.
           # Surface filenames inline so the diagnosis is visible without
           # downloading; the .ips files themselves go to the artifact bundle.
           echo "::group::macOS DiagnosticReports (Decentraland*/Explorer*)"
           DR_DIR="$HOME/Library/Logs/DiagnosticReports"
           if [ -d "$DR_DIR" ]; then
-            # Bundle is Decentraland.app but CFBundleExecutable is "Explorer",
-            # and macOS names .ips reports after the binary, not the bundle —
-            # so on a real crash the file is Explorer-YYYY-MM-DD-HHMMSS.ips.
-            # Also list anything else for full visibility (ReportCrash may
-            # log helper processes like Sentry CrashpadHandler too).
+            # ReportCrash may also log helper processes (e.g. Sentry
+            # CrashpadHandler), so list the whole directory too.
             echo "--- Full directory listing ---"
             ls -la "$DR_DIR" 2>/dev/null | head -50 || echo "(directory unreadable)"
             echo "--- Decentraland*/Explorer* matches ---"
@@ -826,22 +729,11 @@ jobs:
           fi
           echo "::endgroup::"
 
-          # Also surface the sampler's own log so we can tell whether it
-          # attached, how many samples it took, and whether the process
-          # disappeared mid-sleep.
-          echo "::group::Sampler log"
-          if [ -f "$HOME/explorer-samples/sampler.log" ]; then
-            cat "$HOME/explorer-samples/sampler.log"
-          else
-            echo "(no sampler.log — sampler never started)"
-          fi
-          echo "::endgroup::"
-
       - name: Upload logs and report (artifact fallback)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: runner-validation-macos-${{ steps.ids.outputs.short_sha }}-${{ github.run_id }}
+          name: inworld-macos-${{ env.COMMIT_SHA }}-${{ github.run_id }}
           if-no-files-found: warn
           path: |
             ~/Library/Logs/Decentraland/Explorer/Player.log
@@ -850,7 +742,6 @@ jobs:
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
             # Empty unless the run was dispatched with record_perf.
             ${{ runner.temp }}/explorer-perf/**
-            ~/explorer-samples/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
             ~/Library/Logs/DiagnosticReports/Explorer*
 
@@ -862,19 +753,21 @@ jobs:
           echo "**Allure report:** [$URL]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Find existing PR comment
-        if: always() && needs.resolve.outputs.pr_number != ''
-        uses: peter-evans/find-comment@v3
+        if: always() && steps.pr.outputs.number != ''
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
         id: find-comment
         with:
-          issue-number: ${{ needs.resolve.outputs.pr_number }}
+          repository: ${{ github.repository }}
+          issue-number: ${{ steps.pr.outputs.number }}
           comment-author: 'github-actions[bot]'
           body-includes: '## InWorld smoke (macOS)'
 
       - name: Comment results on PR
-        if: always() && needs.resolve.outputs.pr_number != ''
-        uses: peter-evans/create-or-update-comment@v4
+        if: always() && steps.pr.outputs.number != ''
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
-          issue-number: ${{ needs.resolve.outputs.pr_number }}
+          repository: ${{ github.repository }}
+          issue-number: ${{ steps.pr.outputs.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace
           body: |
@@ -884,27 +777,24 @@ jobs:
 
             | | |
             |---|---|
-            | Commit | `${{ steps.ids.outputs.short_sha }}` |
-            | Branch | `${{ github.ref_name }}` |
+            | Commit | `${{ env.COMMIT_SHA }}` |
+            | Branch | `${{ env.BRANCH_LABEL }}` |
             | Filter | `${{ env.TEST_FILTER }}` |
             | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
             | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
             <sub>GitHub-hosted `macos-14` · this comment is updated on every run.</sub>
 
-      # macos-14 is ephemeral so cleanup is best-effort; we still release
-      # the AltTester license slot and remove the metaforge test account so
-      # the activation pool doesn't bloat with dead slots.
+      # macos-14 is ephemeral so cleanup is best-effort; we still release the
+      # AltTester license slot and remove the metaforge test account so the
+      # activation pool doesn't bloat with dead slots.
       #
-      # Defensive after runs 26276740988 + 26280373031: each `mf` subcommand
-      # is bounded by `timeout(1)` and the whole step has a 2-minute cap,
-      # because `mf explorer server stop` was sitting indefinitely waiting
-      # on a graceful shutdown of an Explorer process whose Unity main
-      # thread was wedged on `mach_msg` to coreaudiod (the rust_audio hang
-      # we're chasing in this branch). With the main thread frozen, the
-      # in-process SIGTERM handler can't run, so the wait never completes.
-      # Killing the bundle executable up front is the only reliable way to
-      # unblock the chain.
+      # Every `mf` subcommand is bounded by a watchdog and the whole step is
+      # capped at 2 minutes: `mf explorer server stop` waits indefinitely on a
+      # graceful shutdown when Explorer's Unity main thread is wedged on
+      # `mach_msg` to coreaudiod, because the in-process SIGTERM handler can
+      # never run. Killing the bundle executable up front is the only reliable
+      # way to unblock the chain.
       - name: Cleanup metaforge state
         if: always()
         timeout-minutes: 2
