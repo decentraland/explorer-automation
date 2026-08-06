@@ -29,5 +29,44 @@ public class PlaceDetailView() : BaseView(new(By.NAME, "PlaceDetailPanel(Clone)"
     public readonly Readable  FavoritesText         = new(By.PATH, "//PlaceDetailPanel(Clone)//FavoritesContainer/Text");
     public readonly Readable  UpdatedText           = new(By.PATH, "//PlaceDetailPanel(Clone)//TotalVisitsContainer/Text");
 
+    private const int MAX_CATEGORY_TAGS = 8;
+
+    // Labels of the CategoryTag(Clone) chips inside the CATEGORIES row (e.g. SOCIAL, MUSIC, ART).
+    public Readable[] CategoryTagLabels { get; } = BuildCategoryTagLabels();
+
+    #endregion
+
+    #region Setup
+
+    private static Readable[] BuildCategoryTagLabels()
+    {
+        var labels = new Readable[MAX_CATEGORY_TAGS];
+        for (var i = 0; i < MAX_CATEGORY_TAGS; i++)
+            labels[i] = new(By.PATH, $"//PlaceDetailPanel(Clone)//CategoriesContainer/Value/CategoryTag(Clone)[{i}]/Text");
+        return labels;
+    }
+
+    #endregion
+
+    #region Helper methods
+
+    /// <summary>
+    /// Reads the labels of all currently displayed category tag chips.
+    /// </summary>
+    [AllureStep("Read the place's category tags")]
+    public List<string> GetCategoryTags()
+    {
+        var tags = new List<string>();
+        foreach (var label in CategoryTagLabels)
+        {
+            if (!label.IsPresent())
+                break;
+            tags.Add(label.GetText());
+        }
+
+        Reporter.Log($"Place categories: [{string.Join(", ", tags)}]");
+        return tags;
+    }
+
     #endregion
 }

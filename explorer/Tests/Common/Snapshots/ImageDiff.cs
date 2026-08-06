@@ -39,10 +39,10 @@ public static class ImageDiff
             if (max > perChannelTolerance)
             {
                 differing++;
-                diffBytes[i] = 255;     // R
-                diffBytes[i + 1] = 0;   // G
-                diffBytes[i + 2] = 0;   // B
-                diffBytes[i + 3] = 255; // A
+                diffBytes[i] = 255;
+                diffBytes[i + 1] = 0;
+                diffBytes[i + 2] = 0;
+                diffBytes[i + 3] = 255;
             }
             else
             {

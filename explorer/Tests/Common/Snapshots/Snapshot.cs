@@ -54,7 +54,6 @@ public static class Snapshot
                 return;
             }
 
-            // Missing baseline.
             if (!BaselineStore.Exists(baselinePath))
             {
                 if (resolvedMode == SnapshotMode.MissingOnly)
@@ -72,7 +71,6 @@ public static class Snapshot
                 return;
             }
 
-            // Compare against existing baseline.
             var baselinePng = BaselineStore.Read(baselinePath);
             using var baselineBmp = SKBitmap.Decode(baselinePng)
                 ?? throw new InvalidOperationException(

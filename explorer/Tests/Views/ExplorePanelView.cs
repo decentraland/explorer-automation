@@ -17,13 +17,17 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// </summary>
     public override AltObject WaitFor(double timeout = 20D)
     {
-        var altObj = base.WaitFor(timeout);
+        // Suppress the base "appeared" shot — the panel is only verified ready once the
+        // raycaster is re-enabled, so the single shot is taken after that wait completes
+        // (a mid-show-animation frame would misrepresent what was verified).
+        var altObj = base.WaitFor(timeout, verificationShot: false);
         altObj.WaitForComponentProperty(
             "UnityEngine.UI.GraphicRaycaster",
             "enabled",
             true,
             "UnityEngine.UI",
             timeout: 10);
+        Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 
