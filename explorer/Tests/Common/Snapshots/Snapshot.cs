@@ -76,8 +76,9 @@ public static class Snapshot
                 ?? throw new InvalidOperationException(
                     $"Failed to decode baseline PNG at {baselinePath} ({baselinePng.Length} bytes).");
 
-            // Only the compare path enforces size: Record and MissingOnly define the baseline,
-            // so whatever they capture is by definition the right size.
+            // The modes that define a baseline have already returned above: Record always
+            // writes, and MissingOnly writes only when the baseline was absent. Anything
+            // reaching here has an existing baseline to be held to — MissingOnly included.
             AssertSizeMatchesBaseline(actualBmp, baselineBmp, name);
 
             var result = ImageDiff.Compare(

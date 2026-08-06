@@ -35,10 +35,20 @@ public class VisualSuiteSetup
 
     private static void LogFrameSize()
     {
-        // Informational only. AltDriver is up by now (GlobalSetup ran first) and Unity has
-        // applied its launch resolution, so this probes Screen.width/height before any
-        // Visual scene loads. Enforcement lives in Snapshot.AssertSizeMatchesBaseline.
-        using var bmp = ScreenshotCapture.CaptureBitmap(quality: 100);
-        Reporter.Log($"VisualSuiteSetup: framebuffer {bmp.Width}x{bmp.Height}");
+        // Informational only — enforcement lives in Snapshot.AssertSizeMatchesBaseline.
+        // AltDriver is up by now (GlobalSetup ran first) and Unity has applied its launch
+        // resolution, so this probes the captured framebuffer size before any Visual scene
+        // loads. Must never throw: this is a [SetUpFixture], so a transient capture failure
+        // (empty or undecodable frame) would otherwise abort the whole Visual namespace
+        // over a log line.
+        try
+        {
+            using var bmp = ScreenshotCapture.CaptureBitmap(quality: 100);
+            Reporter.Log($"VisualSuiteSetup: framebuffer {bmp.Width}x{bmp.Height}");
+        }
+        catch (Exception ex)
+        {
+            Reporter.Log($"VisualSuiteSetup: framebuffer probe failed ({ex.Message}). Continuing.");
+        }
     }
 }
