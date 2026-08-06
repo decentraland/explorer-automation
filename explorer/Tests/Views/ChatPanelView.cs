@@ -135,6 +135,7 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
             try
             {
                 new Locatable(By.PATH, entryPath + "/ChatReactionsRow_Own(Clone)").WaitFor(10);
+                DismissReactionSelectorIfOpen();
                 return;
             }
             catch when (attempt < ATTEMPTS)
@@ -142,6 +143,21 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
                 Reporter.Log("Reaction row did not appear — pool likely re-bound, retrying");
             }
         }
+    }
+
+    /// <summary>
+    /// The reaction selector popup can stay open after a reaction is picked, and while it is
+    /// up it swallows the next Escape — which made a following close-chat Escape a no-op.
+    /// Dismiss it here so callers are never left with the overlay armed.
+    /// </summary>
+    private void DismissReactionSelectorIfOpen()
+    {
+        if (!ReactionSelector.IsPresent())
+            return;
+
+        Reporter.Log("Reaction selector still open after reacting — dismissing it with Escape");
+        CommonStuff.AltDriver.PressKey(AltKeyCode.Escape);
+        ReactionSelector.WaitForGone(5);
     }
 
     private int FindOwnMessageIndex(string fragment)

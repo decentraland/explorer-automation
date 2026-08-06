@@ -141,9 +141,38 @@ public class ChatTests : BaseTest
         return false;
     }
 
+    /// <summary>
+    /// Closes the chat with Escape. Retries because an overlay (e.g. the reaction selector)
+    /// can swallow the first Escape; falls back to the sidebar chat button, which toggles
+    /// the panel closed regardless of overlay focus.
+    /// </summary>
     private void CloseChat()
     {
-        PressEscape();
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            PressEscape();
+            if (TryWaitForToolbarGone(3))
+                return;
+
+            Reporter.Log("Chat still open after Escape — an overlay likely consumed it, retrying");
+        }
+
+        Reporter.Log("Escape did not close the chat — falling back to the sidebar chat button");
+        Views.MainMenu.ChatButton.Click();
+
+        // Final authoritative wait so a genuine failure produces the standard error.
         Views.Chat.ConversationsToolbar.WaitForGone();
+    }
+
+    private bool TryWaitForToolbarGone(double seconds)
+    {
+        for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
+        {
+            if (!Views.Chat.ConversationsToolbar.IsPresent())
+                return true;
+            Wait(0.5);
+        }
+
+        return false;
     }
 }
