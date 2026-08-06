@@ -17,11 +17,15 @@ name: InWorld Suite
 #
 # Required secrets (caller passes via `secrets: inherit`):
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
-#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge
+#   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (the build-URL probe queries unity-explorer's Actions API)
 #   - EXPLORER_TEAM_S3_BUCKET              S3 bucket for the Allure report
 #   - EXPLORER_TEAM_AWS_DEFAULT_REGION     AWS region the bucket lives in
 #   - EXPLORER_TEAM_AWS_ACCESS_KEY_ID      S3 upload credentials
 #   - EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+#
+# IMAP_HOST/PORT/USER/PASSWORD, OTP_FROM_EMAIL and EMAIL_DOMAIN are consumed by
+# the run step but are only needed when `filter` explicitly selects the Auth/OTP
+# fixtures — the default Category=InWorld excludes them.
 #
 # Required vars on the caller's repo (`vars.*` inside a workflow_call run
 # resolves against the caller's repo):
@@ -135,7 +139,9 @@ jobs:
       - name: Validate inputs
         run: |
           set -euo pipefail
-          for v_name in TESTS_REF BRANCH_LABEL; do
+          # COMMIT_SHA is in the loop because it lands in the S3 path and in the
+          # upload-artifact name, which rejects / \ : < > | * ? and quotes.
+          for v_name in TESTS_REF BRANCH_LABEL COMMIT_SHA; do
             v_val="${!v_name}"
             if [ -z "$v_val" ]; then continue; fi
             if ! printf '%s' "$v_val" | grep -Eq '^[A-Za-z0-9._/-]+$' \
@@ -168,9 +174,10 @@ jobs:
             echo "build_url=${BUILD_URL_INPUT}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Probe: newest green unity-explorer PR builds (only PR/branch builds
-          # ship the AltTester scripting define). Same loop as run-visual-suite's
-          # Windows sibling, artifact name swapped.
+          # Probe: newest green unity-explorer PR builds. Only PR/branch builds
+          # ship the AltTester scripting define — release builds strip it, so a
+          # release artifact would install but never accept an AltTester
+          # connection.
           ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
           CANDIDATES_JSON=$(gh api \
             "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?event=pull_request&status=success&per_page=20" \
@@ -183,7 +190,9 @@ jobs:
             RUN=$(echo "$CAND"   | jq -r '.run_number')
             SHA7=$(echo "$CAND"  | jq -r '.head_sha[0:7]')
             URL="${ARTIFACT_BASE}/${BRANCH}/pr-${RUN}-${SHA7}/Decentraland_macos.zip"
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL")
+            # `|| echo 000` keeps a DNS/connection failure from killing the
+            # step under set -e — warn and fall through to the next candidate.
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || echo 000)
             if [ "$HTTP" = "200" ]; then
               BUILD_URL="$URL"
               echo "::notice::Using unity-explorer PR build: branch=${BRANCH} run=${RUN} sha=${SHA7}"
@@ -543,9 +552,6 @@ jobs:
             ls -la "$EXPLORER_APP/Contents/MacOS/"
             cat "$BIN"
             echo "::endgroup::"
-
-            # Persist the resolved path for the Run InWorld suite step.
-            echo "EXPLORER_BIN=$BIN" >> "$GITHUB_ENV"
           fi
 
       # Same --env coupling as Windows: account/profile must live in the
@@ -583,8 +589,8 @@ jobs:
           # Perf capture is opt-in via record_perf. BaseTest only calls
           # PerfSampler when EXPLORER_PERF_RECORD is exactly '1', so the default
           # (and every push-triggered run, where inputs are empty) skips it and
-          # pays no artifact/S3 cost. The Windows chassis — where the numbers
-          # are stable, because it owns a dedicated GPU image — sets it
+          # pays no artifact/S3 cost. The planned Windows chassis (PR #12) owns
+          # a dedicated GPU image, so its numbers are stable enough to record
           # unconditionally.
           EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
           # Stable, upload-artifact-friendly path for PerfSampler output.
@@ -650,7 +656,7 @@ jobs:
 
       - name: Configure AWS credentials
         if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
@@ -735,12 +741,14 @@ jobs:
         with:
           name: inworld-macos-${{ env.COMMIT_SHA }}-${{ github.run_id }}
           if-no-files-found: warn
+          # Every line below is a path pattern — the block scalar is literal
+          # text, so comments cannot live inside it. explorer-perf is empty
+          # unless the run was dispatched with record_perf.
           path: |
             ~/Library/Logs/Decentraland/Explorer/Player.log
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-report/**
             ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
-            # Empty unless the run was dispatched with record_perf.
             ${{ runner.temp }}/explorer-perf/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
             ~/Library/Logs/DiagnosticReports/Explorer*
