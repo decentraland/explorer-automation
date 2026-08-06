@@ -16,7 +16,6 @@ public class BackpackOutfitsTests : BaseTest
     {
         OpenBackpack();
 
-        // Verify all backpack tab buttons are present before interacting
         Assert.That(Views.ExplorePanel.Backpack.WearablesTabButton.IsPresent(), Is.True,
             "Wearables tab button should be visible");
         Assert.That(Views.ExplorePanel.Backpack.EmotesTabButton.IsPresent(), Is.True,
@@ -74,7 +73,6 @@ public class BackpackOutfitsTests : BaseTest
         Assert.That(hair.IsEquipped(), Is.True, "Precondition: the alternative hair should be equipped");
         Reporter.Log($"Avatar diverged from saved outfit (equipped hair '{hairName}')");
 
-        // Equip the saved outfit — it should revert the hair change.
         Views.ExplorePanel.Backpack.OpenSavedOutfits();
         Views.ExplorePanel.Backpack.SavedOutfits.Slots[0].Equip();
         Wait(3);

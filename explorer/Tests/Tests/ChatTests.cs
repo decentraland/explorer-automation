@@ -137,7 +137,6 @@ public class ChatTests : BaseTest
             }
         }
 
-        // Probe click.
         Views.MainMenu.ChatButton.Click();
         if (TryWaitForToolbar(2))
         {

@@ -14,7 +14,6 @@ internal static class BaselineStore
         var shortClass = className.Substring(className.LastIndexOf('.') + 1);
         var methodName = ctx.Test.MethodName ?? "Unknown";
 
-        // OS-tagged baselines
         var fileName = $"{methodName}__{Sanitize(snapshotName)}.{OsTag}.png";
         return Path.Combine(FindProjectRoot(), BASELINES_DIR, shortClass, fileName);
     }

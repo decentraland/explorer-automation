@@ -31,7 +31,6 @@ public class PlacesTests : BaseTest
             "My Places tab should show the 'My Places (N)' results counter");
         Reporter.Log("My Places tab opened");
 
-        // Explore (the default tab) hides the counter row again.
         Views.ExplorePanel.Places.ExploreTabButton.Click();
         Views.ExplorePanel.Places.ResultsCounter.WaitForGone();
         Reporter.Log("Explore tab restored — counter hidden");

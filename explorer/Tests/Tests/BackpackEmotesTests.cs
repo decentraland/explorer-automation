@@ -20,16 +20,13 @@ public class BackpackEmotesTests : BaseTest
     {
         OpenEmotes();
 
-        // Unequip all slots (safely skips already empty ones)
         Views.ExplorePanel.Backpack.Emotes.UnequipAll();
 
-        // Equip emotes sequentially: slot 0 -> grid 0, slot 1 -> grid 1, etc.
         for (var i = 0; i < 10; i++)
         {
             Views.ExplorePanel.Backpack.Emotes.SetEmote(i, i);
         }
 
-        // Every grid item 0..9 should now carry the EquippedSlot badge.
         for (var i = 0; i < 10; i++)
         {
             Assert.That(Views.ExplorePanel.Backpack.Emotes.GridItems[i].EquippedSlotBadge.IsPresent(), Is.True,
@@ -49,7 +46,6 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.SearchBar.SetText("Fist Pump");
         Wait(2);
 
-        // Unequip slot 0 if it has an emote, then equip the first search result to it.
         Views.ExplorePanel.Backpack.Emotes.UnequipEmoteIfPresent(0);
         Views.ExplorePanel.Backpack.Emotes.SetEmote(0, 0);
 
@@ -71,7 +67,6 @@ public class BackpackEmotesTests : BaseTest
         emotes.GridItems[gridIndex].EquippedSlotBadge.WaitFor();
         Reporter.Log($"Precondition ready — grid item {gridIndex} equipped to slot 5");
 
-        // Unequip through the slot's explicit Unequip button (not by re-clicking the
         // grid item).
         emotes.ClickSlot(4);
         emotes.ClickUnequip(4);

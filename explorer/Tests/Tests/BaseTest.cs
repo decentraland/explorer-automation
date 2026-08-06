@@ -45,7 +45,6 @@ public abstract class BaseTest
 
         Reporter.Log($"Starting test: {TestContext.CurrentContext.Test.Name}");
 
-        // In case a popup is opened, this will close it.
         // Skip when sitting on the auth screen — Escape there can exit/transition.
         if (!Views.AuthenticationMainScreen.IsPresent())
             PressEscape();
@@ -136,7 +135,6 @@ public abstract class BaseTest
     }
 
     #endregion
-
 
     [AllureStep("Wait for a specified duration")]
     public void Wait(double seconds)

@@ -62,7 +62,6 @@ public class BackpackWearablesTests : BaseTest
         Views.ExplorePanel.Backpack.SearchBar.SetText("Punk");
         Wait(2);
 
-        // Select the first result once its tile has loaded, and verify the info panel
         // shows a matching item.
         var result = Views.ExplorePanel.Backpack.Wearables.FirstLoadedGridItem;
         result.WaitUntilLoaded();

@@ -15,7 +15,6 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     {
         Views.SplashScreen.WaitForGone();
 
-        // Case 1: already at the auth screen.
         if (Views.AuthenticationMainScreen.IsPresent())
         {
             EnsureLoggedOutFromAuthScreen();
@@ -114,7 +113,6 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
                 PressEscape();
                 Wait(1);
 
-                // Make sure we're back at LoginSelection before trying again.
                 if (!Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent())
                 {
                     PressEscape();

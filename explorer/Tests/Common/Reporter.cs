@@ -155,7 +155,6 @@ public static class Reporter
 
                 var fileExtension = Path.GetExtension(filePath).ToLower();
 
-                // Determine content type based on file extension
                 string contentType = fileExtension switch
                 {
                     ".txt" or ".log" => "text/plain",
