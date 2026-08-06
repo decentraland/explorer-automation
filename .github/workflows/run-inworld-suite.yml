@@ -139,9 +139,9 @@ jobs:
       - name: Validate inputs
         run: |
           set -euo pipefail
-          # COMMIT_SHA is in the loop because it lands in the S3 path and in the
-          # upload-artifact name, which rejects / \ : < > | * ? and quotes.
-          for v_name in TESTS_REF BRANCH_LABEL COMMIT_SHA; do
+          # TESTS_REF and BRANCH_LABEL are git refs, so '/' is legitimate
+          # (refs/heads/foo, feat/bar) and the shared pattern allows it.
+          for v_name in TESTS_REF BRANCH_LABEL; do
             v_val="${!v_name}"
             if [ -z "$v_val" ]; then continue; fi
             if ! printf '%s' "$v_val" | grep -Eq '^[A-Za-z0-9._/-]+$' \
@@ -150,6 +150,23 @@ jobs:
               exit 1
             fi
           done
+
+          # COMMIT_SHA needs a stricter pattern than the loop above: it lands in
+          # the S3 path and in the upload-artifact name, and upload-artifact
+          # rejects / \ : < > | * ? and quotes — so '/' must NOT be allowed here.
+          if ! printf '%s' "$COMMIT_SHA" | grep -Eq '^[A-Za-z0-9._-]+$' \
+             || [ "${COMMIT_SHA#-}" != "$COMMIT_SHA" ]; then
+            echo "::error::COMMIT_SHA='$COMMIT_SHA' contains characters that are not allowed. Allowed: A-Z a-z 0-9 . _ -, and must not start with '-'."
+            exit 1
+          fi
+
+          # pr_number is interpolated into the S3 path and the PR-comment
+          # lookup; it is caller-supplied, so pin it to digits.
+          if [ -n "${PR_NUMBER_INPUT:-}" ] \
+             && ! printf '%s' "$PR_NUMBER_INPUT" | grep -Eq '^[0-9]+$'; then
+            echo "::error::pr_number='$PR_NUMBER_INPUT' must be empty or a positive integer."
+            exit 1
+          fi
 
           # Only a caller-supplied URL is untrusted input. Empty means the
           # resolve step builds the URL from a hardcoded artifact host below.
@@ -649,8 +666,13 @@ jobs:
         if: always() && env.DRY_RUN != 'true'
         run: |
           set -euo pipefail
+          # -print -quit rather than `| head -1`: under `set -o pipefail` head
+          # closes stdin after one line, find writes again and takes SIGPIPE,
+          # and the pipeline returns non-zero. Same trap documented above at
+          # the Explorer .app lookup.
           REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
-                        -name "index.html" -path "*allure-report*" 2>/dev/null | head -1)
+                        -name "index.html" -path "*allure-report*" \
+                        -print -quit 2>/dev/null || true)
           if [ -z "$REPORT" ]; then
             echo "::warning::Allure report not found; skipping upload."
             echo "report_path=" >> "$GITHUB_OUTPUT"
@@ -760,8 +782,9 @@ jobs:
 
       - name: Summarize report URL
         if: always() && steps.s3.outcome == 'success'
+        env:
+          URL: ${{ steps.ids.outputs.report_url }}
         run: |
-          URL="${{ steps.ids.outputs.report_url }}"
           echo "::notice::Allure report: $URL"
           echo "**Allure report:** [$URL]($URL)" >> "$GITHUB_STEP_SUMMARY"
 

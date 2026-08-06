@@ -24,6 +24,9 @@ public class AvatarShapeFixture
         // before the snapshot fires.
         Thread.Sleep(10000);
 
-        Snapshot.AssertMatchesBaseline();
+        // Tolerance is deliberately looser than the 0.3 default: network-fetched
+        // wearables and the animation settle leave this the least deterministic
+        // fixture in the suite. Do not drop back to the default.
+        Snapshot.AssertMatchesBaseline("default", tolerance: 1.5);
     }
 }

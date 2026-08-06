@@ -72,7 +72,9 @@ def collect(root):
             continue
         parts = dirpath.replace("\\", "/").split("/")
         fixture = parts[-1].replace("ExplorerAutomation.Tests.Tests.", "")
-        run_id = next((p.split("-")[-1] for p in parts if p.startswith("runner-validation")), "unknown")
+        # Artifact dirs are named inworld-macos-<commit_sha>-<run_id>; the run id
+        # is the trailing segment (commit_sha may itself contain '-').
+        run_id = next((p.split("-")[-1] for p in parts if p.startswith("inworld-macos")), "unknown")
         runs[run_id][fixture] = stats(read_cpu_times(os.path.join(dirpath, "perf.csv")))
     return runs
 
