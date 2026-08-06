@@ -3,6 +3,7 @@ namespace ExplorerAutomation.Tests.Tests;
 // NOTE: no quest icon/sticker test — this build (dev_b97439fc) has no quest HUD at all
 // (verified via UiDump: zero objects matching quest/reward names anywhere in the scene).
 [AllureSuite("Minimap Tests")]
+[Category("InWorld")]
 [Order(13)]
 public class MinimapTests : BaseTest
 {

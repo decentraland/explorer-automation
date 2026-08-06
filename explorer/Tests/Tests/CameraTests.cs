@@ -4,6 +4,7 @@ namespace ExplorerAutomation.Tests.Tests;
 // sidebar button can only open it — tests close with the C shortcut or Escape (Button_Close
 // ignores synthetic clicks on this build, see InWorldCameraView.CloseButton).
 [AllureSuite("In-World Camera Tests")]
+[Category("InWorld")]
 [Order(19)]
 public class CameraTests : BaseTest
 {
