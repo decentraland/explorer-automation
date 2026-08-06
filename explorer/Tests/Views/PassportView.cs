@@ -10,7 +10,6 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
 {
-    
     #region Elements
 
     public readonly Clickable BackgroundCloseButton = new(By.NAME, "Background_Close");
