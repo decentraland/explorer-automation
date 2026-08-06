@@ -1,20 +1,12 @@
 import type { Page } from '@playwright/test'
 import { generatePrivateKey, privateKeyToAccount, privateKeyToAddress } from 'viem/accounts'
 import { appChainId } from './network.js'
-
-/**
- * Decentraland's ephemeral message format — must match exactly what
- * `@dcl/crypto`'s `Authenticator.getEphemeralMessage` produces, otherwise the
- * server-side recovery of the signature won't match the user's address.
- */
-function ephemeralMessage(ephemeralAddress: string, expiration: Date): string {
-  return `Decentraland Login\nEphemeral address: ${ephemeralAddress}\nExpiration: ${expiration.toISOString()}`
-}
+import { getEphemeralMessage, type AuthChain } from './identity.js'
 
 export interface AuthIdentity {
   ephemeralIdentity: { privateKey: string; publicKey: string; address: string }
   expiration: Date
-  authChain: Array<{ type: 'SIGNER' | 'ECDSA_EPHEMERAL'; payload: string; signature: string }>
+  authChain: AuthChain
 }
 
 /**
@@ -33,7 +25,7 @@ export async function buildAuthIdentity(
   const expiration = new Date()
   expiration.setMinutes(expiration.getMinutes() + ephemeralMinutesDuration)
 
-  const message = ephemeralMessage(ephemeralAccount.address, expiration)
+  const message = getEphemeralMessage(ephemeralAccount.address, expiration)
   const signature = await userAccount.signMessage({ message })
 
   return {
@@ -189,7 +181,17 @@ export async function installInjectedWalletMock(
         const interval = setInterval(() => {
           if (remock()) clearInterval(interval)
         }, 10)
-        setTimeout(() => clearInterval(interval), 2_000)
+        setTimeout(() => {
+          clearInterval(interval)
+          const w = window as unknown as { Web3Mock?: unknown }
+          if (!w.Web3Mock) {
+            // Surface the silent no-op — otherwise a slow Web3Mock injection just
+            // leaves the dapp on the mock's default address with no signal.
+            console.warn(
+              '[installInjectedWalletMock] Web3Mock did not appear within 2s — account override not installed; the dapp may read the mock default address instead of the test wallet.'
+            )
+          }
+        }, 2_000)
       }
 
       // window.ethereum.request override.
@@ -235,7 +237,18 @@ export async function installInjectedWalletMock(
         // init script polling on this flag observes a fully-installed mock.
         w.__injectedWalletMockInstalled = true
       }, 10)
-      setTimeout(() => clearInterval(ethPoll), 2_000)
+      setTimeout(() => {
+        clearInterval(ethPoll)
+        const w = window as unknown as { __injectedWalletMockInstalled?: boolean }
+        if (!w.__injectedWalletMockInstalled) {
+          // Surface the silent no-op — setupBroadcastWallet waits on this flag,
+          // so without a warning a missing window.ethereum just looks like a
+          // confusing downstream assertion failure.
+          console.warn(
+            '[installInjectedWalletMock] window.ethereum did not appear within 2s — request override + handshake flag not installed; setupBroadcastWallet will not wrap the provider.'
+          )
+        }
+      }, 2_000)
     },
     { address, chainId }
   )

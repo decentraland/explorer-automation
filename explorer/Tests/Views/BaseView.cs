@@ -15,6 +15,18 @@ public abstract class BaseView(Locatable root)
     public virtual AltObject WaitFor(double timeout = 20D) => root.WaitFor(timeout);
 
     /// <summary>
+    /// Verification-shot label leaf for this view's root (see <see cref="Locatable.ShotName"/>) —
+    /// lets WaitFor overrides that defer the shot keep the standard "appeared_&lt;leaf&gt;" naming.
+    /// </summary>
+    internal string ShotName => root.ShotName;
+
+    // Shot-suppressed variants for WaitFor overrides that verify additional readiness state
+    // (e.g. GraphicRaycaster re-enabled) before taking the single "appeared" shot themselves,
+    // and for control-flow probes/retry loops that are not test verifications.
+    internal AltObject WaitFor(double timeout, bool verificationShot) => root.WaitFor(timeout, verificationShot);
+    internal bool IsPresent(bool verificationShot) => root.IsPresent(verificationShot);
+
+    /// <summary>
     /// Waits for the view's root element to disappear from the scene.
     /// </summary>
     /// <param name="timeout">Maximum seconds to wait before throwing.</param>

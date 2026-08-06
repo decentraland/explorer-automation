@@ -161,7 +161,6 @@ public static class OtpMailbox
             if (c.ToLowerInvariant().Contains(expectedLowercase)) return true;
         }
 
-        // Body fallback.
         var text = message.TextBody ?? string.Empty;
         var html = StripHtml(message.HtmlBody) ?? string.Empty;
         var body = (text + "\n" + html).ToLowerInvariant();

@@ -1,13 +1,11 @@
 import { walletTest as test } from '../fixtures/wallet-fixture.js'
 import { optionalEnv } from '../../../shared/helpers/env.js'
-import { captureTransactionsPosts } from '../helpers/transactions-capture.js'
-import { decodeMintFromReceipt } from '../helpers/mint-decoder.js'
+import { captureTransactionsPosts, extractRelayerTxHash } from '../helpers/transactions-capture.js'
+import { decodeMintFromReceipt, assertErc721ReceivedBy } from '../helpers/mint-decoder.js'
 import { waitForNftIndexed } from '../helpers/nft-indexer.js'
 import { waitForAmoyReceipt } from '../../../shared/helpers/ethereum.js'
 import { captureListingResponse } from '../helpers/listing.js'
-import { captureAcceptListingTxHash } from '../helpers/accept-listing.js'
 import { type AssetType } from '../pages/AssetPage.js'
-import type { Hex } from 'viem'
 
 const WALLET_A_PRIVATE_KEY = optionalEnv('WALLET_A_PRIVATE_KEY')
 const WALLET_B_PRIVATE_KEY = optionalEnv('WALLET_B_PRIVATE_KEY')
@@ -94,41 +92,23 @@ test.describe.serial('@marketplace @on-chain marketplace buy-and-sell loop', () 
     try {
       await buyModal.submitBuy()
 
-      // Race: the auth modal opens (fresh wallet → 2 POSTs: approval + buy)
-      // vs the first POST fires (already-approved wallet → 1 POST). Modal
-      // visibility is a fast UI race (10s); the relayer-POST fallback is the
-      // longer 60s window because /v1/transactions can be slow even when no
-      // modal is in play.
-      const modalDriven = await Promise.race([
-        authModal
-          .signButton()
-          .waitFor({ state: 'visible', timeout: 10_000 })
-          .then(() => authModal.authorizeAndSign(2_000))
-          .catch(() => false),
-        (async () => {
-          const deadline = Date.now() + 60_000
-          while (Date.now() < deadline) {
-            if (capture.responses.length > 0) return false
-            await new Promise<void>(r => setTimeout(r, 250))
-          }
-          return false
-        })()
-      ])
-
-      const expectedPosts = modalDriven ? 2 : 1
+      // Drive the Authorize→Sign modal if it appears. `authorized` is true only
+      // when the Authorize step actually ran (fresh, un-approved wallet), which
+      // fires an extra approval POST — so the relayer POST count is 2 when
+      // authorized, else 1 (the buy only). The previous Promise.race here could
+      // never resolve its "modal driven" branch: the fallback branch returned as
+      // soon as the approval POST arrived, which is *before* the Sign button
+      // enables, so expectedPosts always collapsed to 1 and `last` was the
+      // approval receipt — decodeMintFromReceipt then failed to find the mint
+      // (masked today only because the pool wallets happen to be pre-approved).
+      const { authorized } = await authModal.authorizeAndSign(15_000)
+      const expectedPosts = authorized ? 2 : 1
       await capture.waitFor(expectedPosts, 180_000)
 
       // Buy is always the last POST. Approved wallets: 1 POST = the buy.
       // Fresh wallets: 2 POSTs = approval (first) + buy (last).
       const last = capture.responses[capture.responses.length - 1]!
-      if (!last.ok()) {
-        throw new Error(`transactions-server responded ${last.status()}: ${await last.text()}`)
-      }
-      const body = (await last.json()) as { txHash?: string; data?: { txHash?: string } }
-      const txHash = (body.txHash ?? body.data?.txHash) as Hex | undefined
-      if (!txHash || !/^0x[0-9a-f]{64}$/i.test(txHash)) {
-        throw new Error(`transactions-server response missing txHash: ${JSON.stringify(body)}`)
-      }
+      const txHash = await extractRelayerTxHash(last)
 
       const receipt = await waitForAmoyReceipt({ txHash })
       const { tokenId } = decodeMintFromReceipt(receipt, ITEM_CONTRACT! as `0x${string}`)
@@ -161,7 +141,7 @@ test.describe.serial('@marketplace @on-chain marketplace buy-and-sell loop', () 
     listingTradeId = trade.tradeId
   })
 
-  test('buyer buys the listed NFT', async ({ buyerWallet, page, navbar, asset, buyModal }) => {
+  test('buyer buys the listed NFT', async ({ buyerWallet, page, navbar, asset, buyModal, authModal }) => {
     test.expect(listingTradeId, 'previous tests must produce a listing first').toBeTruthy()
     test.expect(mintedContract && mintedTokenId, 'previous tests must capture the listed NFT identity').toBeTruthy()
     console.log('[buy-and-sell] buyer wallet:', buyerWallet.address)
@@ -174,15 +154,40 @@ test.describe.serial('@marketplace @on-chain marketplace buy-and-sell loop', () 
     await buyModal.waitForOpen()
     await buyModal.switchNetworkIfPrompted()
 
-    // Register the /v1/transactions listener BEFORE submitting; the POST
-    // fires from the dapp's saga as soon as submitBuy() returns control.
-    const txPromise = captureAcceptListingTxHash(page)
+    // Register the /v1/transactions listener BEFORE submitting; the POST fires
+    // from the dapp's saga as soon as submitBuy() returns control.
+    const capture = captureTransactionsPosts(page)
+    try {
+      await buyModal.submitBuy()
 
-    await buyModal.submitBuy()
+      // A buyer not yet MANA-approved to the marketplace operator walks the same
+      // Authorize→Sign modal (approval POST + accept POST) as the primary buy;
+      // an already-approved buyer fires only the accept POST. Drive the modal
+      // and count POSTs off `authorized` — the accept is always the last POST.
+      // (The previous helper used a plain waitForResponse that locked onto the
+      // FIRST POST, i.e. the approval, and never drove the modal — so an
+      // approval-needed buyer would deadlock and, if it didn't, verify the wrong
+      // tx.)
+      const { authorized } = await authModal.authorizeAndSign(15_000)
+      const expectedPosts = authorized ? 2 : 1
+      await capture.waitFor(expectedPosts, 180_000)
 
-    const result = await txPromise
-    test.expect(result.txHash).toMatch(/^0x[0-9a-f]{64}$/i)
+      const last = capture.responses[capture.responses.length - 1]!
+      const txHash = await extractRelayerTxHash(last)
 
-    await page.waitForURL(/\/success(\?|$|\/)/, { timeout: 30_000 })
+      const receipt = await waitForAmoyReceipt({ txHash })
+      // Confirm the NFT actually changed hands: the accept tx must emit an
+      // ERC-721 Transfer(seller → buyer, tokenId) on the collection contract.
+      assertErc721ReceivedBy(
+        receipt,
+        mintedContract! as `0x${string}`,
+        buyerWallet.address as `0x${string}`,
+        mintedTokenId!
+      )
+
+      await page.waitForURL(/\/success(\?|$|\/)/, { timeout: 30_000 })
+    } finally {
+      capture.dispose()
+    }
   })
 })

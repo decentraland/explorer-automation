@@ -35,6 +35,10 @@ public class ExplorePanelTests : BaseTest
         Views.ExplorePanel.Close();
     }
 
+    // NOTE: there is no TestOpenMapFromSidebar — this build's sidebar has no Map button
+    // (verified via UiDump `--all` dumps of the sidebar). Map coverage lives in
+    // ShortcutsTests.TestOpenMapWithShortcut and in TestSwitchBetweenAllTabs below (Map tab).
+
     [Test]
     public void TestOpenBackpackFromSidebar()
     {
@@ -75,41 +79,33 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestSwitchBetweenAllTabs()
     {
-        // Open the panel via any sidebar button
         Views.MainMenu.EventsButton.Click();
         Views.ExplorePanel.WaitFor();
 
-        // Events tab
         Views.ExplorePanel.EventsTabButton.Click();
         Views.ExplorePanel.Events.WaitFor();
         Reporter.Log("Events tab opened successfully");
 
-        // Places tab
         Views.ExplorePanel.PlacesTabButton.Click();
         Views.ExplorePanel.Places.WaitFor();
         Reporter.Log("Places tab opened successfully");
 
-        // Communities tab
         Views.ExplorePanel.CommunitiesTabButton.Click();
         Views.ExplorePanel.Communities.WaitFor();
         Reporter.Log("Communities tab opened successfully");
 
-        // Map tab
         Views.ExplorePanel.MapTabButton.Click();
         Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Map tab opened successfully");
 
-        // Backpack tab
         Views.ExplorePanel.BackpackTabButton.Click();
         Views.ExplorePanel.Backpack.WaitFor();
         Reporter.Log("Backpack tab opened successfully");
 
-        // Gallery tab
         Views.ExplorePanel.GalleryTabButton.Click();
         Views.ExplorePanel.Gallery.WaitFor();
         Reporter.Log("Gallery tab opened successfully");
 
-        // Settings tab
         Views.ExplorePanel.SettingsTabButton.Click();
         Views.ExplorePanel.Settings.WaitFor();
         Reporter.Log("Settings tab opened successfully");

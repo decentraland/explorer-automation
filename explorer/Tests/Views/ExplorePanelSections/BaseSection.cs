@@ -16,10 +16,13 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
     /// </summary>
     public override AltObject WaitFor(double timeout = 20D)
     {
-        var altObj = base.WaitFor(timeout);
+        // Suppress the intermediate shots (section root, panel root) — the section is only
+        // verified ready after the raycaster wait + settle, so the single "appeared" shot is
+        // taken at the end, showing the state the caller actually relies on.
+        var altObj = base.WaitFor(timeout, verificationShot: false);
         try
         {
-            var panel = PanelRoot.WaitFor(5);
+            var panel = PanelRoot.WaitFor(5, verificationShot: false);
             panel.WaitForComponentProperty(
                 "UnityEngine.UI.GraphicRaycaster",
                 "enabled",
@@ -32,6 +35,7 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
             Thread.Sleep(750);
         }
         catch (AssertionException) { /* panel root may not be present in some sub-section flows */ }
+        Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 }

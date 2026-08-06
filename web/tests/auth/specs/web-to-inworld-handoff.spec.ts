@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../../shared/fixtures/base-test.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
 import { generateFreshEmail, waitForOtp } from '../helpers/otp-mailbox.js'

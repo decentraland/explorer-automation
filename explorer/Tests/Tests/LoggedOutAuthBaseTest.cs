@@ -219,7 +219,6 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
                 PressEscape();
                 Wait(1);
 
-                // Make sure we're back at LoginSelection before trying again.
                 if (!Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent())
                 {
                     PressEscape();

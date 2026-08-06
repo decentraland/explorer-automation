@@ -1,4 +1,5 @@
 import type { Page, Request, Response } from '@playwright/test'
+import type { Hex } from 'viem'
 
 /**
  * Reactive observer over `/v1/transactions` POSTs against the transactions-server.
@@ -81,4 +82,22 @@ export function captureTransactionsPosts(page: Page): TransactionsCapture {
       page.off('request', onRequest)
     }
   }
+}
+
+/**
+ * Extracts and validates the relayer txHash from a `/v1/transactions` POST
+ * response. Both the primary-buy and accept-listing flows return the same
+ * `{ txHash }` (or `{ data: { txHash } }`) shape from the transactions-server.
+ * Throws on a non-OK response or a missing/malformed hash.
+ */
+export async function extractRelayerTxHash(response: Response): Promise<Hex> {
+  if (!response.ok()) {
+    throw new Error(`transactions-server responded ${response.status()}: ${await response.text()}`)
+  }
+  const body = (await response.json()) as { txHash?: string; data?: { txHash?: string } }
+  const txHash = body.txHash ?? body.data?.txHash
+  if (!txHash || !/^0x[0-9a-f]{64}$/i.test(txHash)) {
+    throw new Error(`transactions-server response missing txHash: ${JSON.stringify(body)}`)
+  }
+  return txHash as Hex
 }

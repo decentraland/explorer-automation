@@ -17,8 +17,15 @@ public class GlobalSetup
     [OneTimeTearDown]
     public void RunAfterAllTests()
     {
-        Reporter.AddUnityLogsToAllure();
-        StopDriver();
+        // StopDriver must run even if log attachment throws — otherwise the AltDriver connection leaks.
+        try
+        {
+            Reporter.AddUnityLogsToAllure();
+        }
+        finally
+        {
+            StopDriver();
+        }
     }
 
     [AllureBefore("Start AltTester Driver")]

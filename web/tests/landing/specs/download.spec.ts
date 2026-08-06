@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../../shared/fixtures/base-test.js'
 import { LandingPage } from '../pages/LandingPage.js'
 
 /**

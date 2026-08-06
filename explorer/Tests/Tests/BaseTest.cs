@@ -28,12 +28,13 @@ public abstract class BaseTest
         }
         catch (Exception ex)
         {
-            // Capture and rethrow per-test in [SetUp]. NUnit reports OneTimeSetUp failures
+            // Capture and re-fail per-test in [SetUp]. NUnit reports OneTimeSetUp failures
             // at the fixture level, which Allure doesn't render as test entries — so all
-            // tests in this fixture would be invisible in the report. By re-failing inside
-            // [SetUp], each test gets its own entry marked as failed.
+            // tests in this fixture would be invisible in the report. Do NOT rethrow here:
+            // a throwing OneTimeSetUp makes NUnit skip [SetUp] and the tests entirely, which
+            // would defeat the per-test re-fail below. Swallowing lets [SetUp] run and mark
+            // each test as failed with its own entry.
             ExceptionFromOneTimeSetUp = ex;
-            throw;
         }
 
         // Opt-in fixture-level perf capture. Driven by EXPLORER_PERF_RECORD=1, which the
@@ -131,24 +132,30 @@ public abstract class BaseTest
 
         Reporter.Log($"Starting test: {TestContext.CurrentContext.Test.Name}");
 
-        // In case a popup is opened, this will close it.
         // Skip when sitting on the auth screen — Escape there can exit/transition.
         if (!Views.AuthenticationMainScreen.IsPresent())
             PressEscape();
+
+        // Arm verification screenshots LAST so the counter starts at the test body and the
+        // setup plumbing above (auth-screen probe, Escape) stays shot-free. EnsureInWorld's
+        // boot waits run in OneTimeSetUp while shots are disarmed, so they never capture.
+        Reporter.StartVerificationShots();
     }
 
     [TearDown]
     [AllureAfter("Clean up after each test")]
     public void TearDown()
     {
+        // Disarm first so teardown (and the final-frame screenshot below) never produces
+        // verification shots — no double-capture on failure paths.
+        Reporter.StopVerificationShots();
+
         var testResult = TestContext.CurrentContext.Result.Outcome.Status;
         Reporter.Log($"Test {TestContext.CurrentContext.Test.Name} completed with status: {testResult}");
 
-        if (testResult == NUnit.Framework.Interfaces.TestStatus.Failed)
-        {
-            Reporter.Log("Test failed - taking screenshot for debugging");
-            Reporter.TakeScreenshot("" + TestContext.CurrentContext.Test.Name + "_Failed");
-        }
+        // Screenshot every outcome (not just failures) so the Allure report carries the
+        // final frame of each test for visual pass/skip/fail validation.
+        Reporter.TakeScreenshot($"{TestContext.CurrentContext.Test.Name}_{testResult}");
     }
 
     #endregion
@@ -258,11 +265,35 @@ public abstract class BaseTest
 
     #endregion
 
-
     [AllureStep("Wait for a specified duration")]
     public void Wait(double seconds)
     {
         Thread.Sleep(TimeSpan.FromSeconds(seconds));
+    }
+
+    /// <summary>
+    /// Clicks and polls for the expected UI response, retrying the click when nothing
+    /// happens. Pooled grids/lists (places cards, event calendar, backpack tiles) re-bind
+    /// entries while results stream in, and a click that lands mid-rebuild is silently
+    /// dropped — a recurring source of flakes. The click action is re-run each attempt so
+    /// it can re-resolve its target. Callers should follow with an authoritative WaitFor
+    /// so a genuine failure still produces the standard error.
+    /// </summary>
+    protected void ClickUntil(Action click, Func<bool> responded, int attempts = 3, double timeoutPerAttempt = 5)
+    {
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            click();
+            for (var elapsed = 0.0; elapsed < timeoutPerAttempt; elapsed += 0.5)
+            {
+                if (responded())
+                    return;
+                Wait(0.5);
+            }
+
+            if (attempt < attempts)
+                Reporter.Log($"Click produced no UI response (attempt {attempt}/{attempts}) — likely landed during a grid rebuild, retrying");
+        }
     }
 
     #region Input Helpers

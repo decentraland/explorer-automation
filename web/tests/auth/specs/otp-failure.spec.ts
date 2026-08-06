@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../../shared/fixtures/base-test.js'
 import { uniqueUsername } from '../helpers/test-user.js'
 import { LandingPage } from '../../landing/pages/LandingPage.js'
 import { AuthPage } from '../pages/AuthPage.js'
@@ -42,12 +42,13 @@ test('@web @auth OTP wrong code surfaces the inline error', async ({ page }) => 
 
 test('@web @auth OTP resend issues a fresh code and signup completes', async ({ page }) => {
   // The test's critical path waits for two Thirdweb OTP deliveries (~30s each
-  // in the worst case) AND the dapp's resend countdown (~60-90s before the
-  // "Resend Code" link becomes clickable). That comfortably exceeds the
-  // project-level 120s timeout, especially on slower GitHub-hosted runners
-  // (local: ~1.9 min; CI: ~2.1 min). Bump per-test rather than for the file
+  // in the worst case), the dapp's resend countdown (~60-90s before the
+  // "Resend Code" link becomes clickable), AND the quick-setup profile
+  // deployment (5-45s+ — see QuickSetupPage.clickStartExploring). That
+  // exceeds even the project-level 240s budget in the worst case, especially
+  // on slower GitHub-hosted runners. Bump per-test rather than for the file
   // so the wrong-code test keeps the tighter default.
-  test.setTimeout(240_000)
+  test.setTimeout(300_000)
 
   const email = generateFreshEmail()
   const landing = new LandingPage(page)

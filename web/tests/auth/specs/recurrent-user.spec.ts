@@ -1,4 +1,4 @@
-import { test } from '@playwright/test'
+import { test } from '../../../shared/fixtures/base-test.js'
 import { generatePrivateKey } from 'viem/accounts'
 import { uniqueUsername } from '../helpers/test-user.js'
 import { walletTest } from '../../../shared/fixtures/wallet-fixture.js'

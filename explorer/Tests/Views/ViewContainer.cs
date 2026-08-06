@@ -19,6 +19,12 @@ public class ViewContainer
     public ProfileMenuView              ProfileMenu              { get; } = new();
     public ExplorePanelView             ExplorePanel             { get; } = new();
     public PassportView                 Passport                 { get; } = new();
+    public ConfirmationDialogView       ConfirmationDialog       { get; } = new();
+    public ControlsPanelView            ControlsPanel            { get; } = new();
+    public ChatPanelView                Chat                     { get; } = new();
+    public EmotesWheelView              EmotesWheel              { get; } = new();
+    public MinimapView                  Minimap                  { get; } = new();
+    public InWorldCameraView            InWorldCamera            { get; } = new();
 
     [AllureBefore("Initialize View Objects")]
     public static void Initialize()

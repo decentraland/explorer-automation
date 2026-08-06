@@ -8,6 +8,8 @@ public class NavmapTests : BaseTest
     [Test]
     public void TestClickAllCategoryFilters()
     {
+        // This build's sidebar has no Map button (verified via UiDump `--all` dumps), so the
+        // M shortcut is the stable entry point to the navmap.
         PressKey(AltKeyCode.M);
         Views.ExplorePanel.Navmap.WaitFor();
 
