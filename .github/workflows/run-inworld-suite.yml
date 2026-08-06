@@ -190,9 +190,13 @@ jobs:
             RUN=$(echo "$CAND"   | jq -r '.run_number')
             SHA7=$(echo "$CAND"  | jq -r '.head_sha[0:7]')
             URL="${ARTIFACT_BASE}/${BRANCH}/pr-${RUN}-${SHA7}/Decentraland_macos.zip"
-            # `|| echo 000` keeps a DNS/connection failure from killing the
-            # step under set -e — warn and fall through to the next candidate.
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || echo 000)
+            # `|| true` keeps a DNS/connection failure from killing the step
+            # under set -e — warn and fall through to the next candidate.
+            # curl still prints its -w output when it exits non-zero, so a
+            # `|| echo 000` fallback would concatenate codes ("200000");
+            # normalize separately and only when the output is empty.
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || true)
+            HTTP=${HTTP:-000}
             if [ "$HTTP" = "200" ]; then
               BUILD_URL="$URL"
               echo "::notice::Using unity-explorer PR build: branch=${BRANCH} run=${RUN} sha=${SHA7}"
@@ -397,10 +401,10 @@ jobs:
           mf --version || true
           echo "::endgroup::"
 
-      # ── Apply CI log matrix so InWorld runs get the same verbose logging
-      # as the Windows pipeline. macOS LogMatrixStore path differs from
-      # Windows (~/Library/Application Support/Decentraland/MetaForge/
-      # log-matrix.json instead of %LOCALAPPDATA%).
+      # ── Apply CI log matrix so InWorld runs get the verbose logging they
+      # need. macOS LogMatrixStore path is ~/Library/Application Support/
+      # Decentraland/MetaForge/log-matrix.json; the planned Windows chassis
+      # (PR #12) applies the same matrix from %LOCALAPPDATA%.
       - name: Apply CI log matrix
         run: |
           set -euo pipefail
@@ -554,10 +558,11 @@ jobs:
             echo "::endgroup::"
           fi
 
-      # Same --env coupling as Windows: account/profile must live in the
-      # same catalyst env that `mf explorer test` ships via --dclenv,
-      # otherwise auth lands in the new-user flow and BaseTest.EnsureInWorld
-      # times out on MainMenu.WaitFor.
+      # --env coupling: account/profile must live in the same catalyst env
+      # that `mf explorer test` ships via --dclenv, otherwise auth lands in
+      # the new-user flow and BaseTest.EnsureInWorld times out on
+      # MainMenu.WaitFor. The planned Windows chassis (PR #12) needs the
+      # same pairing.
       - name: Provision metaforge test account
         run: |
           set -euo pipefail

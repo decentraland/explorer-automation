@@ -77,7 +77,7 @@ public static class Snapshot
                     $"Failed to decode baseline PNG at {baselinePath} ({baselinePng.Length} bytes).");
 
             // The modes that define a baseline have already returned above: Record always
-            // writes, and MissingOnly writes only when the baseline was absent. Anything
+            // returns above, and MissingOnly writes only when the baseline was absent. Anything
             // reaching here has an existing baseline to be held to — MissingOnly included.
             AssertSizeMatchesBaseline(actualBmp, baselineBmp, name);
 

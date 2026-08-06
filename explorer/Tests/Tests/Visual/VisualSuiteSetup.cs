@@ -39,8 +39,8 @@ public class VisualSuiteSetup
         // AltDriver is up by now (GlobalSetup ran first) and Unity has applied its launch
         // resolution, so this probes the captured framebuffer size before any Visual scene
         // loads. Must never throw: this is a [SetUpFixture], so a transient capture failure
-        // (empty or undecodable frame) would otherwise abort the whole Visual namespace
-        // over a log line.
+        // (empty or undecodable frame, including AltTester driver/socket faults) would
+        // otherwise abort the whole Visual namespace over a log line.
         try
         {
             using var bmp = ScreenshotCapture.CaptureBitmap(quality: 100);
