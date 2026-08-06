@@ -37,6 +37,10 @@ public abstract class BaseTest
             ExceptionFromOneTimeSetUp = ex;
         }
 
+        // Setup failed above and was swallowed, so control still reaches here. Perf capture
+        // needs a live Explorer to sample, and [SetUp] is about to re-fail every test anyway.
+        if (ExceptionFromOneTimeSetUp != null) return;
+
         // Opt-in fixture-level perf capture. Driven by EXPLORER_PERF_RECORD=1, which the
         // chassis workflow only sets when explicitly asked (Windows runs, or a macOS run
         // dispatched with record_perf). Unset means the AutoPilot PerfSampler call is

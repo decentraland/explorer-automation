@@ -95,20 +95,6 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     }
 
     /// <summary>
-    /// Submits an email and waits for the OTP screen. On failure (transient error or rare
-    /// per-address rate limit), regenerates the email via <paramref name="emailFactory"/>
-    /// and retries up to <paramref name="maxAttempts"/>. Returns the email that succeeded.
-    ///
-    /// New-user tests should pass <see cref="OtpMailbox.GenerateFreshEmail"/> as the
-    /// factory so each attempt is a brand-new recipient (its own rate-limit bucket).
-    /// Recurrent-login tests should pass a closure that returns the registered
-    /// <c>IMAP_USER</c> and use <c>maxAttempts=1</c> — re-submitting the same registered
-    /// account doesn't help.
-    /// </summary>
-    /// <param name="emailFactory">Returns the email to submit on each attempt.</param>
-    /// <param name="otpScreenTimeoutSec">How long to wait for the OTP screen per attempt.</param>
-    /// <param name="maxAttempts">Maximum number of attempts before failing.</param>
-    /// <summary>
     /// Wait for the world to fully load after a JumpIn click (new-user WelcomeNewAccountScreen
     /// or recurrent-user AuthenticationMainScreen). Mirrors <c>BaseTest.EnsureInWorld</c>'s
     /// post-JumpIn pattern: poll LoadingScreen → wait for SidebarView → settle for shortcut
@@ -196,6 +182,20 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         throw new AssertionException($"{label} never appeared after {attempts} attempts");
     }
 
+    /// <summary>
+    /// Submits an email and waits for the OTP screen. On failure (transient error or rare
+    /// per-address rate limit), regenerates the email via <paramref name="emailFactory"/>
+    /// and retries up to <paramref name="maxAttempts"/>. Returns the email that succeeded.
+    ///
+    /// New-user tests should pass <see cref="OtpMailbox.GenerateFreshEmail"/> as the
+    /// factory so each attempt is a brand-new recipient (its own rate-limit bucket).
+    /// Recurrent-login tests should pass a closure that returns the registered
+    /// <c>IMAP_USER</c> and use <c>maxAttempts=1</c> — re-submitting the same registered
+    /// account doesn't help.
+    /// </summary>
+    /// <param name="emailFactory">Returns the email to submit on each attempt.</param>
+    /// <param name="otpScreenTimeoutSec">How long to wait for the OTP screen per attempt.</param>
+    /// <param name="maxAttempts">Maximum number of attempts before failing.</param>
     protected string SubmitEmailWithRetry(Func<string> emailFactory, int otpScreenTimeoutSec = 25, int maxAttempts = 3)
     {
         for (var i = 0; i < maxAttempts; i++)
