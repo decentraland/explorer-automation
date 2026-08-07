@@ -95,14 +95,18 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
-        # `pipefail` is deliberately absent: `yes` takes SIGPIPE when the
-        # installer exits, so `yes | bash` would report 141 on a perfectly
-        # good install. `set -e` is still enough to catch both real failures
-        # — a failed fetch (the assignment aborts) and a failed install (the
-        # pipeline's exit status is the installer's).
         set -eu
         SCRIPT=$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)
+        # The runner invokes this as `bash --noprofile --norc -e -o pipefail`,
+        # so pipefail is on whether or not the script asks for it. `yes` stops
+        # having a reader the moment the installer is done and reports
+        # "yes: stdout: Broken pipe", which under pipefail makes a *successful*
+        # install exit 141. Turn pipefail off across this one pipeline so its
+        # status is the installer's; the inherited `-e` still fails the step
+        # when the installer really fails.
+        set +o pipefail
         yes | /bin/bash -c "$SCRIPT"
+        set -o pipefail
         echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
 
     - name: Configure AltTester license
