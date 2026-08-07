@@ -7,15 +7,20 @@ name: Manual Visual Tests
 # This is just a thin dispatcher; all the work happens in the reusable
 # `run-visual-suite.yml` workflow that the PR-comment paths also use.
 #
-# Inputs (all optional except mode):
+# Inputs (all optional — every one has a default):
 #   - tests_ref:  explorer-automation branch to use. Defaults to main.
 #   - build_url:  direct URL to a Decentraland_macos.zip. If empty, picks the
 #                 latest non-prerelease unity-explorer release.
-#   - mode:       "test" (default) to validate baselines, "record" to
-#                 regenerate them. Record-mode runs are not auto-committed
-#                 anywhere because there's no PR branch to push to — record
-#                 here only when you want to inspect what *would* be recorded
-#                 (the regenerated PNGs end up in the Allure report).
+#   - mode:       "test" (default) validates against baselines, "record"
+#                 regenerates all of them, "bootstrap" records only the ones
+#                 that are missing today. Neither record nor bootstrap commits
+#                 anything from here — there is no PR branch to push to, so use
+#                 them only to inspect what *would* be recorded (the PNGs end up
+#                 in the Allure report). /generate-baselines is the path that
+#                 actually commits.
+#   - platform:   macos (default) or windows; windows fails fast inside the
+#                 reusable until its install steps exist.
+#   - filter:     NUnit filter; empty runs the whole Category=Visual suite.
 
 on:
   workflow_dispatch:

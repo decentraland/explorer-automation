@@ -6,9 +6,10 @@ name: InWorld Suite
 # Mirrors run-visual-suite.yml, which runs the same chassis.
 #
 # Callers:
-#   - decentraland/unity-explorer      → `/in-world-tests` PR-comment
-#                                        dispatcher (in-world-tests.yml)
 #   - decentraland/explorer-automation → manual workflow_dispatch
+#   - decentraland/unity-explorer      → a `/in-world-tests` PR-comment
+#     dispatcher is planned but does not exist in that repo yet, so the
+#     cross-repo workflow_call path here has never run against a real caller.
 #
 # macOS-only. A Windows counterpart is planned in PR #12 and stays a separate
 # workflow: the install steps (bash/brew/dmg vs PowerShell/Inno Setup/MSI) and
@@ -62,7 +63,7 @@ on:
         required: false
         default: ''
       tests_ref:
-        description: 'explorer-automation ref for tests + explorer/ci files. Empty falls back to main.'
+        description: 'explorer-automation ref for tests, explorer/ci files, and the .github/actions composite this workflow runs. Empty falls back to main. A ref predating that composite fails at runner level ("Can''t find ''action.yml''") before any of this workflow''s own diagnostics can report anything.'
         type: string
         required: false
         default: ''
@@ -113,6 +114,7 @@ on:
     branches: [feat/macOS-inWorld-workflow, fix/macos-inworld-test-tuning]
     paths:
       - '.github/workflows/run-inworld-suite.yml'
+      - '.github/actions/**'
       - 'explorer/Tests/**'
       - 'explorer/ci/**'
 
@@ -268,7 +270,7 @@ jobs:
       # resolves to the CALLER's repo. `mf explorer test` runs in cwd-mode
       # against this workspace, so tests and explorer/ci/* must come from the
       # same explorer-automation ref.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
@@ -293,35 +295,15 @@ jobs:
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
           } >> "$GITHUB_OUTPUT"
 
-      # Lifted wholesale from run-visual-suite.yml (Mac visual reusable).
-      # Installs dotnet 10, AltTester via the .dmg flow, allure via npm.
-      - name: Install runtime prerequisites
-        run: |
-          set -euo pipefail
-          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-          chmod +x /tmp/dotnet-install.sh
-          /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"
-          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet --version
-
-          ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_1.zip"
-          curl -fsSL "$ALTTESTER_URL" -o /tmp/alttester.zip
-          unzip -q /tmp/alttester.zip -d /tmp/alttester
-          ALTTESTER_DMG=$(find /tmp/alttester -maxdepth 4 -name "AltTesterDesktop*.dmg" -type f | head -1)
-          [ -n "$ALTTESTER_DMG" ] || { echo "::error::AltTesterDesktop dmg not found in zip"; exit 1; }
-          hdiutil attach "$ALTTESTER_DMG" -nobrowse -quiet
-          ALTTESTER_APP=$(find /Volumes -maxdepth 3 -name "AltTesterDesktop.app" -type d 2>/dev/null | head -1)
-          [ -n "$ALTTESTER_APP" ] || { echo "::error::AltTesterDesktop.app not found under /Volumes"; ls /Volumes; exit 1; }
-          cp -R "$ALTTESTER_APP" /Applications/
-          MOUNT_POINT=$(dirname "$ALTTESTER_APP")
-          hdiutil detach "$MOUNT_POINT" -quiet || true
-          xattr -dr com.apple.quarantine /Applications/AltTesterDesktop.app || true
-          ls /Applications/AltTesterDesktop.app/Contents/MacOS/AltTesterDesktop
-
-          npm install -g allure --no-fund --no-audit --loglevel=error
-          allure --version
-          gh --version
+      # dotnet + AltTester + allure + MetaForge + license — the same chassis
+      # run-visual-suite.yml still installs inline, and the single definition
+      # it should move to. Must come after the checkout above: `uses: ./…`
+      # resolves against $GITHUB_WORKSPACE.
+      - name: Set up Explorer test runner
+        uses: ./.github/actions/setup-explorer-runner
+        with:
+          github-token: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          alttester-license: ${{ secrets.ALTTESTER_LICENSE }}
 
       # rust_audio (com.decentraland.livekit-sdk) calls cpal::supports_input on
       # every device returned by kAudioHardwarePropertyDevices during
@@ -374,28 +356,6 @@ jobs:
             *) echo "::error::Default input is '$DEFAULT_IN', expected BlackHole"; exit 1 ;;
           esac
 
-      - name: Verify MetaForge access
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Missing REPOS_READ_ONLY_TOKEN secret"
-            exit 1
-          fi
-          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
-
-      # install.sh installs the latest release. v2.15.0+ launches Explorer via
-      # direct exec of Contents/MacOS/<binary> instead of /usr/bin/open, which
-      # is what lets the DYLD wrapper installed below survive into the Explorer
-      # process (LaunchServices strips DYLD_* at the SIP boundary).
-      - name: Install MetaForge
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
-          echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
-
       # ── Apply CI log matrix so InWorld runs get the verbose logging they
       # need. macOS LogMatrixStore path is ~/Library/Application Support/
       # Decentraland/MetaForge/log-matrix.json; the planned Windows chassis
@@ -412,17 +372,6 @@ jobs:
           mkdir -p "$(dirname "$DST")"
           cp "$SRC" "$DST"
           echo "Applied CI log matrix: $SRC -> $DST"
-
-      - name: Configure AltTester license
-        env:
-          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ALTTESTER_LICENSE:-}" ]; then
-            echo "::error::Missing ALTTESTER_LICENSE secret"
-            exit 1
-          fi
-          mf alttester set-license "$ALTTESTER_LICENSE"
 
       - name: Pre-install Explorer build
         env:
@@ -639,6 +588,9 @@ jobs:
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
+      # Sole DRY_RUN gate on the publish chain: a skipped step reports empty
+      # outputs, so every downstream step that requires report_path to be
+      # non-empty is already excluded from dry runs by that alone.
       - name: Locate Allure report
         id: report
         if: always() && env.DRY_RUN != 'true'
@@ -664,7 +616,7 @@ jobs:
       # aws-region" or `Invalid bucket name ""` from inside the AWS steps,
       # after a full green test run. Fail here naming what's actually missing.
       - name: Verify S3 configuration
-        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        if: always() && steps.report.outputs.report_path != ''
         env:
           CALLER_REPO: ${{ github.repository }}
           BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
@@ -698,7 +650,7 @@ jobs:
           fi
 
       - name: Configure AWS credentials
-        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        if: always() && steps.report.outputs.report_path != ''
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID || secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
@@ -707,11 +659,12 @@ jobs:
 
       - name: Upload Allure report to S3
         id: s3
-        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        if: always() && steps.report.outputs.report_path != ''
         env:
           BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
           REPORT: ${{ steps.report.outputs.report_path }}
+          REPORT_URL: ${{ steps.ids.outputs.report_url }}
         run: |
           set -euo pipefail
           REPORT_DIR=$(dirname "$REPORT")
@@ -724,16 +677,15 @@ jobs:
           # pair yields a green upload behind a dead link. Probe the URL we are
           # about to advertise; warn rather than fail, since the report itself is
           # also attached as a workflow artifact. Retry for CDN propagation.
-          URL="${{ steps.ids.outputs.report_url }}"
           for attempt in 1 2 3; do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || true)
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$REPORT_URL" || true)
             [ "$HTTP" = "200" ] && break
             sleep 5
           done
           if [ "${HTTP:-000}" = "200" ]; then
-            echo "::notice::Report reachable at $URL"
+            echo "::notice::Report reachable at $REPORT_URL"
           else
-            echo "::warning::Uploaded to s3://$BUCKET/$S3_PATH/ but $URL returned HTTP ${HTTP:-000} — the public-URL var and the bucket secret likely name different buckets."
+            echo "::warning::Uploaded to s3://$BUCKET/$S3_PATH/ but $REPORT_URL returned HTTP ${HTTP:-000} — the public-URL var and the bucket secret likely name different buckets."
           fi
 
       # Dump the tail of Player.log + AltTester-Server.log directly into the
@@ -797,7 +749,7 @@ jobs:
 
       - name: Upload logs and report (artifact fallback)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: inworld-macos-${{ env.COMMIT_SHA }}-${{ github.run_id }}
           if-no-files-found: warn
