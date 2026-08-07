@@ -77,7 +77,7 @@ on:
   workflow_dispatch:
     inputs:
       build_url:
-        description: 'Direct URL to a Decentraland_macos.zip. Empty = latest reachable unity-explorer PR build (probe).'
+        description: 'Direct URL to a Decentraland_macos.zip. Empty = latest unity-explorer dev build.'
         type: string
         required: false
         default: ''
@@ -191,22 +191,26 @@ jobs:
             echo "build_url=${BUILD_URL_INPUT}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Probe: newest green unity-explorer PR builds. Only PR/branch builds
-          # ship the AltTester scripting define — release builds strip it, so a
-          # release artifact would install but never accept an AltTester
-          # connection.
+          # Fallback: newest unity-explorer `dev` build. dev is the integration
+          # branch, so empty-input runs always test against the same moving
+          # target instead of whichever PR happened to build last (run-to-run
+          # client variance made flake triage ambiguous). Branch builds keep
+          # the AltTester scripting define — release artifacts strip it, so a
+          # release zip would install but never accept an AltTester connection.
+          # Unity Cloud Build publishes push-event builds under a `pu-` prefix
+          # (see the event→prefix table in unity-explorer's
+          # visual-regression.yml / build-unitycloud.yml).
           ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
           CANDIDATES_JSON=$(gh api \
-            "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?event=pull_request&status=success&per_page=20" \
-            --jq '[.workflow_runs[] | {head_branch, head_sha, run_number}]')
+            "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10" \
+            --jq '[.workflow_runs[] | {head_sha, run_number}]')
           BUILD_URL=""
           for i in 0 1 2 3 4; do
             CAND=$(echo "$CANDIDATES_JSON" | jq -r ".[$i]")
             [ "$CAND" = "null" ] && break
-            BRANCH=$(echo "$CAND" | jq -r '.head_branch')
-            RUN=$(echo "$CAND"   | jq -r '.run_number')
-            SHA7=$(echo "$CAND"  | jq -r '.head_sha[0:7]')
-            URL="${ARTIFACT_BASE}/${BRANCH}/pr-${RUN}-${SHA7}/Decentraland_macos.zip"
+            RUN=$(echo "$CAND"  | jq -r '.run_number')
+            SHA7=$(echo "$CAND" | jq -r '.head_sha[0:7]')
+            URL="${ARTIFACT_BASE}/dev/pu-${RUN}-${SHA7}/Decentraland_macos.zip"
             # `|| true` keeps a DNS/connection failure from killing the step
             # under set -e — warn and fall through to the next candidate.
             # curl still prints its -w output when it exits non-zero, so a
@@ -216,13 +220,13 @@ jobs:
             HTTP=${HTTP:-000}
             if [ "$HTTP" = "200" ]; then
               BUILD_URL="$URL"
-              echo "::notice::Using unity-explorer PR build: branch=${BRANCH} run=${RUN} sha=${SHA7}"
+              echo "::notice::Using latest unity-explorer dev build: run=${RUN} sha=${SHA7}"
               break
             fi
-            echo "::warning::Candidate ${BRANCH}/pr-${RUN}-${SHA7} returned HTTP ${HTTP} — trying next."
+            echo "::warning::dev build pu-${RUN}-${SHA7} returned HTTP ${HTTP} — trying next."
           done
           if [ -z "$BUILD_URL" ]; then
-            echo "::error::No reachable unity-explorer PR build found in the last 20 successful Unity Cloud Build runs."
+            echo "::error::No reachable unity-explorer dev build found in the last 10 successful dev push builds."
             exit 1
           fi
           echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
