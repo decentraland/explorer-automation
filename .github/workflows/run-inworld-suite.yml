@@ -269,7 +269,7 @@ jobs:
       # resolves to the CALLER's repo. `mf explorer test` runs in cwd-mode
       # against this workspace, so tests and explorer/ci/* must come from the
       # same explorer-automation ref.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
@@ -586,6 +586,9 @@ jobs:
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
+      # Sole DRY_RUN gate on the publish chain: a skipped step reports empty
+      # outputs, so every downstream step that requires report_path to be
+      # non-empty is already excluded from dry runs by that alone.
       - name: Locate Allure report
         id: report
         if: always() && env.DRY_RUN != 'true'
@@ -611,7 +614,7 @@ jobs:
       # aws-region" or `Invalid bucket name ""` from inside the AWS steps,
       # after a full green test run. Fail here naming what's actually missing.
       - name: Verify S3 configuration
-        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        if: always() && steps.report.outputs.report_path != ''
         env:
           CALLER_REPO: ${{ github.repository }}
           BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
@@ -645,7 +648,7 @@ jobs:
           fi
 
       - name: Configure AWS credentials
-        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        if: always() && steps.report.outputs.report_path != ''
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID || secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
@@ -654,11 +657,12 @@ jobs:
 
       - name: Upload Allure report to S3
         id: s3
-        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        if: always() && steps.report.outputs.report_path != ''
         env:
           BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
           REPORT: ${{ steps.report.outputs.report_path }}
+          REPORT_URL: ${{ steps.ids.outputs.report_url }}
         run: |
           set -euo pipefail
           REPORT_DIR=$(dirname "$REPORT")
@@ -671,16 +675,15 @@ jobs:
           # pair yields a green upload behind a dead link. Probe the URL we are
           # about to advertise; warn rather than fail, since the report itself is
           # also attached as a workflow artifact. Retry for CDN propagation.
-          URL="${{ steps.ids.outputs.report_url }}"
           for attempt in 1 2 3; do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || true)
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$REPORT_URL" || true)
             [ "$HTTP" = "200" ] && break
             sleep 5
           done
           if [ "${HTTP:-000}" = "200" ]; then
-            echo "::notice::Report reachable at $URL"
+            echo "::notice::Report reachable at $REPORT_URL"
           else
-            echo "::warning::Uploaded to s3://$BUCKET/$S3_PATH/ but $URL returned HTTP ${HTTP:-000} — the public-URL var and the bucket secret likely name different buckets."
+            echo "::warning::Uploaded to s3://$BUCKET/$S3_PATH/ but $REPORT_URL returned HTTP ${HTTP:-000} — the public-URL var and the bucket secret likely name different buckets."
           fi
 
       # Dump the tail of Player.log + AltTester-Server.log directly into the
@@ -744,7 +747,7 @@ jobs:
 
       - name: Upload logs and report (artifact fallback)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: inworld-macos-${{ env.COMMIT_SHA }}-${{ github.run_id }}
           if-no-files-found: warn
