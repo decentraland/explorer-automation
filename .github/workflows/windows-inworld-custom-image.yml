@@ -78,50 +78,6 @@ jobs:
           $ErrorActionPreference = "Stop"
           mf alttester set-license $env:ALTTESTER_LICENSE
 
-      # MetaForge 2.15.0 waits for a brittle AltTester stdout message after
-      # launching Explorer. On Windows the app can already exchange commands
-      # while that message never matches, leaving `mf explorer test` stuck at
-      # "Wait for connection". Start the server ahead of the test command so
-      # MetaForge detects the existing process and lets the test driver's own
-      # connection handshake be authoritative.
-      - name: Start AltTester server
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $stdout = Join-Path $env:RUNNER_TEMP "alttester-stdout.log"
-          $stderr = Join-Path $env:RUNNER_TEMP "alttester-stderr.log"
-          $mf = (Get-Command mf -ErrorAction Stop).Source
-          $process = Start-Process -FilePath $mf `
-            -ArgumentList @('alttester', 'run', '--timeout', '120', '--verbose') `
-            -RedirectStandardOutput $stdout `
-            -RedirectStandardError $stderr `
-            -PassThru
-          "ALTTESTER_MF_PID=$($process.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-
-          $deadline = [DateTime]::UtcNow.AddSeconds(120)
-          do {
-            if ($process.HasExited) {
-              Get-Content $stdout -ErrorAction SilentlyContinue
-              Get-Content $stderr -ErrorAction SilentlyContinue
-              throw "MetaForge AltTester server exited before opening port 13000"
-            }
-            try {
-              $client = [System.Net.Sockets.TcpClient]::new()
-              $client.Connect('127.0.0.1', 13000)
-              $client.Dispose()
-              Write-Host "AltTester server is listening on 127.0.0.1:13000"
-              break
-            } catch {
-              Start-Sleep -Seconds 2
-            }
-          } while ([DateTime]::UtcNow -lt $deadline)
-
-          if ([DateTime]::UtcNow -ge $deadline) {
-            Get-Content $stdout -ErrorAction SilentlyContinue
-            Get-Content $stderr -ErrorAction SilentlyContinue
-            throw "AltTester did not open port 13000 within 120 seconds"
-          }
-
       - name: Pre-install Explorer build
         shell: powershell
         env:
@@ -153,6 +109,49 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
+          # Keep the server and test command in the same Actions step. The
+          # runner terminates tracked child processes at step boundaries.
+          $ErrorActionPreference = "Stop"
+          $stdout = Join-Path $env:RUNNER_TEMP "alttester-stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "alttester-stderr.log"
+          $mf = (Get-Command mf -ErrorAction Stop).Source
+          $server = Start-Process -FilePath $mf `
+            -ArgumentList @('alttester', 'run', '--timeout', '120', '--verbose') `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr `
+            -PassThru
+          $env:ALTTESTER_MF_PID = $server.Id
+          "ALTTESTER_MF_PID=$($server.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          $deadline = [DateTime]::UtcNow.AddSeconds(120)
+          $listening = $false
+          do {
+            if ($server.HasExited) {
+              Get-Content $stdout -ErrorAction SilentlyContinue
+              Get-Content $stderr -ErrorAction SilentlyContinue
+              throw "MetaForge AltTester server exited before opening port 13000"
+            }
+            try {
+              $client = [System.Net.Sockets.TcpClient]::new()
+              $client.Connect('127.0.0.1', 13000)
+              $client.Dispose()
+              $listening = $true
+              Write-Host "AltTester server is listening on 127.0.0.1:13000"
+            } catch {
+              Start-Sleep -Seconds 2
+            }
+          } while (-not $listening -and [DateTime]::UtcNow -lt $deadline)
+
+          if (-not $listening) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "AltTester did not open port 13000 within 120 seconds"
+          }
+
+          # The running AltTesterDesktop process makes MetaForge skip its
+          # brittle stdout-based connection detector. NUnit performs the real
+          # driver/application handshake when the suite starts.
+          $ErrorActionPreference = "Continue"
           mf explorer test $env:BUILD_URL `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
