@@ -78,6 +78,9 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     {
         #region Elements
 
+        // Hover attempts allowed before an item is reported as not equipped.
+        private const int HOVER_PROBE_ATTEMPTS = 3;
+
         // NOTE: the hover overlay's Equip/Unequip Buttons do NOT respond to synthetic
         // AltTester clicks or taps in this build (verified live — the click lands but no
         // equip happens). They are kept as presence indicators only: an equipped item
@@ -143,6 +146,22 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Check whether grid item is equipped")]
         internal bool IsEquipped(bool verificationShot)
         {
+            // Re-hover before believing a negative. The overlay is driven by PointerEnter,
+            // and on a slow chassis the enter can be swallowed or the overlay can still be
+            // animating in when Unequip is probed — which reads an equipped item as
+            // unequipped and fails the equip assertions intermittently. A positive needs no
+            // retry: the overlay is up and the answer is already unambiguous.
+            for (var attempt = 0; attempt < HOVER_PROBE_ATTEMPTS - 1; attempt++)
+            {
+                Hover();
+                if (UnequipButton.IsPresent(verificationShot: false))
+                {
+                    if (verificationShot)
+                        Reporter.TakeVerificationShot($"present_{UnequipButton.ShotName}");
+                    return true;
+                }
+            }
+
             Hover();
             return UnequipButton.IsPresent(verificationShot);
         }

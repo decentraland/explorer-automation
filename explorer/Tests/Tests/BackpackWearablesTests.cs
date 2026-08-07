@@ -65,10 +65,11 @@ public class BackpackWearablesTests : BaseTest
         Views.ExplorePanel.Backpack.SearchBar.SetText("Punk");
         Wait(2);
 
-        // shows a matching item.
-        var result = Views.ExplorePanel.Backpack.Wearables.FirstLoadedGridItem;
-        result.WaitUntilLoaded();
-        var itemName = SelectItemAndReadName(result, Views.ExplorePanel.Backpack.Wearables.SelectedItemName);
+        // shows a matching item. Settled read: the grid pool keeps pre-search tiles enabled
+        // while results stream in, so a single read can land on one the search is about to
+        // replace — the same exposure as the pagination round-trip, just cheaper to hit here
+        // because every surviving tile matches the query.
+        var itemName = ReadSettledFirstItemName(Views.ExplorePanel.Backpack.Wearables);
         Assert.That(itemName.ToLowerInvariant(), Does.Contain("punk"),
             $"Selected search result '{itemName}' should match the search term 'Punk'");
         Reporter.Log($"Search returned and selected '{itemName}'");
@@ -150,13 +151,13 @@ public class BackpackWearablesTests : BaseTest
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.WearablesTab wearables)
     {
-        wearables.FirstLoadedGridItem.WaitUntilLoaded();
+        wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
         var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
 
         for (var attempt = 0; attempt < SETTLE_READS; attempt++)
         {
             Wait(1);
-            wearables.FirstLoadedGridItem.WaitUntilLoaded();
+            wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
             var reread = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
             if (reread == name)
                 return name;
@@ -181,7 +182,7 @@ public class BackpackWearablesTests : BaseTest
 
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            wearables.FirstLoadedGridItem.WaitUntilLoaded();
+            wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
             var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
             if (name != previousName)
                 return name;
