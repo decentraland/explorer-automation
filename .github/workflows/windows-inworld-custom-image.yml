@@ -19,7 +19,7 @@ jobs:
   benchmark:
     name: InWorld suite (Windows custom image)
     runs-on: win-gpu-t4-explorer
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     env:
       BUILD_URL: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev/pu-24728-9248698/Decentraland_windows64.zip
@@ -78,6 +78,50 @@ jobs:
           $ErrorActionPreference = "Stop"
           mf alttester set-license $env:ALTTESTER_LICENSE
 
+      # MetaForge 2.15.0 waits for a brittle AltTester stdout message after
+      # launching Explorer. On Windows the app can already exchange commands
+      # while that message never matches, leaving `mf explorer test` stuck at
+      # "Wait for connection". Start the server ahead of the test command so
+      # MetaForge detects the existing process and lets the test driver's own
+      # connection handshake be authoritative.
+      - name: Start AltTester server
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $stdout = Join-Path $env:RUNNER_TEMP "alttester-stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "alttester-stderr.log"
+          $mf = (Get-Command mf -ErrorAction Stop).Source
+          $process = Start-Process -FilePath $mf `
+            -ArgumentList @('alttester', 'run', '--timeout', '120', '--verbose') `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr `
+            -PassThru
+          "ALTTESTER_MF_PID=$($process.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          $deadline = [DateTime]::UtcNow.AddSeconds(120)
+          do {
+            if ($process.HasExited) {
+              Get-Content $stdout -ErrorAction SilentlyContinue
+              Get-Content $stderr -ErrorAction SilentlyContinue
+              throw "MetaForge AltTester server exited before opening port 13000"
+            }
+            try {
+              $client = [System.Net.Sockets.TcpClient]::new()
+              $client.Connect('127.0.0.1', 13000)
+              $client.Dispose()
+              Write-Host "AltTester server is listening on 127.0.0.1:13000"
+              break
+            } catch {
+              Start-Sleep -Seconds 2
+            }
+          } while ([DateTime]::UtcNow -lt $deadline)
+
+          if ([DateTime]::UtcNow -ge $deadline) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "AltTester did not open port 13000 within 120 seconds"
+          }
+
       - name: Pre-install Explorer build
         shell: powershell
         env:
@@ -104,7 +148,7 @@ jobs:
           if (Test-Path $playerLog) { Remove-Item $playerLog -Force }
 
       - name: Run InWorld suite
-        timeout-minutes: 35
+        timeout-minutes: 22
         shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
@@ -143,6 +187,17 @@ jobs:
             "player_log=$playerLog" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
+          $diagnostics = Join-Path $env:GITHUB_WORKSPACE "benchmark-diagnostics"
+          New-Item $diagnostics -ItemType Directory -Force | Out-Null
+          $diagnosticFiles = @(
+            (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
+            (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
+            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
+          )
+          foreach ($file in $diagnosticFiles) {
+            if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
+          }
+
       - name: Upload Allure report
         if: always() && steps.outputs.outputs.report_directory != ''
         uses: actions/upload-artifact@v4
@@ -159,6 +214,15 @@ jobs:
           path: ${{ steps.outputs.outputs.player_log }}
           retention-days: 7
 
+      - name: Upload benchmark diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-custom-image-diagnostics-${{ github.run_id }}
+          path: benchmark-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Cleanup MetaForge state
         if: always()
         timeout-minutes: 3
@@ -169,6 +233,10 @@ jobs:
 
           Get-Process | Where-Object { $_.ProcessName -match "Decentraland|Unity|AltTester" } |
             Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if ($env:ALTTESTER_MF_PID) {
+            Stop-Process -Id $env:ALTTESTER_MF_PID -Force -ErrorAction SilentlyContinue
+          }
 
           try { mf alttester deactivate --non-interactive } catch { Write-Host "AltTester deactivate: $_" }
           if ($env:MF_ACCOUNT) {
