@@ -167,6 +167,25 @@ public abstract class BaseTest
         }
     }
 
+    /// <summary>
+    /// Polls a condition that is expected to become true shortly after an action that already
+    /// happened — no click to retry, unlike <see cref="ClickUntil"/>. Use instead of a fixed
+    /// <see cref="Wait(double)"/> when the thing being waited on has a concrete check (e.g. an
+    /// equip toggling, a boolean flag flipping) rather than a locatable element.
+    /// </summary>
+    protected bool WaitUntil(Func<bool> condition, double timeoutSeconds = 5, double pollInterval = 0.5)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+                return true;
+            Wait(pollInterval);
+        }
+
+        return false;
+    }
+
     #region Input Helpers
 
     [AllureStep("Press key")]

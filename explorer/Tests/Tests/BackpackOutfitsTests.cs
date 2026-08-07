@@ -67,7 +67,7 @@ public class BackpackOutfitsTests : BaseTest
         Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         hair.DoubleClickEquip();
-        Wait(2);
+        WaitUntil(() => hair.IsEquipped(verificationShot: false));
         // The double-click also selects the item, so the info panel shows its name.
         var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();
         Assert.That(hair.IsEquipped(), Is.True, "Precondition: the alternative hair should be equipped");

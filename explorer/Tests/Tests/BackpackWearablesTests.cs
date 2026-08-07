@@ -24,7 +24,7 @@ public class BackpackWearablesTests : BaseTest
         // Pick a hair that is not currently equipped so the test is re-runnable.
         var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         target.DoubleClickEquip();
-        Wait(2);
+        WaitUntil(() => target.IsEquipped(verificationShot: false));
 
         Assert.That(target.IsEquipped(), Is.True,
             "Grid item should show the hover Unequip indicator after being equipped");
@@ -44,7 +44,7 @@ public class BackpackWearablesTests : BaseTest
 
         var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         target.DoubleClickEquip();
-        Wait(2);
+        WaitUntil(() => target.IsEquipped(verificationShot: false));
 
         Assert.That(target.IsEquipped(), Is.True,
             "Grid item should show the hover Unequip indicator after double-click equip");
@@ -60,6 +60,11 @@ public class BackpackWearablesTests : BaseTest
 
         // "Punk" is a base-collection hair every account owns.
         Views.ExplorePanel.Backpack.SearchBar.SetText("Punk");
+        // Give the grid a beat to refilter before the first read: a click during the
+        // transition can land on a stale (pre-search) tile, or briefly find no item
+        // selected at all while the info panel is between states — verified live, this
+        // is NOT redundant with WaitUntilLoaded() below (that alone returns true on the
+        // stale tile too).
         Wait(2);
 
         // shows a matching item.
@@ -110,16 +115,18 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
-    /// Clicks the item and reads the info panel name, retrying because a click on a tile
-    /// that is still refreshing is a no-op and would leave a stale name in the panel.
+    /// Clicks the item and reads the info panel name, polling until the label shows text
+    /// that differs from <paramref name="previousName"/> (or any text, on the first-ever
+    /// selection) — a click on a tile that is still refreshing is a no-op and would
+    /// otherwise leave a stale name in the panel.
     /// </summary>
     private string SelectItemAndReadName(
         ExplorePanelBackpackView.BackpackGridItem item,
-        Readable nameLabel)
+        Readable nameLabel,
+        string previousName = null)
     {
         item.Click();
-        Wait(1);
-        return nameLabel.GetText();
+        return nameLabel.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
     }
 
     /// <summary>
@@ -137,7 +144,7 @@ public class BackpackWearablesTests : BaseTest
         for (var attempt = 0; attempt < 3; attempt++)
         {
             wearables.FirstLoadedGridItem.WaitUntilLoaded();
-            var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+            var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName, previousName);
             if (name != previousName)
                 return name;
 

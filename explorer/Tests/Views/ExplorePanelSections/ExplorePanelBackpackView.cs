@@ -110,7 +110,15 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed wait: hovering is an action (like Click), not a verification.
             var altObj = WaitFor(20D, verificationShot: false);
             altObj.PointerEnter();
-            Thread.Sleep(400);
+
+            // Wait for the hover overlay to actually enable instead of guessing a fixed delay:
+            // exactly one of Equip/Unequip becomes present once the overlay finishes animating in.
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (DateTime.UtcNow < deadline
+                   && !EquipButton.IsPresent(verificationShot: false)
+                   && !UnequipButton.IsPresent(verificationShot: false))
+                Thread.Sleep(100);
+
             return altObj;
         }
 
@@ -576,7 +584,17 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                 // Shot-suppressed wait: hovering is an action (like Click), not a verification.
                 var altObj = WaitFor(20D, verificationShot: false);
                 altObj.PointerEnter();
-                Thread.Sleep(400);
+
+                // Wait for a hover-revealed button to actually enable instead of guessing a
+                // fixed delay: exactly one of Save/Equip/Delete becomes present depending on
+                // whether the slot is empty or full.
+                var deadline = DateTime.UtcNow.AddSeconds(2);
+                while (DateTime.UtcNow < deadline
+                       && !SaveButton.IsPresent(verificationShot: false)
+                       && !EquipButton.IsPresent(verificationShot: false)
+                       && !DeleteButton.IsPresent(verificationShot: false))
+                    Thread.Sleep(100);
+
                 return altObj;
             }
 

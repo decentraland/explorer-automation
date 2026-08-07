@@ -14,20 +14,22 @@ public class PlacesTests : BaseTest
         OpenPlaces();
 
         Views.ExplorePanel.Places.RecentTabButton.Click();
-        Wait(1); // the counter enables before its text is refreshed
-        Assert.That(Views.ExplorePanel.Places.ResultsCounter.GetText(), Does.StartWith("Recent"),
+        // The counter enables before its text is refreshed — poll for the actual text
+        // instead of guessing a fixed settle time.
+        var recentCounterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(text => text.StartsWith("Recent"));
+        Assert.That(recentCounterText, Does.StartWith("Recent"),
             "Recent tab should show the 'Recent (N)' results counter");
         Reporter.Log("Recent tab opened");
 
         Views.ExplorePanel.Places.FavoritesTabButton.Click();
-        Wait(1);
-        Assert.That(Views.ExplorePanel.Places.ResultsCounter.GetText(), Does.StartWith("Favorites"),
+        var favoritesCounterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(text => text.StartsWith("Favorites"));
+        Assert.That(favoritesCounterText, Does.StartWith("Favorites"),
             "Favorites tab should show the 'Favorites (N)' results counter");
         Reporter.Log("Favorites tab opened");
 
         Views.ExplorePanel.Places.MyPlacesTabButton.Click();
-        Wait(1);
-        Assert.That(Views.ExplorePanel.Places.ResultsCounter.GetText(), Does.StartWith("My Places"),
+        var myPlacesCounterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(text => text.StartsWith("My Places"));
+        Assert.That(myPlacesCounterText, Does.StartWith("My Places"),
             "My Places tab should show the 'My Places (N)' results counter");
         Reporter.Log("My Places tab opened");
 
@@ -44,9 +46,12 @@ public class PlacesTests : BaseTest
         OpenPlaces();
 
         Views.ExplorePanel.Places.SearchBar.SetText("Genesis Plaza");
-        Wait(2); // wait for the remote search to resolve
+        // Poll for the results counter to reflect the query instead of guessing how long
+        // the remote search takes to resolve.
+        var counterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(
+            text => text.StartsWith("Results for 'Genesis Plaza'"));
 
-        Assert.That(Views.ExplorePanel.Places.ResultsCounter.GetText(),
+        Assert.That(counterText,
             Does.StartWith("Results for 'Genesis Plaza'"),
             "Search should show a 'Results for ...' counter");
         Assert.That(Views.ExplorePanel.Places.Cards[0].PlaceName.GetText(),

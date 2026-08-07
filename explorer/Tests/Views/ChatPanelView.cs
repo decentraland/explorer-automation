@@ -126,8 +126,9 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
 
             var entryPath = $"{OWN_ENTRY_PATH}[{index}]";
             new Clickable(By.PATH, entryPath + "/MessageBubbleElement").WaitFor().PointerEnter();
-            Thread.Sleep(500); // hover-reveal delay for the reaction button overlay
-            new Clickable(By.PATH, entryPath + "//EmojiSelectorButton").Click();
+            var emojiSelectorButton = new Clickable(By.PATH, entryPath + "//EmojiSelectorButton");
+            emojiSelectorButton.WaitFor(5); // wait for the hover-revealed reaction button to enable
+            emojiSelectorButton.Click();
             ReactionSelector.WaitFor(10);
             FirstReactionOption.Click();
             Reporter.Log($"Picked the first quick reaction for entry {index} (attempt {attempt})");

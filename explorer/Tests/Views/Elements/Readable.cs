@@ -26,4 +26,33 @@ public record Readable(By by, string name) : Locatable(by, name)
             Reporter.TakeVerificationShot($"text_{ShotName}");
         return text;
     }
+
+    /// <summary>
+    /// Polls the element's text until it satisfies <paramref name="predicate"/> or the timeout
+    /// elapses, returning whatever text was last read. Use for labels/counters that populate
+    /// or update asynchronously after an action (search results, tab counters, info panels)
+    /// instead of guessing a fixed settle time.
+    /// </summary>
+    [AllureStep("Wait for text to match")]
+    public string WaitForText(Func<string, bool> predicate, double timeoutSeconds = 10, double pollIntervalSeconds = 0.5)
+    {
+        // Shot-suppressed reads inside the poll loop (see PassportView.WaitForUserName): a
+        // capture per iteration would both spam the report and eat the wall-clock deadline.
+        var text = string.Empty;
+        var matched = false;
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            text = GetText(20D, verificationShot: false);
+            if (predicate(text))
+            {
+                matched = true;
+                break;
+            }
+            Thread.Sleep(TimeSpan.FromSeconds(pollIntervalSeconds));
+        }
+
+        Reporter.TakeVerificationShot($"{(matched ? "text" : "timeout")}_{ShotName}");
+        return text;
+    }
 }
