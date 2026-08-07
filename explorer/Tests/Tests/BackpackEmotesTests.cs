@@ -35,12 +35,15 @@ public class BackpackEmotesTests : BaseTest
 
         for (var i = 0; i < ExplorePanelBackpackView.EmotesTab.SLOT_COUNT; i++)
         {
-            // The double-click equip is silently dropped when it lands during a grid
-            // re-bind, and the badge is the only signal that it took — so retry the equip
-            // itself rather than only widening the read that follows it.
+            // Retry on the target SLOT filling, not on the grid item's badge appearing.
+            // SetEmote selects the slot and then equips into whatever slot is selected, so
+            // when the slot click is the part that gets dropped the emote lands in the
+            // previously selected slot instead — badging the grid item while leaving slot i
+            // empty and silently displacing an earlier emote. Slot occupancy is the only
+            // condition that distinguishes "equipped where we asked" from "equipped".
             var index = i;
             ClickUntil(() => emotes.SetEmote(index, index),
-                       () => emotes.GridItems[index].EquippedSlotBadge.IsPresent(verificationShot: false),
+                       () => !emotes.Slots[index].EmptyNameLabel.IsPresent(verificationShot: false),
                        timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
         }
 

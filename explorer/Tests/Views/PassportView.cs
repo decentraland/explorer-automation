@@ -29,10 +29,10 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     public readonly Readable  UserIDText          = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/UserID");
     public readonly Clickable CopyNameButton      = new(By.PATH, "//UserBasicInfo_PassportSubView/UserNameContainer/CopyButton");
     public readonly Clickable CopyIDButton        = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/CopyButton");
-    // Scoped to the passport for the same reason as the header readables above: a bare
-    // name can also resolve to an edit affordance outside this popup, and a click on the
-    // wrong instance reports success while nothing opens.
-    public readonly Clickable EditNameButton      = new(By.PATH, "//Passport(Clone)//EditNameButton");
+    // Bare name deliberately: the pencil is NOT a descendant of Passport(Clone) in this
+    // build — scoping it to //Passport(Clone)//EditNameButton stopped resolving entirely
+    // (CI run 31180360091, "was not found within 20 seconds").
+    public readonly Clickable EditNameButton      = new(By.NAME, "EditNameButton");
     public readonly Clickable ClaimNameButton     = new(By.PATH, "//UserBasicInfo_PassportSubView//ClaimNameButton");
 
     // Name color picker: the NameColorPicker container stays disabled for an unclaimed name

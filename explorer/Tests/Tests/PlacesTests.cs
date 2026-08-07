@@ -70,16 +70,26 @@ public class PlacesTests : BaseTest
     {
         OpenPlaces();
 
-        var placeName = Views.ExplorePanel.Places.Cards[0].PlaceName.GetText();
+        var card = Views.ExplorePanel.Places.Cards[0];
+        var placeName = card.PlaceName.GetText();
+
         // Click the thumbnail, not the card root — the hover overlay puts JUMP IN and the
         // like/heart/home buttons at the card's center (see PlaceCard doc comment).
         // Click first, Tap on no response: Click moves the pointer onto the card before
-        // pressing, and on a slow chassis the card's hover overlay renders into that gap and
-        // swallows the press — 60s waits and repeated clicks never opened the panel on CI
-        // run 31176916555. Tap presses the thumbnail directly and raises no overlay.
-        Views.ExplorePanel.Places.Cards[0].Thumbnail.ClickOrTap(
-            () => Views.ExplorePanel.Places.PlaceDetail.IsPresent(verificationShot: false),
-            graceSeconds: DETAIL_OPEN_GRACE);
+        // pressing, and on a slow chassis the hover overlay renders into that gap and
+        // swallows the press.
+        card.Thumbnail.ClickOrTap(DetailIsOpen, graceSeconds: DETAIL_OPEN_GRACE);
+
+        if (!DetailIsOpen())
+        {
+            // Neither press on the thumbnail opened the panel across 40s+ (CI runs
+            // 31176916555, 31180360091), and the same runs logged the client failing
+            // thumbnail loads — an unloaded thumbnail leaves the skeleton in place with
+            // nothing to hit. Fall back to the card body. Safe only as a Tap: Tap raises
+            // no hover state, so the overlay's JUMP IN never appears to intercept it.
+            Reporter.Log("Thumbnail press did not open the place detail — tapping the card body");
+            card.Tap();
+        }
 
         Views.ExplorePanel.Places.PlaceDetail.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Assert.That(Views.ExplorePanel.Places.PlaceDetail.PlaceTitle.GetText(), Is.EqualTo(placeName),
@@ -153,6 +163,9 @@ public class PlacesTests : BaseTest
 
         Views.ExplorePanel.Close();
     }
+
+    private bool DetailIsOpen() =>
+        Views.ExplorePanel.Places.PlaceDetail.IsPresent(verificationShot: false);
 
     /// <summary>
     /// Opens the Places section via the keyboard shortcut. Deliberately NOT the sidebar

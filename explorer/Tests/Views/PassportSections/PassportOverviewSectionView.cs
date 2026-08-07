@@ -47,10 +47,10 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
         #region Elements
 
         public readonly Readable  AboutMeTitle            = new(By.PATH, "//UserDetailInfo_PassportSubView/InfoTitle");
-        // Scoped like the sibling field locators below: the bare name can resolve outside
-        // this module, and a click on the wrong instance reports success while edit mode
-        // never opens.
-        public readonly Clickable EditAboutMeButton       = new(By.PATH, "//UserDetailInfo_PassportSubView//Info_Button_Edit");
+        // Bare name deliberately: the pencil is NOT a descendant of
+        // UserDetailInfo_PassportSubView in this build — scoping it there stopped resolving
+        // entirely (CI run 31180360091).
+        public readonly Clickable EditAboutMeButton       = new(By.NAME, "Info_Button_Edit");
         public readonly Readable  BioText                 = new(By.PATH, "//UserDetailInfo_PassportSubView/InfoField");
         public readonly Writable  BioInput                = new(By.PATH, "//UserDetailInfo_PassportSubView//InfoField_EDITION_MODE");
         public readonly Clickable SaveBioButton           = new(By.PATH, "//UserDetailInfo_PassportSubView//SaveInfoButton");
