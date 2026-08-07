@@ -19,4 +19,11 @@ public static class SlowChassis
     /// pushed a failing run to ~35 minutes (CI run 31176916555).
     /// </summary>
     public const double SETTLE_TIMEOUT = 40D;
+
+    /// <summary>
+    /// Re-reads allowed while waiting for a streaming grid's leading item to stop changing.
+    /// A value is trusted once two consecutive reads agree; this bounds how long the grid is
+    /// given to settle before a still-moving value is accepted anyway.
+    /// </summary>
+    public const int SETTLE_READS = 3;
 }

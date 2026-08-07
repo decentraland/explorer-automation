@@ -15,14 +15,15 @@ public class BackpackEmotesTests : BaseTest
     //   Equip coverage goes through the double-click path; explicit-button unequip
     //   coverage goes through the slot's Unequip button, which does respond.
 
-    // Per-attempt budget for a confirmed equip. The badge is local UI state, not a network
-    // round-trip, so a landed equip lights it within a second or two — the observed failure
-    // is a dropped click, and retrying sooner beats waiting longer. Re-equipping is
-    // idempotent (double-click maps to Equip, not to a toggle), so an extra attempt against
-    // an already-equipped item is harmless.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 10;
-    // Re-reads allowed while waiting for the grid's leading item to stop changing.
-    private const int SETTLE_READS = 3;
+    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate — a
+    // single slot-occupancy lookup, ~0.2s. Deliberately not shared with
+    // BackpackWearablesTests, whose predicate re-hovers and costs an order of magnitude more;
+    // one constant for both would be honest for neither. 15s is what the previous
+    // iteration-counted loop actually spent here. A landed equip fills the slot within a
+    // second or two, so the observed failure is a dropped click and retrying sooner beats
+    // waiting longer. Re-equipping is idempotent (double-click maps to Equip, not to a
+    // toggle), so an extra attempt against an already-equipped item is harmless.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 15;
     private const int PAGE_FLIP_ATTEMPTS = 3;
 
     [Test]
@@ -147,9 +148,11 @@ public class BackpackEmotesTests : BaseTest
 
     /// <summary>
     /// Selects the grid's leading loaded item and reads its name from the info panel.
-    /// Must select through <c>FirstLoadedGridItem</c>, which is rooted on the tile's
-    /// FullBackpack child: clicking the tile root instead leaves the info panel unpopulated
-    /// (verified on CI run 31176916555 — ItemName never appeared).
+    /// Selects through <c>FirstLoadedGridItem</c>, which is rooted on the tile's FullBackpack
+    /// child. What CI disproved was clicking the tile ROOT (<c>GridItems[i]</c>), which left
+    /// the info panel unpopulated on run 31176916555 — ItemName never appeared. An indexed
+    /// FullBackpack path would be both deterministic and selectable and has never been run,
+    /// so it is untried rather than ruled out.
     /// </summary>
     private string ReadFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
     {
@@ -171,7 +174,7 @@ public class BackpackEmotesTests : BaseTest
     {
         var name = ReadFirstItemName(emotes);
 
-        for (var attempt = 0; attempt < SETTLE_READS; attempt++)
+        for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
             Wait(1);
             var reread = ReadFirstItemName(emotes);
@@ -201,7 +204,12 @@ public class BackpackEmotesTests : BaseTest
         {
             var name = ReadFirstItemName(emotes);
             if (name != previousName)
-                return name;
+                // Settle before returning, do not trust the first differing read. This is the
+                // value the round-trip assertion compares, so it is the read that has to be
+                // stable: a grid caught mid-re-bind can briefly show neither the outgoing nor
+                // the settled incoming page. Settling only the page-1 baseline would leave the
+                // failing read unguarded.
+                return ReadSettledFirstItemName(emotes);
 
             Wait(2);
         }

@@ -282,13 +282,21 @@ public abstract class BaseTest
     /// dropped — a recurring source of flakes. The click action is re-run each attempt so
     /// it can re-resolve its target. Callers should follow with an authoritative WaitFor
     /// so a genuine failure still produces the standard error.
+    /// <para>
+    /// <paramref name="timeoutPerAttempt"/> is wall-clock seconds, enforced against a
+    /// deadline rather than counted in fixed 0.5s increments. Some predicates on this path
+    /// are expensive — an equipped-state probe re-hovers and round-trips several times —
+    /// and counting iterations would silently multiply the real budget by the cost of the
+    /// predicate.
+    /// </para>
     /// </summary>
     protected void ClickUntil(Action click, Func<bool> responded, int attempts = 3, double timeoutPerAttempt = 5)
     {
         for (var attempt = 1; attempt <= attempts; attempt++)
         {
             click();
-            for (var elapsed = 0.0; elapsed < timeoutPerAttempt; elapsed += 0.5)
+            var deadline = DateTime.UtcNow.AddSeconds(timeoutPerAttempt);
+            while (DateTime.UtcNow < deadline)
             {
                 if (responded())
                     return;

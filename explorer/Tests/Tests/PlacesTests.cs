@@ -68,14 +68,16 @@ public class PlacesTests : BaseTest
     [Test]
     public void TestOpenPlaceDetail()
     {
-        // The detail popup never instantiates on this chassis. Exhausted the interaction
-        // modes: Click on the thumbnail, Tap on the thumbnail, and Tap on the card body all
-        // leave PlaceDetailPanel(Clone) absent past a 40s wait, so this is not a dropped
-        // click and not a slow open. The same runs log the client failing thumbnail loads
-        // (ThumbnailLoadFailedException), so the card may have no live hit target at all.
-        // Runs 31164127596, 31176916555, 31180360091, 31183128982.
+        // The detail popup never instantiates on this chassis, across four runs and three
+        // interaction modes — but the modes were tried cumulatively, not all four times:
+        // Click on the thumbnail (runs 31164127596, 31176916555), Click then Tap on the
+        // thumbnail (run 31180360091), and those plus a card-body Tap (run 31183128982,
+        // since removed as unsafe — see the hazard note below). Waits to 60s made no
+        // difference, so this is not a dropped click and not a slow open. The same runs log
+        // the client failing thumbnail loads (ThumbnailLoadFailedException), so the card may
+        // have no live hit target at all.
         if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: PlaceDetailPanel never instantiates — Click and Tap on the thumbnail and Tap on the card body all fail past 40s (runs 31164127596, 31176916555, 31180360091, 31183128982)");
+            Assert.Ignore("pending macOS chassis tuning: PlaceDetailPanel never instantiates within 40s — failed on a thumbnail Click (runs 31164127596, 31176916555), on Click-then-Tap (run 31180360091), and on those plus a card-body Tap (run 31183128982)");
 
         OpenPlaces();
 
@@ -87,18 +89,14 @@ public class PlacesTests : BaseTest
         // Click first, Tap on no response: Click moves the pointer onto the card before
         // pressing, and on a slow chassis the hover overlay renders into that gap and
         // swallows the press.
+        // Do NOT add a card-root press as a fallback here. By this point the pointer has
+        // already been moved onto the card, PointerEnter has bubbled to the root and nothing
+        // moves it away — so the hover overlay is up, and the card root's centre is exactly
+        // where JUMP IN and the like/home buttons sit. A press there teleports the player or
+        // mutates a favourite on the shared account, either of which corrupts the rest of
+        // this single-session ordered suite. Tap does not help: it avoids *raising* hover,
+        // not hover that is already raised.
         card.Thumbnail.ClickOrTap(DetailIsOpen, graceSeconds: DETAIL_OPEN_GRACE);
-
-        if (!DetailIsOpen())
-        {
-            // Neither press on the thumbnail opened the panel across 40s+ (CI runs
-            // 31176916555, 31180360091), and the same runs logged the client failing
-            // thumbnail loads — an unloaded thumbnail leaves the skeleton in place with
-            // nothing to hit. Fall back to the card body. Safe only as a Tap: Tap raises
-            // no hover state, so the overlay's JUMP IN never appears to intercept it.
-            Reporter.Log("Thumbnail press did not open the place detail — tapping the card body");
-            card.Tap();
-        }
 
         Views.ExplorePanel.Places.PlaceDetail.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Assert.That(Views.ExplorePanel.Places.PlaceDetail.PlaceTitle.GetText(), Is.EqualTo(placeName),

@@ -12,10 +12,13 @@ public class BackpackWearablesTests : BaseTest
     // path (BackpackItemView treats clickCount == 2 as Equip) and use the hover overlay
     // only as a read-only equipped-state indicator.
 
-    // Per-attempt budget for a confirmed equip — see BackpackEmotesTests for the rationale.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 10;
-    // Re-reads allowed while waiting for the grid's leading item to stop changing.
-    private const int SETTLE_READS = 3;
+    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate,
+    // IsEquipped, which on a negative re-hovers up to three times — each a round-trip plus a
+    // 400ms settle, so one evaluation costs ~2-3s. 60s is what the previous iteration-counted
+    // loop actually spent here (20 iterations x ~3s); it is stated honestly rather than
+    // shortened, because two ungated tests depend on this budget.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 60;
+    private const int PAGE_FLIP_ATTEMPTS = 3;
 
     [Test]
     public void TestEquipWearableBySlot()
@@ -145,16 +148,18 @@ public class BackpackWearablesTests : BaseTest
     /// and the grid pool keeps stale tiles enabled while results stream in, so a single read
     /// can land on a tile the page is about to replace — the defect that failed the emotes
     /// pagination round-trip on CI run 31164127596 and is latent here.
-    /// Selection deliberately stays on FirstLoadedGridItem rather than an indexed tile:
-    /// clicking a tile ROOT leaves the info panel unpopulated (proven on run 31176916555),
-    /// and only this locator is rooted on the selectable FullBackpack child.
+    /// Selection stays on FirstLoadedGridItem because that is the variant with a green run
+    /// behind it. What CI actually disproved was clicking the tile ROOT (<c>GridItems[i]</c>),
+    /// which left the info panel unpopulated on run 31176916555. An indexed FullBackpack path
+    /// would be both deterministic and selectable and is the obvious next thing to try, but it
+    /// has never been run — do not assume it is ruled out.
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.WearablesTab wearables)
     {
         wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
         var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
 
-        for (var attempt = 0; attempt < SETTLE_READS; attempt++)
+        for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
             Wait(1);
             wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
@@ -180,12 +185,17 @@ public class BackpackWearablesTests : BaseTest
         pagerButton.Click();
         Wait(2);
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
         {
             wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
             var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
             if (name != previousName)
-                return name;
+                // Settle before returning, do not trust the first differing read. This is the
+                // value the round-trip assertion compares, so it is the read that has to be
+                // stable: a grid caught mid-re-bind can briefly show neither the outgoing nor
+                // the settled incoming page. Settling only the page-1 baseline would leave the
+                // failing read unguarded.
+                return ReadSettledFirstItemName(wearables);
 
             Wait(2);
         }

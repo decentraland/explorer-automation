@@ -11,8 +11,11 @@ public class BackpackOutfitsTests : BaseTest
     // ButtonUnequip is never enabled because the equipped state (EquippedBackground)
     // never activates, even right after equipping an outfit and reopening the panel.
 
-    // Per-attempt budget for a confirmed equip — see BackpackEmotesTests for the rationale.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 10;
+    // Wall-clock budget per equip attempt. Matches BackpackWearablesTests, not
+    // BackpackEmotesTests: this fixture confirms with IsEquipped, which re-hovers on a
+    // negative and costs ~2-3s an evaluation, so the honest budget is an order of magnitude
+    // larger than a fixture confirming with a single slot lookup.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 60;
 
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()

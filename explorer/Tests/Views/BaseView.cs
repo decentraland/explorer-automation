@@ -52,11 +52,4 @@ public abstract class BaseClickableView(Clickable root) : BaseView(root)
     /// Clicks the view's root element after waiting for it to appear.
     /// </summary>
     public virtual void Click() => root.Click();
-
-    /// <summary>
-    /// Presses the view's root element without moving the pointer onto it first, so no
-    /// hover state is raised. See <see cref="Clickable.Tap"/> — reach for this when a
-    /// verified click has no effect, or when the element's hover overlay would intercept it.
-    /// </summary>
-    public virtual void Tap() => root.Tap();
 }
