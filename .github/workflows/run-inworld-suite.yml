@@ -364,59 +364,16 @@ jobs:
           fi
           gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
 
+      # install.sh installs the latest release. v2.15.0+ launches Explorer via
+      # direct exec of Contents/MacOS/<binary> instead of /usr/bin/open, which
+      # is what lets the DYLD wrapper installed below survive into the Explorer
+      # process (LaunchServices strips DYLD_* at the SIP boundary).
       - name: Install MetaForge
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
           echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
-
-      # Replace the just-installed `metaforge` binary with one built from the
-      # merged direct-exec fix. Released MetaForge launches Explorer through
-      # /usr/bin/open on macOS, which strips DYLD_* at the SIP/LaunchServices
-      # boundary, so the CoreAudio shim (compiled below) would never reach the
-      # Explorer process. The fix exposes `directExec: true` on the Explorer
-      # test launch path, routing Process.Start at the bundle's
-      # Contents/MacOS/<binary> instead.
-      - name: Build patched MetaForge (merged direct-exec fix)
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          set -euo pipefail
-          SRC=/tmp/metaforge-src
-          OUT=/tmp/metaforge-build
-          rm -rf "$SRC" "$OUT"
-          # ── TODO(release): DELETE THIS ENTIRE STEP once a MetaForge release newer
-          # than v2.14.0 ships via tools/install.sh. The direct-exec fix (MetaForge
-          # PR #13) merged to main on 2026-08-06 as 1c8bc8f; the release is pending
-          # (GitHub CI issues at time of writing). Until then we build from the
-          # pinned merged SHA — NOT a branch, so branch deletion can't break us.
-          MERGED_SHA=1c8bc8f8022c6d4f130fd5fc9eb018a29163d9eb
-          git init "$SRC"
-          git -C "$SRC" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/decentraland/MetaForge.git"
-          git -C "$SRC" fetch --depth 1 origin "$MERGED_SHA"
-          git -C "$SRC" checkout FETCH_HEAD
-          # MetaForgeCLI.csproj declares <SelfContained>true</SelfContained>
-          # + <PublishSingleFile>true</PublishSingleFile> + compression, so
-          # we must publish self-contained to match the released layout.
-          # `--self-contained false` errors with NETSDK1176 (compression
-          # requires self-contained).
-          dotnet publish "$SRC/MetaForgeCLI/MetaForgeCLI.csproj" \
-            -c Release -r osx-arm64 \
-            --self-contained true \
-            --nologo \
-            -o "$OUT"
-          INSTALL_BIN="$HOME/Library/Application Support/Decentraland/MetaForge/bin"
-          [ -d "$INSTALL_BIN" ] || { echo "::error::Install bin missing: $INSTALL_BIN"; exit 1; }
-          # Overwrite the entire bin directory contents so the runtime DLLs
-          # come from our build too — replacing only `metaforge` would leave
-          # stale .dll's that the unchanged-API parts of the CLI link
-          # against, which usually works but isn't worth the risk.
-          cp -fR "$OUT/." "$INSTALL_BIN/"
-          chmod +x "$INSTALL_BIN/metaforge"
-          echo "::group::Patched mf version"
-          mf --version || true
-          echo "::endgroup::"
 
       # ── Apply CI log matrix so InWorld runs get the verbose logging they
       # need. macOS LogMatrixStore path is ~/Library/Application Support/
