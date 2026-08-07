@@ -44,7 +44,7 @@ public class BackpackEmotesTests : BaseTest
         OpenEmotes();
 
         Views.ExplorePanel.Backpack.SearchBar.SetText("Fist Pump");
-        Wait(2);
+        Views.ExplorePanel.Backpack.Emotes.FirstLoadedGridItem.WaitUntilLoaded();
 
         Views.ExplorePanel.Backpack.Emotes.UnequipEmoteIfPresent(0);
         Views.ExplorePanel.Backpack.Emotes.SetEmote(0, 0);
@@ -113,11 +113,10 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
     }
 
-    private string SelectFirstLoadedItemAndReadName(ExplorePanelBackpackView.EmotesTab emotes)
+    private string SelectFirstLoadedItemAndReadName(ExplorePanelBackpackView.EmotesTab emotes, string previousName = null)
     {
         emotes.FirstLoadedGridItem.Click();
-        Wait(1);
-        return emotes.SelectedItemName.GetText();
+        return emotes.SelectedItemName.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
     }
 
     /// <summary>
@@ -136,7 +135,7 @@ public class BackpackEmotesTests : BaseTest
         for (var attempt = 0; attempt < 3; attempt++)
         {
             emotes.FirstLoadedGridItem.WaitUntilLoaded();
-            var name = SelectFirstLoadedItemAndReadName(emotes);
+            var name = SelectFirstLoadedItemAndReadName(emotes, previousName);
             if (name != previousName)
                 return name;
 

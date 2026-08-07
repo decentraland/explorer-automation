@@ -59,9 +59,12 @@ public class CommunitiesTests : BaseTest
         OpenCommunities();
 
         Views.ExplorePanel.Communities.SearchBar.SetText("Decentraland");
-        Wait(2); // wait for the remote search to resolve
+        // Poll for the grid title to reflect the query instead of guessing how long the
+        // remote search takes to resolve.
+        var titleText = Views.ExplorePanel.Communities.BrowseResultsTitle.WaitForText(
+            text => text == "Results for 'Decentraland'");
 
-        Assert.That(Views.ExplorePanel.Communities.BrowseResultsTitle.GetText(),
+        Assert.That(titleText,
             Is.EqualTo("Results for 'Decentraland'"),
             "Search should retitle the grid with the query");
         Assert.That(Views.ExplorePanel.Communities.BrowseResultsCount.GetText(), Does.Match(@"^\(\d+\)$"),
@@ -71,8 +74,8 @@ public class CommunitiesTests : BaseTest
         Reporter.Log("Community search for 'Decentraland' returned results");
 
         Views.ExplorePanel.Communities.BrowseBackButton.Click();
-        Wait(1);
-        Assert.That(Views.ExplorePanel.Communities.BrowseResultsTitle.GetText(), Is.EqualTo("Browse Communities"),
+        var restoredTitleText = Views.ExplorePanel.Communities.BrowseResultsTitle.WaitForText(text => text == "Browse Communities");
+        Assert.That(restoredTitleText, Is.EqualTo("Browse Communities"),
             "Back button should clear the search");
         Reporter.Log("Search cleared");
 
@@ -105,8 +108,10 @@ public class CommunitiesTests : BaseTest
             "Clicking a community card's header should open the community detail popup");
 
         Views.ExplorePanel.Communities.CommunityDetail.WaitFor();
-        Wait(1); // header content loads asynchronously
-        Assert.That(Views.ExplorePanel.Communities.CommunityDetail.CommunityName.GetText(),
+        // Header content loads asynchronously — poll for the name instead of guessing.
+        var detailNameText = Views.ExplorePanel.Communities.CommunityDetail.CommunityName.WaitForText(
+            text => text == communityName);
+        Assert.That(detailNameText,
             Is.EqualTo(communityName),
             "Community detail should show the clicked community's name");
         // Public communities expose content section tabs; private ones show an access
