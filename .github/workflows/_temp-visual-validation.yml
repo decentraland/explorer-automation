@@ -2,6 +2,7 @@ name: TEMP — Visual validation for PR 24
 
 # TEMPORARY validation scaffold — deleted in the same commit that removes
 # run-inworld-suite.yml's push trigger, before PR #24 merges.
+# Attempt 2: after re-pinning _host's evicted @dcl/js-runtime prerelease.
 #
 # Why it exists: the Visual suite must be proven green against this branch's
 # Snapshot/VisualSuiteSetup changes (baseline-driven frame gate + 0.3
