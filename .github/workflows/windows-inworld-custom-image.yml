@@ -23,7 +23,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-inworld-custom-image-benchmark
+  # Keep duplicate pushes serialized, while allowing explicitly dispatched
+  # shards to use the larger runner's configured job concurrency.
+  group: windows-inworld-custom-image-benchmark-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: false
 
 jobs:
