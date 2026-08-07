@@ -66,6 +66,11 @@ public class BackpackWearablesTests : BaseTest
 
         // "Punk" is a base-collection hair every account owns.
         Views.ExplorePanel.Backpack.SearchBar.SetText("Punk");
+        // Give the grid a beat to refilter before the first read: a click during the
+        // transition can land on a stale (pre-search) tile, or briefly find no item
+        // selected at all while the info panel is between states — verified live, this
+        // is NOT redundant with WaitUntilLoaded() below (that alone returns true on the
+        // stale tile too).
         Wait(2);
 
         // shows a matching item. Settled read: the grid pool keeps pre-search tiles enabled
@@ -120,6 +125,9 @@ public class BackpackWearablesTests : BaseTest
     /// is dropped when it lands during a grid re-bind, so a single attempt followed by a
     /// fixed wait reads back unequipped — the failure behind TestDoubleClickEquipWearable on
     /// CI runs 31176916555 and 31180360091. Re-equipping an already-equipped item is a no-op.
+    /// Deliberately not PR #54's WaitUntil on IsEquipped: polling longer cannot produce a
+    /// state a dropped click never started. The deadline-based budget is also what this
+    /// predicate needs — a negative IsEquipped re-hovers and costs ~2-3s an evaluation.
     /// </summary>
     private void EquipUntilShown(ExplorePanelBackpackView.BackpackGridItem item)
     {
@@ -130,16 +138,18 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
-    /// Clicks the item and reads the info panel name, retrying because a click on a tile
-    /// that is still refreshing is a no-op and would leave a stale name in the panel.
+    /// Clicks the item and reads the info panel name, polling until the label shows text
+    /// that differs from <paramref name="previousName"/> (or any text, on the first-ever
+    /// selection) — a click on a tile that is still refreshing is a no-op and would
+    /// otherwise leave a stale name in the panel.
     /// </summary>
     private string SelectItemAndReadName(
         ExplorePanelBackpackView.BackpackGridItem item,
-        Readable nameLabel)
+        Readable nameLabel,
+        string previousName = null)
     {
         item.Click();
-        Wait(1);
-        return nameLabel.GetText();
+        return nameLabel.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
     }
 
     /// <summary>
@@ -153,6 +163,9 @@ public class BackpackWearablesTests : BaseTest
     /// which left the info panel unpopulated on run 31176916555. An indexed FullBackpack path
     /// would be both deterministic and selectable and is the obvious next thing to try, but it
     /// has never been run — do not assume it is ruled out.
+    /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
+    /// PR #54's "text differs from the previous name" predicate would invert the very
+    /// condition being established.
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.WearablesTab wearables)
     {
@@ -187,8 +200,10 @@ public class BackpackWearablesTests : BaseTest
 
         for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
         {
+            // Paravirt ceiling on the load wait (ours), previousName on the read (PR #54):
+            // this read only has to notice the flip, so polling for a differing name is right.
             wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
-            var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+            var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName, previousName);
             if (name != previousName)
                 // Settle before returning, do not trust the first differing read. This is the
                 // value the round-trip assertion compares, so it is the read that has to be

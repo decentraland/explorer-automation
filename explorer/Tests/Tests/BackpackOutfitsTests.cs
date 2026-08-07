@@ -82,7 +82,10 @@ public class BackpackOutfitsTests : BaseTest
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         // The equip double-click is silently dropped when it lands during a grid re-bind,
         // and the hover overlay is the only equip-state signal — retry the equip itself
-        // rather than only widening the read that follows it.
+        // rather than only widening the read that follows it. Deliberately not PR #54's
+        // WaitUntil on IsEquipped: polling longer cannot produce a state a dropped click
+        // never started. The deadline-based budget is also what this predicate needs — a
+        // negative IsEquipped re-hovers and costs ~2-3s an evaluation.
         ClickUntil(() => hair.DoubleClickEquip(),
                    () => hair.IsEquipped(verificationShot: false),
                    timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);

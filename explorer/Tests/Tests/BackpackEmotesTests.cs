@@ -74,7 +74,7 @@ public class BackpackEmotesTests : BaseTest
         OpenEmotes();
 
         Views.ExplorePanel.Backpack.SearchBar.SetText("Fist Pump");
-        Wait(2);
+        Views.ExplorePanel.Backpack.Emotes.FirstLoadedGridItem.WaitUntilLoaded();
 
         Views.ExplorePanel.Backpack.Emotes.UnequipEmoteIfPresent(0);
         Views.ExplorePanel.Backpack.Emotes.SetEmote(0, 0);
@@ -147,21 +147,23 @@ public class BackpackEmotesTests : BaseTest
     }
 
     /// <summary>
-    /// Selects the grid's leading loaded item and reads its name from the info panel.
+    /// Selects the grid's leading loaded item and reads its name from the info panel, polling
+    /// the label (PR #54's <c>WaitForText</c>) until it shows text — and, when the caller
+    /// supplies <paramref name="previousName"/>, text that differs from it — instead of
+    /// reading after a fixed settle.
     /// Selects through <c>FirstLoadedGridItem</c>, which is rooted on the tile's FullBackpack
     /// child. What CI disproved was clicking the tile ROOT (<c>GridItems[i]</c>), which left
     /// the info panel unpopulated on run 31176916555 — ItemName never appeared. An indexed
     /// FullBackpack path would be both deterministic and selectable and has never been run,
     /// so it is untried rather than ruled out.
     /// </summary>
-    private string ReadFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
+    private string ReadFirstItemName(ExplorePanelBackpackView.EmotesTab emotes, string previousName = null)
     {
         // Paravirt ceiling, not the 20s default: on CI run 31183128982 no tile in the grid
         // had an enabled FullBackpack inside 20s, so the read failed before it could start.
         emotes.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
         emotes.FirstLoadedGridItem.Click();
-        Wait(1);
-        return emotes.SelectedItemName.GetText();
+        return emotes.SelectedItemName.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
     }
 
     /// <summary>
@@ -169,6 +171,9 @@ public class BackpackEmotesTests : BaseTest
     /// baseline is pinned to a grid that has stopped moving. Without this the baseline can
     /// be captured mid-stream and the round-trip assertion compares two different pages'
     /// contents (CI run 31164127596 read "Head Explode" out and "Ho Ho Ho" back).
+    /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
+    /// PR #54's "text differs from the previous name" predicate would invert the very
+    /// condition being established.
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
     {
@@ -202,7 +207,10 @@ public class BackpackEmotesTests : BaseTest
 
         for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
         {
-            var name = ReadFirstItemName(emotes);
+            // previousName here (PR #54): this read only has to notice the flip, so polling
+            // for a differing name is right. No separate WaitUntilLoaded — ReadFirstItemName
+            // already waits on the paravirt ceiling, the stronger of the two.
+            var name = ReadFirstItemName(emotes, previousName);
             if (name != previousName)
                 // Settle before returning, do not trust the first differing read. This is the
                 // value the round-trip assertion compares, so it is the read that has to be
