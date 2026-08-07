@@ -1,0 +1,176 @@
+name: Windows InWorld custom-image benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/windows-inworld-custom-image
+    paths:
+      - .github/workflows/windows-inworld-custom-image.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-inworld-custom-image-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: InWorld suite (Windows custom image)
+    runs-on: win-gpu-t4-explorer
+    timeout-minutes: 45
+
+    env:
+      BUILD_URL: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev/pu-24728-9248698/Decentraland_windows64.zip
+      TEST_FILTER: Category=InWorld
+      ALT_VERBOSE_LOGS: 'false'
+      EXPLORER_PERF_RECORD: '0'
+
+    steps:
+      - name: Check out automation tests
+        uses: actions/checkout@v6
+
+      - name: Record benchmark context
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          "## Windows custom-image benchmark" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "- Runner: ``$env:RUNNER_NAME``" >> $env:GITHUB_STEP_SUMMARY
+          "- Image: ``unity-explorer-windows:1.0.0``" >> $env:GITHUB_STEP_SUMMARY
+          "- Build: ``$env:BUILD_URL``" >> $env:GITHUB_STEP_SUMMARY
+          "- Filter: ``$env:TEST_FILTER``" >> $env:GITHUB_STEP_SUMMARY
+          "- Started: ``$([DateTime]::UtcNow.ToString('o'))``" >> $env:GITHUB_STEP_SUMMARY
+
+          nvidia-smi
+          git --version
+          dotnet --version
+          node --version
+          mf --version
+          allure --version
+
+      - name: Verify required secrets
+        shell: powershell
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          if (-not $env:ALTTESTER_LICENSE) { throw "ALTTESTER_LICENSE is not available" }
+          if (-not $env:GH_TOKEN) { throw "REPOS_READ_ONLY_TOKEN is not available" }
+          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
+
+      - name: Apply CI log matrix
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\log-matrix.json"
+          $destination = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\log-matrix.json"
+          if (-not (Test-Path $source)) { throw "CI log matrix source missing: $source" }
+          New-Item (Split-Path $destination -Parent) -ItemType Directory -Force | Out-Null
+          Copy-Item $source $destination -Force
+
+      - name: Activate AltTester license
+        shell: powershell
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          mf alttester set-license $env:ALTTESTER_LICENSE
+
+      - name: Pre-install Explorer build
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          mf explorer install $env:BUILD_URL --non-interactive
+
+      - name: Provision MetaForge test account
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
+          New-Item $userdata -ItemType Directory -Force | Out-Null
+          $account = "ci-inworld-$env:GITHUB_RUN_ID"
+          mf account create $account --env org
+          mf account login $account --env org
+          "MF_ACCOUNT=$account" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Clear Explorer logs
+        shell: powershell
+        run: |
+          $playerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          if (Test-Path $playerLog) { Remove-Item $playerLog -Force }
+
+      - name: Run InWorld suite
+        timeout-minutes: 35
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          mf explorer test $env:BUILD_URL `
+            --non-interactive `
+            --filter "$env:TEST_FILTER" `
+            --report-type SingleFile `
+            --skip-allure-open `
+            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen"
+          exit $LASTEXITCODE
+
+      - name: Locate benchmark outputs
+        id: outputs
+        if: always()
+        shell: powershell
+        run: |
+          $roots = @(
+            (Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge"),
+            (Join-Path $env:APPDATA "Decentraland\MetaForge")
+          )
+          $report = $null
+          foreach ($root in $roots) {
+            if (-not (Test-Path $root)) { continue }
+            $report = Get-ChildItem $root -Recurse -Filter "index.html" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -like "*allure-report*" } |
+              Select-Object -First 1
+            if ($report) { break }
+          }
+          if ($report) {
+            "report_directory=$($report.Directory.FullName)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+          $playerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          if (Test-Path $playerLog) {
+            "player_log=$playerLog" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Upload Allure report
+        if: always() && steps.outputs.outputs.report_directory != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-custom-image-allure-${{ github.run_id }}
+          path: ${{ steps.outputs.outputs.report_directory }}
+          retention-days: 7
+
+      - name: Upload Explorer log
+        if: always() && steps.outputs.outputs.player_log != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-custom-image-player-log-${{ github.run_id }}
+          path: ${{ steps.outputs.outputs.player_log }}
+          retention-days: 7
+
+      - name: Cleanup MetaForge state
+        if: always()
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          try { mf explorer server stop --non-interactive } catch { Write-Host "server stop: $_" }
+
+          Get-Process | Where-Object { $_.ProcessName -match "Decentraland|Unity|AltTester" } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+          try { mf alttester deactivate --non-interactive } catch { Write-Host "AltTester deactivate: $_" }
+          if ($env:MF_ACCOUNT) {
+            try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
+          }
