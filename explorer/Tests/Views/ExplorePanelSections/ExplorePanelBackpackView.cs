@@ -123,9 +123,12 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             // Shot-suppressed wait: double-click equip is an action, not a verification.
             var altObj = WaitFor(20D, verificationShot: false);
-            altObj.Click();
-            Thread.Sleep(80);
-            altObj.Click();
+            // One Player-side command with count: 2, NOT two driver round-trips. Unity only
+            // raises clickCount == 2 when the second click lands inside its double-click
+            // window; on the macos-14 paravirt runner a single driver round-trip already
+            // exceeds that window, so two separate Click calls read as two single clicks and
+            // never equip. The interval here is applied by the Player, not by the network.
+            altObj.Click(count: 2, interval: 0.1f);
             Reporter.Log("Double-clicked grid item to equip");
         }
 

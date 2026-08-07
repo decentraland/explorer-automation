@@ -13,8 +13,10 @@ public static class SlowChassis
     /// shorter per-call timeouts it wraps (10s SetText, 5s component-property) are all
     /// observed to expire on paravirt while the mutation is still in flight, so these
     /// waits take this ceiling instead of a per-call-site constant.
-    /// Kept well under the 300s AltDriver command-response ceiling set in GlobalSetup,
-    /// and short enough that a genuinely broken interaction still fails inside a minute.
+    /// Kept well under the 300s AltDriver command-response ceiling set in GlobalSetup, and
+    /// deliberately not larger: the workflow caps the suite step at 40 minutes, and every
+    /// second spent here is only ever spent on a path that is already failing. 60s measurably
+    /// pushed a failing run to ~35 minutes (CI run 31176916555).
     /// </summary>
-    public const double SETTLE_TIMEOUT = 60D;
+    public const double SETTLE_TIMEOUT = 40D;
 }

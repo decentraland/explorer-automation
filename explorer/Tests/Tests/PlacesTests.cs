@@ -8,8 +8,9 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(11)]
 public class PlacesTests : BaseTest
 {
-    // Per-attempt budget for the place detail popup to instantiate after a card click.
-    private const double DETAIL_OPEN_PER_ATTEMPT = 20;
+    // Grace given to a Click before falling back to Tap — long enough that a working-but-slow
+    // open is not second-guessed, short enough to leave room for the authoritative wait.
+    private const double DETAIL_OPEN_GRACE = 15;
 
     [Test]
     public void TestSwitchPlacesTabs()
@@ -72,12 +73,13 @@ public class PlacesTests : BaseTest
         var placeName = Views.ExplorePanel.Places.Cards[0].PlaceName.GetText();
         // Click the thumbnail, not the card root — the hover overlay puts JUMP IN and the
         // like/heart/home buttons at the card's center (see PlaceCard doc comment).
-        // Retried: the results grid re-binds while places stream in and a click landing
-        // mid-rebuild is dropped. The per-attempt budget must exceed a slow-but-working
-        // open, otherwise the retry click lands on the detail panel that is already up.
-        ClickUntil(() => Views.ExplorePanel.Places.Cards[0].Thumbnail.Click(),
-                   () => Views.ExplorePanel.Places.PlaceDetail.IsPresent(verificationShot: false),
-                   timeoutPerAttempt: DETAIL_OPEN_PER_ATTEMPT);
+        // Click first, Tap on no response: Click moves the pointer onto the card before
+        // pressing, and on a slow chassis the card's hover overlay renders into that gap and
+        // swallows the press — 60s waits and repeated clicks never opened the panel on CI
+        // run 31176916555. Tap presses the thumbnail directly and raises no overlay.
+        Views.ExplorePanel.Places.Cards[0].Thumbnail.ClickOrTap(
+            () => Views.ExplorePanel.Places.PlaceDetail.IsPresent(verificationShot: false),
+            graceSeconds: DETAIL_OPEN_GRACE);
 
         Views.ExplorePanel.Places.PlaceDetail.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Assert.That(Views.ExplorePanel.Places.PlaceDetail.PlaceTitle.GetText(), Is.EqualTo(placeName),

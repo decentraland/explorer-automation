@@ -29,7 +29,10 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     public readonly Readable  UserIDText          = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/UserID");
     public readonly Clickable CopyNameButton      = new(By.PATH, "//UserBasicInfo_PassportSubView/UserNameContainer/CopyButton");
     public readonly Clickable CopyIDButton        = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/CopyButton");
-    public readonly Clickable EditNameButton      = new(By.NAME, "EditNameButton");
+    // Scoped to the passport for the same reason as the header readables above: a bare
+    // name can also resolve to an edit affordance outside this popup, and a click on the
+    // wrong instance reports success while nothing opens.
+    public readonly Clickable EditNameButton      = new(By.PATH, "//Passport(Clone)//EditNameButton");
     public readonly Clickable ClaimNameButton     = new(By.PATH, "//UserBasicInfo_PassportSubView//ClaimNameButton");
 
     // Name color picker: the NameColorPicker container stays disabled for an unclaimed name
@@ -66,7 +69,7 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     [AllureStep("Rename user via the passport name editor")]
     public void RenameUser(string newName)
     {
-        EditNameButton.Click();
+        EditNameButton.ClickOrTap(() => NameEditor.IsPresent(verificationShot: false));
         NameEditor.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         // The modal pre-fills the input with the current name asynchronously after opening.
         // Typing before that lands gets overwritten by the pre-fill, and Save then submits

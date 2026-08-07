@@ -105,6 +105,14 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
         #region Helper methods
 
         /// <summary>
+        /// Reads the Auto day-cycle toggle's current state without changing it, so callers can
+        /// restore whatever the client started with.
+        /// </summary>
+        public bool IsAutoProgressionOn() =>
+            AutoProgressionToggle.WaitFor(20D, verificationShot: false)
+                .GetComponentProperty<bool>("UnityEngine.UI.Toggle", "isOn", "UnityEngine.UI");
+
+        /// <summary>
         /// Ensures the Auto day-cycle toggle is in the requested state. Asserted through the
         /// Toggle component's isOn (the On/Off visual children lag behind the click because
         /// of the ToggleView animation, so they are not a reliable synchronous signal).
@@ -115,8 +123,7 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
             // Shot-suppressed waits: the verified state is the Toggle's isOn value, so the
             // single verification shot is taken once the toggle is confirmed in the requested
             // state (either already there, or after the click's WaitForComponentProperty).
-            var isOn = AutoProgressionToggle.WaitFor(20D, verificationShot: false)
-                .GetComponentProperty<bool>("UnityEngine.UI.Toggle", "isOn", "UnityEngine.UI");
+            var isOn = IsAutoProgressionOn();
             if (isOn == enabled)
             {
                 Reporter.Log($"Auto time progression already {(enabled ? "on" : "off")}");

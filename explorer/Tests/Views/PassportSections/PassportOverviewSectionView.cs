@@ -47,7 +47,10 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
         #region Elements
 
         public readonly Readable  AboutMeTitle            = new(By.PATH, "//UserDetailInfo_PassportSubView/InfoTitle");
-        public readonly Clickable EditAboutMeButton       = new(By.NAME, "Info_Button_Edit");
+        // Scoped like the sibling field locators below: the bare name can resolve outside
+        // this module, and a click on the wrong instance reports success while edit mode
+        // never opens.
+        public readonly Clickable EditAboutMeButton       = new(By.PATH, "//UserDetailInfo_PassportSubView//Info_Button_Edit");
         public readonly Readable  BioText                 = new(By.PATH, "//UserDetailInfo_PassportSubView/InfoField");
         public readonly Writable  BioInput                = new(By.PATH, "//UserDetailInfo_PassportSubView//InfoField_EDITION_MODE");
         public readonly Clickable SaveBioButton           = new(By.PATH, "//UserDetailInfo_PassportSubView//SaveInfoButton");
@@ -70,15 +73,23 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
         [AllureStep("Set the About Me bio")]
         public void SetBio(string bio)
         {
-            EditAboutMeButton.Click();
+            EditAboutMeButton.ClickOrTap(() => BioInput.IsPresent(verificationShot: false));
             // Edit mode swaps the read-only InfoField for the input asynchronously. Wait for
             // the input explicitly instead of leaning on SetText's own (shorter) wait, so a
             // slow swap reports the missing input rather than a nested invocation exception.
             BioInput.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
             BioInput.SetText(bio, submit: false);
             SaveBioButton.Click();
-            // The read-only field comes back only once the profile update round-trip lands.
-            BioText.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+            // The read-only field comes back before the profile update round-trip lands, so
+            // its presence alone is not the signal — poll until it carries the saved text.
+            // Deliberately does not throw on timeout: the caller asserts the bio itself and
+            // reports the mismatch with its own message.
+            BioText.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+            var deadline = DateTime.UtcNow.AddSeconds(SlowChassis.SETTLE_TIMEOUT);
+            while (DateTime.UtcNow < deadline && BioText.GetText(20D, verificationShot: false) != bio)
+                Thread.Sleep(500);
+
+            Reporter.TakeVerificationShot("text_AboutMeBio");
             Reporter.Log($"Saved About Me bio '{bio}'");
         }
 

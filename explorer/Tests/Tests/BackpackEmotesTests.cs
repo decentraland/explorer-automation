@@ -15,9 +15,12 @@ public class BackpackEmotesTests : BaseTest
     //   Equip coverage goes through the double-click path; explicit-button unequip
     //   coverage goes through the slot's Unequip button, which does respond.
 
-    // Per-attempt budget for a confirmed equip. Long enough that a slow-but-working
-    // equip is never re-clicked (a second double-click would toggle it back off).
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 20;
+    // Per-attempt budget for a confirmed equip. The badge is local UI state, not a network
+    // round-trip, so a landed equip lights it within a second or two — the observed failure
+    // is a dropped click, and retrying sooner beats waiting longer. Re-equipping is
+    // idempotent (double-click maps to Equip, not to a toggle), so an extra attempt against
+    // an already-equipped item is harmless.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 10;
     // Re-reads allowed while waiting for the grid's leading item to stop changing.
     private const int SETTLE_READS = 3;
     private const int PAGE_FLIP_ATTEMPTS = 3;
@@ -132,24 +135,24 @@ public class BackpackEmotesTests : BaseTest
     }
 
     /// <summary>
-    /// Selects grid position 0 and reads its name from the info panel. Deliberately the
-    /// indexed tile rather than <c>FirstLoadedGridItem</c>: that locator is an unindexed
-    /// path, so while the grid re-binds after a page flip — tile 0's FullBackpack briefly
-    /// inactive — it resolves to a later tile and the same page reads back a different
-    /// emote. That is what made the round-trip assertion fail on the CI account.
+    /// Selects the grid's leading loaded item and reads its name from the info panel.
+    /// Must select through <c>FirstLoadedGridItem</c>, which is rooted on the tile's
+    /// FullBackpack child: clicking the tile root instead leaves the info panel unpopulated
+    /// (verified on CI run 31176916555 — ItemName never appeared).
     /// </summary>
     private string ReadFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
     {
-        emotes.WaitForGridItemLoaded(0);
-        emotes.ClickGridItem(0);
+        emotes.FirstLoadedGridItem.WaitUntilLoaded();
+        emotes.FirstLoadedGridItem.Click();
         Wait(1);
         return emotes.SelectedItemName.GetText();
     }
 
     /// <summary>
-    /// Reads position 0's name until two consecutive reads agree, so the page-1 baseline
-    /// is pinned to a grid that has stopped moving: the emote list can finish streaming
-    /// after the grid's first paint and re-sort the page under the test.
+    /// Reads the leading item's name until two consecutive reads agree, so the page-1
+    /// baseline is pinned to a grid that has stopped moving. Without this the baseline can
+    /// be captured mid-stream and the round-trip assertion compares two different pages'
+    /// contents (CI run 31164127596 read "Head Explode" out and "Ho Ho Ho" back).
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
     {

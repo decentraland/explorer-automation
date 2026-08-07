@@ -11,8 +11,8 @@ public class BackpackOutfitsTests : BaseTest
     // ButtonUnequip is never enabled because the equipped state (EquippedBackground)
     // never activates, even right after equipping an outfit and reopening the panel.
 
-    // Per-attempt budget for a confirmed equip, matching BackpackEmotesTests.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 20;
+    // Per-attempt budget for a confirmed equip — see BackpackEmotesTests for the rationale.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 10;
 
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()
@@ -71,8 +71,7 @@ public class BackpackOutfitsTests : BaseTest
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         // The equip double-click is silently dropped when it lands during a grid re-bind,
         // and the hover overlay is the only equip-state signal — retry the equip itself
-        // rather than only widening the read that follows it. The per-attempt budget is
-        // long enough that a slow-but-working equip is never double-clicked back off.
+        // rather than only widening the read that follows it.
         ClickUntil(() => hair.DoubleClickEquip(),
                    () => hair.IsEquipped(verificationShot: false),
                    timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
