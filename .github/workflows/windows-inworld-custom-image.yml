@@ -19,7 +19,7 @@ jobs:
   benchmark:
     name: InWorld suite (Windows custom image)
     runs-on: win-gpu-t4-explorer
-    timeout-minutes: 30
+    timeout-minutes: 55
 
     env:
       BUILD_URL: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev/pu-24728-9248698/Decentraland_windows64.zip
@@ -107,7 +107,11 @@ jobs:
           }
 
       - name: Run InWorld suite
-        timeout-minutes: 22
+        # The current InWorld filter discovers 59 sequential UI tests. The
+        # first successful Windows handshake was still actively issuing
+        # screenshots/clicks after 21 minutes, so leave enough room to collect
+        # a complete baseline before deciding how to shard the suite.
+        timeout-minutes: 45
         shell: powershell
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
