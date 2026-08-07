@@ -6,9 +6,10 @@ name: InWorld Suite
 # Mirrors run-visual-suite.yml, which runs the same chassis.
 #
 # Callers:
-#   - decentraland/unity-explorer      → `/in-world-tests` PR-comment
-#                                        dispatcher (in-world-tests.yml)
 #   - decentraland/explorer-automation → manual workflow_dispatch
+#   - decentraland/unity-explorer      → a `/in-world-tests` PR-comment
+#     dispatcher is planned but does not exist in that repo yet, so the
+#     cross-repo workflow_call path here has never run against a real caller.
 #
 # macOS-only. A Windows counterpart is planned in PR #12 and stays a separate
 # workflow: the install steps (bash/brew/dmg vs PowerShell/Inno Setup/MSI) and
