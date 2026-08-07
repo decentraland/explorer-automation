@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       test_filter:
-        description: 'NUnit filter. Use Category=InWorld for the complete 59-test suite.'
+        description: 'NUnit filter. Use Category=InWorld for the complete 58-test suite.'
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
         type: string
@@ -109,8 +109,13 @@ jobs:
           $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
           New-Item $userdata -ItemType Directory -Force | Out-Null
           $account = "ci-inworld-$env:GITHUB_RUN_ID"
-          mf account create $account --env org
-          mf account login $account --env org
+          # MetaForge prints the generated seed phrase and auth token. Capture
+          # its output so ephemeral test credentials never reach Actions logs.
+          $createOutput = & mf account create $account --env org 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "MetaForge account creation failed" }
+          $loginOutput = & mf account login $account --env org 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "MetaForge account login failed" }
+          Write-Host "Provisioned ephemeral MetaForge account $account for org"
           "MF_ACCOUNT=$account" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Clear Explorer logs
