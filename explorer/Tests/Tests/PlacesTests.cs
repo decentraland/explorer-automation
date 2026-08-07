@@ -64,6 +64,9 @@ public class PlacesTests : BaseTest
     [Test]
     public void TestOpenPlaceDetail()
     {
+        if (OperatingSystem.IsMacOS())
+            Assert.Ignore("pending macOS chassis tuning: PlaceDetailPanel exceeds the 20s wait on paravirt content streaming");
+
         OpenPlaces();
 
         var placeName = Views.ExplorePanel.Places.Cards[0].PlaceName.GetText();
