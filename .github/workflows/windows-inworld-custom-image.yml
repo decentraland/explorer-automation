@@ -8,6 +8,11 @@ on:
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
         type: string
+      verification_screenshots:
+        description: 'Capture intermediate verification screenshots (slow; final test screenshots remain enabled).'
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - test/windows-inworld-custom-image
@@ -34,6 +39,7 @@ jobs:
       TEST_FILTER: ${{ inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       ALT_VERBOSE_LOGS: 'false'
       EXPLORER_PERF_RECORD: '0'
+      VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
 
     steps:
       - name: Check out automation tests

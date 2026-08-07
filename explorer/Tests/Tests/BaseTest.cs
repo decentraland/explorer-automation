@@ -13,6 +13,13 @@ public abstract class BaseTest
     private string _perfSummaryPath;
     private bool _perfStarted;
 
+    // Explorer wires the sidebar listeners once per application session, not
+    // once per NUnit fixture. Keep the conservative 20-second stabilization
+    // delay for the first in-world fixture only. The suite is sequential today,
+    // but the lock also keeps this correct if fixture parallelism is enabled.
+    private static readonly object SidebarSettleLock = new();
+    private static bool _sidebarSettled;
+
     protected ViewContainer Views => ViewContainer.Instance;
     protected AltDriver AltDriver => CommonStuff.AltDriver;
 
@@ -235,9 +242,16 @@ public abstract class BaseTest
         // The first sidebar click / shortcut after EnsureInWorld returns can land in that
         // gap and get silently dropped. There's no public signal for when subscriptions
         // are wired, so we settle for a fixed wait. Empirically ~20s is enough for the
-        // first test method of the first in-world fixture; subsequent fixtures don't need
-        // it (the system is already warm) but the cost is small.
-        Thread.Sleep(20_000);
+        // first test method of the first in-world fixture; subsequent fixtures reuse the
+        // already-initialized sidebar and must not pay this cost again.
+        lock (SidebarSettleLock)
+        {
+            if (!_sidebarSettled)
+            {
+                Thread.Sleep(20_000);
+                _sidebarSettled = true;
+            }
+        }
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
