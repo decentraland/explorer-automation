@@ -18,10 +18,19 @@ name: InWorld Suite
 # Required secrets (caller passes via `secrets: inherit`):
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
 #   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (the build-URL probe queries unity-explorer's Actions API)
-#   - DEV_EXPLORER_TEAM_S3_BUCKET          S3 bucket for the Allure report
-#   - DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION AWS region the bucket lives in
-#   - DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID  S3 upload credentials
-#   - DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY  S3 upload credentials
+#
+# The S3 upload credentials come in two org-level families, each granted to a
+# different repo and pointing at a different bucket. `secrets: inherit` passes
+# only what the caller was actually granted, and an ungranted secret resolves
+# to an empty string rather than erroring — so this workflow selects the family
+# by caller repo instead of hardcoding one (same table as run-visual-suite.yml):
+#
+#   caller repo                       secret family        bucket public URL
+#   decentraland/unity-explorer       EXPLORER_TEAM_*      explorer-artifacts.decentraland.org
+#   decentraland/explorer-automation  DEV_EXPLORER_TEAM_*  explorer-artifacts.decentraland.zone
+#
+# Each family carries S3_BUCKET, AWS_DEFAULT_REGION, AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY.
 #
 # IMAP_HOST/PORT/USER/PASSWORD, OTP_FROM_EMAIL and EMAIL_DOMAIN are consumed by
 # the run step but are only needed when `filter` explicitly selects the Auth/OTP
@@ -29,10 +38,11 @@ name: InWorld Suite
 #
 # Required vars on the caller's repo (`vars.*` inside a workflow_call run
 # resolves against the caller's repo):
-#   - DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL  Public prefix of the bucket the
-#     DEV_ credentials above write to (falls back to
-#     EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL). It must name that same bucket, or the
-#     report link points somewhere the object was never uploaded.
+#   - <family>_S3_BUCKET_PUBLIC_URL  Public-facing prefix of the bucket
+#
+# Both *_S3_BUCKET_PUBLIC_URL vars are granted to both repos, so the var has to
+# be picked from the same family as the bucket secret — mixing them uploads to
+# one bucket and links to the other, and the report link 404s.
 
 on:
   workflow_call:
@@ -134,13 +144,9 @@ jobs:
       # actual code under test. Cross-repo callers pass both explicitly.
       COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || (github.repository == 'decentraland/explorer-automation' && github.sha || format('run-{0}', github.run_id)) }}
       BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.ref_name || 'main')) }}
-      # Must name the SAME bucket the upload targets (DEV_EXPLORER_TEAM_S3_BUCKET),
-      # or the report link points at a bucket the object was never written to.
-      # decentraland org: DEV_… = explorer-artifacts.decentraland.zone (the bucket
-      # these credentials write to), un-prefixed = …decentraland.org. The fallback
-      # covers a caller that only defines the un-prefixed var.
-      # vars.* inside a workflow_call run reads the *caller's* repo/org vars.
-      PUBLIC_URL_PREFIX: ${{ vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL || vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      # vars.* inside a workflow_call run reads the *caller's* repo vars. Kept
+      # in lockstep with the bucket secret selected below — see header.
+      PUBLIC_URL_PREFIX: ${{ github.repository == 'decentraland/explorer-automation' && vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL || vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
       # 'false' keeps AltTester Unity logging at Warn per GlobalSetup. Flip to
       # 'true' only when triaging AltTester issues — Debug level adds ~30 MB of
       # polling chatter per run.
@@ -653,19 +659,57 @@ jobs:
             echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
           fi
 
+      # An ungranted secret arrives as an empty string, so a family mismatch
+      # otherwise surfaces as an opaque "Input required and not supplied:
+      # aws-region" or `Invalid bucket name ""` from inside the AWS steps,
+      # after a full green test run. Fail here naming what's actually missing.
+      - name: Verify S3 configuration
+        if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
+        env:
+          CALLER_REPO: ${{ github.repository }}
+          BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
+          REGION: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION || secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          ACCESS_KEY_ID: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID || secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          SECRET_ACCESS_KEY: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY || secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "$CALLER_REPO" = 'decentraland/explorer-automation' ]; then
+            FAMILY='DEV_EXPLORER_TEAM_'
+          else
+            FAMILY='EXPLORER_TEAM_'
+          fi
+
+          MISSING=""
+          for entry in "S3_BUCKET:${BUCKET:-}" \
+                       "AWS_DEFAULT_REGION:${REGION:-}" \
+                       "AWS_ACCESS_KEY_ID:${ACCESS_KEY_ID:-}" \
+                       "AWS_SECRET_ACCESS_KEY:${SECRET_ACCESS_KEY:-}"; do
+            if [ -z "${entry#*:}" ]; then
+              MISSING="${MISSING} secrets.${FAMILY}${entry%%:*}"
+            fi
+          done
+          if [ -z "${PUBLIC_URL_PREFIX:-}" ]; then
+            MISSING="${MISSING} vars.${FAMILY}S3_BUCKET_PUBLIC_URL"
+          fi
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::Caller ${CALLER_REPO} resolved an empty S3 config:${MISSING}. Those entries must be granted to that repo at the org level and reach this workflow via \`secrets: inherit\`."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
-          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          aws-access-key-id: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID || secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY || secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION || secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
 
       - name: Upload Allure report to S3
         id: s3
         if: always() && steps.report.outputs.report_path != '' && env.DRY_RUN != 'true'
         env:
-          BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+          BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
           REPORT: ${{ steps.report.outputs.report_path }}
         run: |
