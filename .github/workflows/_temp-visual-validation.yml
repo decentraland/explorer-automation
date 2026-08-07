@@ -1,0 +1,46 @@
+name: TEMP — Visual validation for PR 24
+
+# TEMPORARY validation scaffold — deleted in the same commit that removes
+# run-inworld-suite.yml's push trigger, before PR #24 merges.
+#
+# Why it exists: the Visual suite must be proven green against this branch's
+# Snapshot/VisualSuiteSetup changes (baseline-driven frame gate + 0.3
+# tolerance) before merge. The normal manual path (manual-visual-tests.yml)
+# is broken on main — its `contents: read` grant is narrower than
+# run-visual-suite.yml's declared `contents: write`, so every dispatch dies
+# at startup (fix tracked separately). workflow_dispatch can only target the
+# default branch, so a push-triggered caller on this branch is the only
+# self-contained lever. Same pattern as the archived
+# _temp-bootstrap-visual-suite.yml.
+
+on:
+  push:
+    branches: [feat/macOS-inWorld-workflow]
+    paths:
+      - '.github/workflows/_temp-visual-validation.yml'
+
+# run-visual-suite.yml declares contents: write (record-mode baseline
+# commits) + pull-requests: write; a caller must grant a superset even
+# though mode=test never writes.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: temp-visual-validation
+  cancel-in-progress: true
+
+jobs:
+  run-suite:
+    name: Visual suite (branch validation)
+    # Local uses: resolves at this commit, so the callee is this branch's
+    # copy of run-visual-suite.yml (identical to main's).
+    uses: ./.github/workflows/run-visual-suite.yml
+    with:
+      mode: test
+      platform: macos
+      # Same build the InWorld validation run uses, for apples-to-apples.
+      build_url: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/authentication/deep-link-login/pr-23486-7f4bdc2/Decentraland_macos.zip
+      tests_ref: feat/macOS-inWorld-workflow
+      branch_label: feat/macOS-inWorld-workflow
+    secrets: inherit
