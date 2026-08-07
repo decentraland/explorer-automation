@@ -4,11 +4,16 @@ description: >-
   .NET, AltTester Desktop, the allure CLI, MetaForge — and activate the
   AltTester license.
 
-# Single definition of the runner chassis behind both Explorer suites. The
-# Visual and InWorld workflows previously carried byte-identical copies of
-# these four steps, so the .NET channel, the pinned AltTester build and the
-# MetaForge installer URL could drift apart between the two suites without
-# anyone noticing until one of them broke.
+# Single definition of the runner chassis FOR THE INWORLD SUITE ONLY.
+# run-visual-suite.yml still installs the same chassis inline and carries its
+# own `--channel 10.0`, its own AltTester 2.3.1 URL and its own MetaForge
+# installer URL. It cannot adopt this action yet: it runs no actions/checkout,
+# and `uses: ./…` resolves against $GITHUB_WORKSPACE. So until it does, the
+# two must be kept in step by hand — a version bumped here has NOT moved the
+# production visual path.
+#
+# The two copies were near-identical before the split: same bodies, three
+# differing error strings, of which this action keeps the visual wording.
 #
 # macOS-only: the AltTester install goes through hdiutil / .dmg / /Applications
 # and MetaForge's installer writes under ~/Library/Application Support. The
@@ -96,14 +101,22 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         set -eu
-        SCRIPT=$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)
-        # The runner invokes this as `bash --noprofile --norc -e -o pipefail`,
-        # so pipefail is on whether or not the script asks for it. `yes` stops
-        # having a reader the moment the installer is done and reports
-        # "yes: stdout: Broken pipe", which under pipefail makes a *successful*
-        # install exit 141. Turn pipefail off across this one pipeline so its
-        # status is the installer's; the inherited `-e` still fails the step
-        # when the installer really fails.
+        SCRIPT=$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh) \
+          || { echo "::error::Failed to download the MetaForge install.sh from explorer-artifacts.decentraland.zone"; exit 1; }
+        # Composite steps must declare `shell:`, and `shell: bash` means
+        # `bash --noprofile --norc -e -o pipefail` — pipefail is on whatever
+        # the script's own `set` line says. `yes` loses its reader the moment
+        # the installer exits, and pipefail then promotes that into the
+        # pipeline's status, failing a *successful* install: run 31177645973
+        # exited 1, with `yes` catching EPIPE and printing "yes: stdout:
+        # Broken pipe" rather than dying on SIGPIPE (which would give 141).
+        # Turn pipefail off across this one pipeline so its status is the
+        # installer's; the inherited `-e` still fails the step on a real
+        # install failure.
+        #
+        # This is why the inline copies never hit it: a bare `run:` in a
+        # workflow gets `/bin/bash -e {0}`, no pipefail, so `yes`'s exit is
+        # discarded there deterministically. Nothing to fix in those.
         set +o pipefail
         yes | /bin/bash -c "$SCRIPT"
         set -o pipefail

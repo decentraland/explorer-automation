@@ -63,7 +63,7 @@ on:
         required: false
         default: ''
       tests_ref:
-        description: 'explorer-automation ref for tests + explorer/ci files. Empty falls back to main.'
+        description: 'explorer-automation ref for tests, explorer/ci files, and the .github/actions composite this workflow runs. Empty falls back to main. A ref predating that composite fails at runner level ("Can''t find ''action.yml''") before any of this workflow''s own diagnostics can report anything.'
         type: string
         required: false
         default: ''
