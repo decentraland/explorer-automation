@@ -57,6 +57,9 @@ public class BackpackOutfitsTests : BaseTest
     [Test, Order(3)]
     public void TestEquipFirstSavedOutfit()
     {
+        if (OperatingSystem.IsMacOS())
+            Assert.Ignore("pending macOS chassis tuning: equip state not reflected when the precondition asserts on paravirt (flaky: passed runs 31164127596 + 31166377912, failed run 31168104702)");
+
         OpenBackpack();
         Views.ExplorePanel.Backpack.OpenSavedOutfits();
         Views.ExplorePanel.Backpack.SavedOutfits.EnsureFirstSlotSaved();
