@@ -100,8 +100,11 @@ jobs:
       - name: Clear Explorer logs
         shell: powershell
         run: |
-          $playerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
-          if (Test-Path $playerLog) { Remove-Item $playerLog -Force }
+          $logRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
+          @("Player.log", "AltTester-Server.log") | ForEach-Object {
+            $log = Join-Path $logRoot $_
+            if (Test-Path $log) { Remove-Item $log -Force }
+          }
 
       - name: Run InWorld suite
         timeout-minutes: 22
@@ -148,16 +151,47 @@ jobs:
             throw "AltTester did not open port 13000 within 120 seconds"
           }
 
-          # The running AltTesterDesktop process makes MetaForge skip its
-          # brittle stdout-based connection detector. NUnit performs the real
-          # driver/application handshake when the suite starts.
+          # With AltTester already running, MetaForge assumes an app is also
+          # connected and intentionally skips Explorer launch. Launch the
+          # exact pre-installed build ourselves and verify its AltTester server
+          # receives a command before handing control to NUnit.
+          $explorerRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
+          $explorer = Get-ChildItem $explorerRoot -Recurse -Filter "Decentraland.exe" -File |
+            Where-Object { $_.FullName -like "*pu-24728-9248698*" } |
+            Select-Object -First 1
+          if (-not $explorer) { throw "Pre-installed Explorer executable was not found under $explorerRoot" }
+
+          $logMatrix = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\log-matrix.json"
+          $explorerProcess = Start-Process -FilePath $explorer.FullName `
+            -ArgumentList @(
+              '--skip-version-check', '--alttester', '--position', '100,100', '--dclenv', 'org',
+              '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
+              '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix
+            ) `
+            -PassThru
+          "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Explorer started with PID $($explorerProcess.Id): $($explorer.FullName)"
+
+          $appLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"
+          $connectDeadline = [DateTime]::UtcNow.AddSeconds(120)
+          $appConnected = $false
+          do {
+            if ($explorerProcess.HasExited) { throw "Explorer exited before connecting to AltTester" }
+            if (Test-Path $appLog) {
+              $appConnected = Select-String -Path $appLog -Pattern 'command received' -Quiet
+            }
+            if (-not $appConnected) { Start-Sleep -Seconds 2 }
+          } while (-not $appConnected -and [DateTime]::UtcNow -lt $connectDeadline)
+          if (-not $appConnected) { throw "Explorer did not connect to AltTester within 120 seconds" }
+          Write-Host "Explorer exchanged commands with AltTester; starting NUnit suite"
+
+          # No target: run against the explicitly launched Explorer session.
           $ErrorActionPreference = "Continue"
-          mf explorer test $env:BUILD_URL `
+          mf explorer test `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
             --report-type SingleFile `
-            --skip-allure-open `
-            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen"
+            --skip-allure-open
           exit $LASTEXITCODE
 
       - name: Locate benchmark outputs
