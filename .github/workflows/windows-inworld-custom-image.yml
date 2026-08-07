@@ -2,6 +2,12 @@ name: Windows InWorld custom-image benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      test_filter:
+        description: 'NUnit filter. Use Category=InWorld for the complete 59-test suite.'
+        required: false
+        default: 'Name=TestExplorerIsInWorldFromTokenBridge'
+        type: string
   push:
     branches:
       - test/windows-inworld-custom-image
@@ -23,7 +29,9 @@ jobs:
 
     env:
       BUILD_URL: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev/pu-24728-9248698/Decentraland_windows64.zip
-      TEST_FILTER: Category=InWorld
+      # Pushes are a fast end-to-end chassis smoke. A manual dispatch can
+      # override this with Category=InWorld for the complete sequential suite.
+      TEST_FILTER: ${{ inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       ALT_VERBOSE_LOGS: 'false'
       EXPLORER_PERF_RECORD: '0'
 
@@ -107,10 +115,8 @@ jobs:
           }
 
       - name: Run InWorld suite
-        # The current InWorld filter discovers 59 sequential UI tests. The
-        # first successful Windows handshake was still actively issuing
-        # screenshots/clicks after 21 minutes, so leave enough room to collect
-        # a complete baseline before deciding how to shard the suite.
+        # Manual Category=InWorld runs discover 59 sequential UI tests. Pushes
+        # run one cross-platform smoke test and should complete much sooner.
         timeout-minutes: 45
         shell: powershell
         env:
