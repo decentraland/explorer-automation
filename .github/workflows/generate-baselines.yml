@@ -30,11 +30,16 @@ name: Generate Baselines
 # Required secrets / vars (configure once on the repo):
 #   - secrets.ALTTESTER_LICENSE                       AltTester Pro license key
 #   - secrets.REPOS_READ_ONLY_TOKEN                   PAT with read on decentraland/MetaForge + decentraland/unity-explorer, write on this repo
-#   - secrets.EXPLORER_TEAM_S3_BUCKET                 S3 bucket for the Allure report
-#   - secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION        AWS region the bucket lives in
-#   - secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID         S3 upload credentials
-#   - secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY     S3 upload credentials
-#   - vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL         Public-facing prefix of the bucket
+#   - vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL         Host serving unity-explorer builds (used here to build the download URL)
+#
+# Passed through to run-visual-suite.yml via `secrets: inherit` for the Allure
+# report upload. This repo is granted the DEV_-prefixed family, *not* the
+# un-prefixed one unity-explorer carries — see that workflow's header:
+#   - secrets.DEV_EXPLORER_TEAM_S3_BUCKET
+#   - secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION
+#   - secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID
+#   - secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY
+#   - vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL
 
 on:
   issue_comment:
@@ -171,6 +176,9 @@ jobs:
         if: steps.gate.outputs.authorized == 'true'
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          # Explorer builds, unlike the Allure report, always live in the
+          # un-prefixed (.org) bucket — that is where unity-explorer's
+          # build-unitycloud.yml publishes them regardless of who reads them.
           PUBLIC_URL_PREFIX: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
           HEAD_REF: ${{ steps.pr.outputs.head_ref }}
         run: |
