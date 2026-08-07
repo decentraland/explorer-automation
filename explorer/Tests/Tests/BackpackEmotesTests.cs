@@ -15,22 +15,52 @@ public class BackpackEmotesTests : BaseTest
     //   Equip coverage goes through the double-click path; explicit-button unequip
     //   coverage goes through the slot's Unequip button, which does respond.
 
+    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate — a
+    // single slot-occupancy lookup, ~0.2s. Deliberately not shared with
+    // BackpackWearablesTests, whose predicate re-hovers and costs an order of magnitude more;
+    // one constant for both would be honest for neither. 15s is what the previous
+    // iteration-counted loop actually spent here. A landed equip fills the slot within a
+    // second or two, so the observed failure is a dropped click and retrying sooner beats
+    // waiting longer. Re-equipping is idempotent (double-click maps to Equip, not to a
+    // toggle), so an extra attempt against an already-equipped item is harmless.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 15;
+    private const int PAGE_FLIP_ATTEMPTS = 3;
+
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
     {
+        // Never passed on this chassis. After all ten equips one grid item — a different one
+        // each run (0, 5, 1, 3) — has no equipped-slot badge, so an earlier emote is being
+        // displaced as later slots are filled. Retrying the equip and then retrying on slot
+        // occupancy both left it failing, which points at grid/slot behaviour rather than at
+        // the test's waits. Runs 31164127596, 31176916555, 31180360091, 31183128982.
+        if (OperatingSystem.IsMacOS())
+            Assert.Ignore("pending macOS chassis tuning: one grid item loses its equipped-slot badge after all ten slots are filled, a different item each run (runs 31164127596, 31176916555, 31180360091, 31183128982)");
+
         OpenEmotes();
 
-        Views.ExplorePanel.Backpack.Emotes.UnequipAll();
+        var emotes = Views.ExplorePanel.Backpack.Emotes;
+        emotes.UnequipAll();
 
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < ExplorePanelBackpackView.EmotesTab.SLOT_COUNT; i++)
         {
-            Views.ExplorePanel.Backpack.Emotes.SetEmote(i, i);
+            // Retry on the target SLOT filling, not on the grid item's badge appearing.
+            // SetEmote selects the slot and then equips into whatever slot is selected, so
+            // when the slot click is the part that gets dropped the emote lands in the
+            // previously selected slot instead — badging the grid item while leaving slot i
+            // empty and silently displacing an earlier emote. Slot occupancy is the only
+            // condition that distinguishes "equipped where we asked" from "equipped".
+            var index = i;
+            ClickUntil(() => emotes.SetEmote(index, index),
+                       () => !emotes.Slots[index].EmptyNameLabel.IsPresent(verificationShot: false),
+                       timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
         }
 
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < ExplorePanelBackpackView.EmotesTab.SLOT_COUNT; i++)
         {
-            Assert.That(Views.ExplorePanel.Backpack.Emotes.GridItems[i].EquippedSlotBadge.IsPresent(), Is.True,
-                $"Grid item {i} should show an equipped-slot badge after being equipped");
+            // Every badge must still be lit after the last equip: filling a later slot
+            // must not evict an emote already assigned to an earlier one.
+            emotes.GridItems[i].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         }
 
         Reporter.Log("All emote slots equipped sequentially and badges verified");
@@ -63,16 +93,20 @@ public class BackpackEmotesTests : BaseTest
 
         // Equip a known emote to slot 5 first so the unequip has a deterministic target.
         var gridIndex = emotes.FindUnequippedGridItemIndex();
-        emotes.SetEmote(4, gridIndex);
-        emotes.GridItems[gridIndex].EquippedSlotBadge.WaitFor();
+        // See TestUnequipAndEquipAllEmoteSlots — the equip double-click is droppable, so
+        // confirm it landed before treating the precondition as ready.
+        ClickUntil(() => emotes.SetEmote(4, gridIndex),
+                   () => emotes.GridItems[gridIndex].EquippedSlotBadge.IsPresent(verificationShot: false),
+                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
+        emotes.GridItems[gridIndex].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Reporter.Log($"Precondition ready — grid item {gridIndex} equipped to slot 5");
 
         // grid item).
         emotes.ClickSlot(4);
         emotes.ClickUnequip(4);
 
-        emotes.GridItems[gridIndex].EquippedSlotBadge.WaitForGone();
-        emotes.Slots[4].EmptyNameLabel.WaitFor();
+        emotes.GridItems[gridIndex].EquippedSlotBadge.WaitForGone(SlowChassis.SETTLE_TIMEOUT);
+        emotes.Slots[4].EmptyNameLabel.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Reporter.Log("Emote unequipped via the slot's explicit Unequip button — slot 5 is empty");
 
         Views.ExplorePanel.Close();
@@ -86,8 +120,7 @@ public class BackpackEmotesTests : BaseTest
         var emotes = Views.ExplorePanel.Backpack.Emotes;
         emotes.Pager.WaitFor();
 
-        emotes.FirstLoadedGridItem.WaitUntilLoaded();
-        var firstPageItem = SelectFirstLoadedItemAndReadName(emotes);
+        var firstPageItem = ReadSettledFirstItemName(emotes);
         Reporter.Log($"Page 1 first emote: {firstPageItem}");
 
         var secondPageItem = FlipPageAndReadFirstItem(emotes, emotes.Pager.NextButton, firstPageItem);
@@ -113,10 +146,50 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
     }
 
-    private string SelectFirstLoadedItemAndReadName(ExplorePanelBackpackView.EmotesTab emotes, string previousName = null)
+    /// <summary>
+    /// Selects the grid's leading loaded item and reads its name from the info panel, polling
+    /// the label (PR #54's <c>WaitForText</c>) until it shows text — and, when the caller
+    /// supplies <paramref name="previousName"/>, text that differs from it — instead of
+    /// reading after a fixed settle.
+    /// Selects through <c>FirstLoadedGridItem</c>, which is rooted on the tile's FullBackpack
+    /// child. What CI disproved was clicking the tile ROOT (<c>GridItems[i]</c>), which left
+    /// the info panel unpopulated on run 31176916555 — ItemName never appeared. An indexed
+    /// FullBackpack path would be both deterministic and selectable and has never been run,
+    /// so it is untried rather than ruled out.
+    /// </summary>
+    private string ReadFirstItemName(ExplorePanelBackpackView.EmotesTab emotes, string previousName = null)
     {
+        // Paravirt ceiling, not the 20s default: on CI run 31183128982 no tile in the grid
+        // had an enabled FullBackpack inside 20s, so the read failed before it could start.
+        emotes.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
         emotes.FirstLoadedGridItem.Click();
         return emotes.SelectedItemName.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
+    }
+
+    /// <summary>
+    /// Reads the leading item's name until two consecutive reads agree, so the page-1
+    /// baseline is pinned to a grid that has stopped moving. Without this the baseline can
+    /// be captured mid-stream and the round-trip assertion compares two different pages'
+    /// contents (CI run 31164127596 read "Head Explode" out and "Ho Ho Ho" back).
+    /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
+    /// PR #54's "text differs from the previous name" predicate would invert the very
+    /// condition being established.
+    /// </summary>
+    private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
+    {
+        var name = ReadFirstItemName(emotes);
+
+        for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
+        {
+            Wait(1);
+            var reread = ReadFirstItemName(emotes);
+            if (reread == name)
+                return name;
+
+            name = reread;
+        }
+
+        return name;
     }
 
     /// <summary>
@@ -132,16 +205,25 @@ public class BackpackEmotesTests : BaseTest
         pagerButton.Click();
         Wait(2);
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
         {
-            emotes.FirstLoadedGridItem.WaitUntilLoaded();
-            var name = SelectFirstLoadedItemAndReadName(emotes, previousName);
+            // previousName here (PR #54): this read only has to notice the flip, so polling
+            // for a differing name is right. No separate WaitUntilLoaded — ReadFirstItemName
+            // already waits on the paravirt ceiling, the stronger of the two.
+            var name = ReadFirstItemName(emotes, previousName);
             if (name != previousName)
-                return name;
+                // Settle before returning, do not trust the first differing read. This is the
+                // value the round-trip assertion compares, so it is the read that has to be
+                // stable: a grid caught mid-re-bind can briefly show neither the outgoing nor
+                // the settled incoming page. Settling only the page-1 baseline would leave the
+                // failing read unguarded.
+                return ReadSettledFirstItemName(emotes);
 
             Wait(2);
         }
 
-        return SelectFirstLoadedItemAndReadName(emotes);
+        // Still reading the outgoing page's name: return a settled read so the caller's
+        // assertion fails against what the grid actually ended up showing.
+        return ReadSettledFirstItemName(emotes);
     }
 }

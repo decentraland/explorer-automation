@@ -1,6 +1,7 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Navmap Tests")]
+[Category("InWorld")]
 [Order(13)]
 public class NavmapTests : BaseTest
 {

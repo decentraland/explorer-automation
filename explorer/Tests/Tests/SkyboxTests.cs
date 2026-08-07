@@ -30,6 +30,7 @@ public class SkyboxTests : BaseTest
         OpenSkyboxMenu();
 
         // The slider only reacts while auto progression is off (interactable gating).
+        var autoProgressionWasOn = Views.MainMenu.Skybox.IsAutoProgressionOn();
         Views.MainMenu.Skybox.SetAutoProgression(false);
         var timeBefore = Views.MainMenu.Skybox.TimeLabel.GetText();
 
@@ -43,15 +44,18 @@ public class SkyboxTests : BaseTest
         Assert.That(parsed, Is.InRange(new TimeSpan(17, 50, 0), new TimeSpan(18, 10, 0)),
             "Time label should reflect the slider position (~18:00 for 0.75)");
 
-        // Cleanup: restore auto progression so the client's day cycle keeps running. The
-        // menu occasionally closes itself right after a slider write — reopen if needed.
+        // Cleanup: put auto progression back the way this client started, rather than forcing
+        // it on. The InWorld chassis launches the Explorer with --skybox-time-enabled false,
+        // which leaves the day cycle off and the toggle unable to latch on — forcing true
+        // there fails the test on a cleanup step whose assertions have all already passed.
+        // The menu occasionally closes itself right after a slider write — reopen if needed.
         if (!Views.MainMenu.Skybox.IsPresent())
         {
             Reporter.Log("Skybox menu closed itself after the slider write — reopening for cleanup");
             OpenSkyboxMenu();
         }
 
-        Views.MainMenu.Skybox.SetAutoProgression(true);
+        Views.MainMenu.Skybox.SetAutoProgression(autoProgressionWasOn);
         PressEscape();
         Views.MainMenu.Skybox.WaitForGone();
     }

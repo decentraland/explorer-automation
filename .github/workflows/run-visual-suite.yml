@@ -130,7 +130,7 @@ jobs:
           case "$TARGET_OS" in
             macos) ;;
             windows)
-              echo "::error::platform=windows is not yet supported — install steps are macOS-only. See per-os-baselines-plan.md."
+              echo "::error::platform=windows is not yet supported — the install steps in this workflow are macOS-only (hdiutil/dmg, /Applications, brew). Re-run with platform=macos."
               exit 1
               ;;
             *) echo "::error::Unknown platform '$TARGET_OS'. Expected 'macos' or 'windows'."; exit 1 ;;

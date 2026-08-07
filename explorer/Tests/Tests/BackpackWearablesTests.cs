@@ -12,6 +12,14 @@ public class BackpackWearablesTests : BaseTest
     // path (BackpackItemView treats clickCount == 2 as Equip) and use the hover overlay
     // only as a read-only equipped-state indicator.
 
+    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate,
+    // IsEquipped, which on a negative re-hovers up to three times — each a round-trip plus a
+    // 400ms settle, so one evaluation costs ~2-3s. 60s is what the previous iteration-counted
+    // loop actually spent here (20 iterations x ~3s); it is stated honestly rather than
+    // shortened, because two ungated tests depend on this budget.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 60;
+    private const int PAGE_FLIP_ATTEMPTS = 3;
+
     [Test]
     public void TestEquipWearableBySlot()
     {
@@ -23,8 +31,7 @@ public class BackpackWearablesTests : BaseTest
 
         // Pick a hair that is not currently equipped so the test is re-runnable.
         var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        target.DoubleClickEquip();
-        WaitUntil(() => target.IsEquipped(verificationShot: false));
+        EquipUntilShown(target);
 
         Assert.That(target.IsEquipped(), Is.True,
             "Grid item should show the hover Unequip indicator after being equipped");
@@ -43,8 +50,7 @@ public class BackpackWearablesTests : BaseTest
         Wait(2);
 
         var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        target.DoubleClickEquip();
-        WaitUntil(() => target.IsEquipped(verificationShot: false));
+        EquipUntilShown(target);
 
         Assert.That(target.IsEquipped(), Is.True,
             "Grid item should show the hover Unequip indicator after double-click equip");
@@ -67,10 +73,11 @@ public class BackpackWearablesTests : BaseTest
         // stale tile too).
         Wait(2);
 
-        // shows a matching item.
-        var result = Views.ExplorePanel.Backpack.Wearables.FirstLoadedGridItem;
-        result.WaitUntilLoaded();
-        var itemName = SelectItemAndReadName(result, Views.ExplorePanel.Backpack.Wearables.SelectedItemName);
+        // shows a matching item. Settled read: the grid pool keeps pre-search tiles enabled
+        // while results stream in, so a single read can land on one the search is about to
+        // replace — the same exposure as the pagination round-trip, just cheaper to hit here
+        // because every surviving tile matches the query.
+        var itemName = ReadSettledFirstItemName(Views.ExplorePanel.Backpack.Wearables);
         Assert.That(itemName.ToLowerInvariant(), Does.Contain("punk"),
             $"Selected search result '{itemName}' should match the search term 'Punk'");
         Reporter.Log($"Search returned and selected '{itemName}'");
@@ -86,8 +93,7 @@ public class BackpackWearablesTests : BaseTest
         var wearables = Views.ExplorePanel.Backpack.Wearables;
         wearables.Pager.WaitFor();
 
-        wearables.FirstLoadedGridItem.WaitUntilLoaded();
-        var firstPageItem = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+        var firstPageItem = ReadSettledFirstItemName(wearables);
         Reporter.Log($"Page 1 first item: {firstPageItem}");
 
         var secondPageItem = FlipPageAndReadFirstItem(wearables, wearables.Pager.NextButton, firstPageItem);
@@ -115,6 +121,23 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
+    /// Equips the item, retrying until the hover overlay confirms it. The equip double-click
+    /// is dropped when it lands during a grid re-bind, so a single attempt followed by a
+    /// fixed wait reads back unequipped — the failure behind TestDoubleClickEquipWearable on
+    /// CI runs 31176916555 and 31180360091. Re-equipping an already-equipped item is a no-op.
+    /// Deliberately not PR #54's WaitUntil on IsEquipped: polling longer cannot produce a
+    /// state a dropped click never started. The deadline-based budget is also what this
+    /// predicate needs — a negative IsEquipped re-hovers and costs ~2-3s an evaluation.
+    /// </summary>
+    private void EquipUntilShown(ExplorePanelBackpackView.BackpackGridItem item)
+    {
+        ClickUntil(() => item.DoubleClickEquip(),
+                   () => item.IsEquipped(verificationShot: false),
+                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
+        Wait(2);
+    }
+
+    /// <summary>
     /// Clicks the item and reads the info panel name, polling until the label shows text
     /// that differs from <paramref name="previousName"/> (or any text, on the first-ever
     /// selection) — a click on a tile that is still refreshing is a no-op and would
@@ -130,6 +153,40 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
+    /// Reads the leading item's name until two consecutive reads agree, so a baseline is
+    /// pinned to a grid that has stopped moving. FirstLoadedGridItem is an unindexed path,
+    /// and the grid pool keeps stale tiles enabled while results stream in, so a single read
+    /// can land on a tile the page is about to replace — the defect that failed the emotes
+    /// pagination round-trip on CI run 31164127596 and is latent here.
+    /// Selection stays on FirstLoadedGridItem because that is the variant with a green run
+    /// behind it. What CI actually disproved was clicking the tile ROOT (<c>GridItems[i]</c>),
+    /// which left the info panel unpopulated on run 31176916555. An indexed FullBackpack path
+    /// would be both deterministic and selectable and is the obvious next thing to try, but it
+    /// has never been run — do not assume it is ruled out.
+    /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
+    /// PR #54's "text differs from the previous name" predicate would invert the very
+    /// condition being established.
+    /// </summary>
+    private string ReadSettledFirstItemName(ExplorePanelBackpackView.WearablesTab wearables)
+    {
+        wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+        var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+
+        for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
+        {
+            Wait(1);
+            wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+            var reread = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+            if (reread == name)
+                return name;
+
+            name = reread;
+        }
+
+        return name;
+    }
+
+    /// <summary>
     /// Clicks a pager arrow and reads the (re-selected) first item name, retrying once
     /// when the name has not changed yet — the grid rebuild can swallow the first click.
     /// </summary>
@@ -141,16 +198,25 @@ public class BackpackWearablesTests : BaseTest
         pagerButton.Click();
         Wait(2);
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
         {
-            wearables.FirstLoadedGridItem.WaitUntilLoaded();
+            // Paravirt ceiling on the load wait (ours), previousName on the read (PR #54):
+            // this read only has to notice the flip, so polling for a differing name is right.
+            wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
             var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName, previousName);
             if (name != previousName)
-                return name;
+                // Settle before returning, do not trust the first differing read. This is the
+                // value the round-trip assertion compares, so it is the read that has to be
+                // stable: a grid caught mid-re-bind can briefly show neither the outgoing nor
+                // the settled incoming page. Settling only the page-1 baseline would leave the
+                // failing read unguarded.
+                return ReadSettledFirstItemName(wearables);
 
             Wait(2);
         }
 
-        return SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+        // Still reading the outgoing page's name: return a settled read so the caller's
+        // assertion fails against what the grid actually ended up showing.
+        return ReadSettledFirstItemName(wearables);
     }
 }

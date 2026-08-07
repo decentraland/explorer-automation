@@ -29,6 +29,9 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     public readonly Readable  UserIDText          = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/UserID");
     public readonly Clickable CopyNameButton      = new(By.PATH, "//UserBasicInfo_PassportSubView/UserNameContainer/CopyButton");
     public readonly Clickable CopyIDButton        = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/CopyButton");
+    // Bare name deliberately: the pencil is NOT a descendant of Passport(Clone) in this
+    // build — scoping it to //Passport(Clone)//EditNameButton stopped resolving entirely
+    // (CI run 31180360091, "was not found within 20 seconds").
     public readonly Clickable EditNameButton      = new(By.NAME, "EditNameButton");
     public readonly Clickable ClaimNameButton     = new(By.PATH, "//UserBasicInfo_PassportSubView//ClaimNameButton");
 
@@ -66,15 +69,15 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     [AllureStep("Rename user via the passport name editor")]
     public void RenameUser(string newName)
     {
-        EditNameButton.Click();
-        NameEditor.WaitFor();
+        EditNameButton.ClickOrTap(() => NameEditor.IsPresent(verificationShot: false));
+        NameEditor.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         // The modal pre-fills the input with the current name asynchronously after opening.
         // Typing before that lands gets overwritten by the pre-fill, and Save then submits
         // the unchanged name (verified live) — so wait for the pre-fill first.
         NameEditor.WaitForPrefill();
         NameEditor.NameInput.SetText(newName, submit: false);
         NameEditor.SaveButton.Click();
-        NameEditor.WaitForGone();
+        NameEditor.WaitForGone(SlowChassis.SETTLE_TIMEOUT);
         Reporter.Log($"Saved username '{newName}' via the name editor");
     }
 
@@ -84,7 +87,7 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     /// optimistically while the profile update is still in flight).
     /// </summary>
     [AllureStep("Wait for the passport header to show a name")]
-    public bool WaitForUserName(string expected, double timeoutSeconds = 10)
+    public bool WaitForUserName(string expected, double timeoutSeconds = SlowChassis.SETTLE_TIMEOUT)
     {
         // Shot-suppressed reads inside the poll loop: a capture per iteration would both spam
         // the report and eat the fixed wall-clock deadline (each capture is a synchronous
@@ -136,7 +139,7 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
         /// the input field. Text set before that point gets overwritten by the pre-fill.
         /// </summary>
         [AllureStep("Wait for the name input to pre-fill")]
-        public void WaitForPrefill(double timeoutSeconds = 5)
+        public void WaitForPrefill(double timeoutSeconds = SlowChassis.SETTLE_TIMEOUT)
         {
             // Shot-suppressed reads inside the poll loop (see WaitForUserName); one shot at
             // completion shows the pre-filled input the subsequent SetText relies on.

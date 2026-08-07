@@ -64,12 +64,13 @@ public class ShortcutsTests : BaseTest
 
     // Same reason as TestOpenGalleryFromSidebar: opening Gallery touches ~/Downloads (Camera
     // Reel storage in unity-explorer ReelCommonActions.cs) and triggers macOS's TCC dialog,
-    // which steals focus from the Explorer window. Use Assert.Ignore so the test shows up as
-    // "skipped" with a visible reason in the Allure report.
+    // which steals focus from the Explorer window. Windows has no equivalent TCC prompt,
+    // so the test can run there.
     [Test]
     public void TestOpenGalleryWithShortcut()
     {
-        Assert.Ignore("can't access user device");
+        if (OperatingSystem.IsMacOS())
+            Assert.Ignore("macOS TCC dialog for ~/Downloads steals focus");
 
         PressKey(AltKeyCode.K);
 
