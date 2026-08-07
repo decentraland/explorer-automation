@@ -47,7 +47,10 @@ on:
         default: ''
 
 permissions:
-  contents: read
+  # Must be a superset of what the reusable run-visual-suite.yml declares
+  # (contents: write for its record-mode baseline commits), or every dispatch
+  # dies at startup with a permissions mismatch before any job runs.
+  contents: write
   pull-requests: write
 
 concurrency:
