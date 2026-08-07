@@ -294,35 +294,14 @@ jobs:
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
           } >> "$GITHUB_OUTPUT"
 
-      # Lifted wholesale from run-visual-suite.yml (Mac visual reusable).
-      # Installs dotnet 10, AltTester via the .dmg flow, allure via npm.
-      - name: Install runtime prerequisites
-        run: |
-          set -euo pipefail
-          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-          chmod +x /tmp/dotnet-install.sh
-          /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"
-          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet --version
-
-          ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_1.zip"
-          curl -fsSL "$ALTTESTER_URL" -o /tmp/alttester.zip
-          unzip -q /tmp/alttester.zip -d /tmp/alttester
-          ALTTESTER_DMG=$(find /tmp/alttester -maxdepth 4 -name "AltTesterDesktop*.dmg" -type f | head -1)
-          [ -n "$ALTTESTER_DMG" ] || { echo "::error::AltTesterDesktop dmg not found in zip"; exit 1; }
-          hdiutil attach "$ALTTESTER_DMG" -nobrowse -quiet
-          ALTTESTER_APP=$(find /Volumes -maxdepth 3 -name "AltTesterDesktop.app" -type d 2>/dev/null | head -1)
-          [ -n "$ALTTESTER_APP" ] || { echo "::error::AltTesterDesktop.app not found under /Volumes"; ls /Volumes; exit 1; }
-          cp -R "$ALTTESTER_APP" /Applications/
-          MOUNT_POINT=$(dirname "$ALTTESTER_APP")
-          hdiutil detach "$MOUNT_POINT" -quiet || true
-          xattr -dr com.apple.quarantine /Applications/AltTesterDesktop.app || true
-          ls /Applications/AltTesterDesktop.app/Contents/MacOS/AltTesterDesktop
-
-          npm install -g allure --no-fund --no-audit --loglevel=error
-          allure --version
-          gh --version
+      # dotnet + AltTester + allure + MetaForge + license, shared verbatim with
+      # run-visual-suite.yml's chassis. Must come after the checkout above:
+      # `uses: ./…` resolves against $GITHUB_WORKSPACE.
+      - name: Set up Explorer test runner
+        uses: ./.github/actions/setup-explorer-runner
+        with:
+          github-token: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          alttester-license: ${{ secrets.ALTTESTER_LICENSE }}
 
       # rust_audio (com.decentraland.livekit-sdk) calls cpal::supports_input on
       # every device returned by kAudioHardwarePropertyDevices during
@@ -375,28 +354,6 @@ jobs:
             *) echo "::error::Default input is '$DEFAULT_IN', expected BlackHole"; exit 1 ;;
           esac
 
-      - name: Verify MetaForge access
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Missing REPOS_READ_ONLY_TOKEN secret"
-            exit 1
-          fi
-          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
-
-      # install.sh installs the latest release. v2.15.0+ launches Explorer via
-      # direct exec of Contents/MacOS/<binary> instead of /usr/bin/open, which
-      # is what lets the DYLD wrapper installed below survive into the Explorer
-      # process (LaunchServices strips DYLD_* at the SIP boundary).
-      - name: Install MetaForge
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
-          echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
-
       # ── Apply CI log matrix so InWorld runs get the verbose logging they
       # need. macOS LogMatrixStore path is ~/Library/Application Support/
       # Decentraland/MetaForge/log-matrix.json; the planned Windows chassis
@@ -413,17 +370,6 @@ jobs:
           mkdir -p "$(dirname "$DST")"
           cp "$SRC" "$DST"
           echo "Applied CI log matrix: $SRC -> $DST"
-
-      - name: Configure AltTester license
-        env:
-          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ALTTESTER_LICENSE:-}" ]; then
-            echo "::error::Missing ALTTESTER_LICENSE secret"
-            exit 1
-          fi
-          mf alttester set-license "$ALTTESTER_LICENSE"
 
       - name: Pre-install Explorer build
         env:
