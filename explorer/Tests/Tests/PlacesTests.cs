@@ -8,6 +8,9 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(11)]
 public class PlacesTests : BaseTest
 {
+    // Per-attempt budget for the place detail popup to instantiate after a card click.
+    private const double DETAIL_OPEN_PER_ATTEMPT = 20;
+
     [Test]
     public void TestSwitchPlacesTabs()
     {
@@ -64,17 +67,19 @@ public class PlacesTests : BaseTest
     [Test]
     public void TestOpenPlaceDetail()
     {
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: PlaceDetailPanel exceeds the 20s wait on paravirt content streaming");
-
         OpenPlaces();
 
         var placeName = Views.ExplorePanel.Places.Cards[0].PlaceName.GetText();
         // Click the thumbnail, not the card root — the hover overlay puts JUMP IN and the
         // like/heart/home buttons at the card's center (see PlaceCard doc comment).
-        Views.ExplorePanel.Places.Cards[0].Thumbnail.Click();
+        // Retried: the results grid re-binds while places stream in and a click landing
+        // mid-rebuild is dropped. The per-attempt budget must exceed a slow-but-working
+        // open, otherwise the retry click lands on the detail panel that is already up.
+        ClickUntil(() => Views.ExplorePanel.Places.Cards[0].Thumbnail.Click(),
+                   () => Views.ExplorePanel.Places.PlaceDetail.IsPresent(verificationShot: false),
+                   timeoutPerAttempt: DETAIL_OPEN_PER_ATTEMPT);
 
-        Views.ExplorePanel.Places.PlaceDetail.WaitFor();
+        Views.ExplorePanel.Places.PlaceDetail.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Assert.That(Views.ExplorePanel.Places.PlaceDetail.PlaceTitle.GetText(), Is.EqualTo(placeName),
             "Place detail title should match the clicked card");
         Reporter.Log($"Place detail opened for '{placeName}'");

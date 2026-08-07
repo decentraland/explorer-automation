@@ -110,7 +110,7 @@ on:
 
   # TEMPORARY validation trigger — removed before merge (Task 5).
   push:
-    branches: [feat/macOS-inWorld-workflow]
+    branches: [feat/macOS-inWorld-workflow, fix/macos-inworld-test-tuning]
     paths:
       - '.github/workflows/run-inworld-suite.yml'
       - 'explorer/Tests/**'

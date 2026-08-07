@@ -71,9 +71,14 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
         public void SetBio(string bio)
         {
             EditAboutMeButton.Click();
+            // Edit mode swaps the read-only InfoField for the input asynchronously. Wait for
+            // the input explicitly instead of leaning on SetText's own (shorter) wait, so a
+            // slow swap reports the missing input rather than a nested invocation exception.
+            BioInput.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
             BioInput.SetText(bio, submit: false);
             SaveBioButton.Click();
-            BioText.WaitFor();
+            // The read-only field comes back only once the profile update round-trip lands.
+            BioText.WaitFor(SlowChassis.SETTLE_TIMEOUT);
             Reporter.Log($"Saved About Me bio '{bio}'");
         }
 

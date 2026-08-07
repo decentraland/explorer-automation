@@ -11,6 +11,9 @@ public class BackpackOutfitsTests : BaseTest
     // ButtonUnequip is never enabled because the equipped state (EquippedBackground)
     // never activates, even right after equipping an outfit and reopening the panel.
 
+    // Per-attempt budget for a confirmed equip, matching BackpackEmotesTests.
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 20;
+
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()
     {
@@ -57,9 +60,6 @@ public class BackpackOutfitsTests : BaseTest
     [Test, Order(3)]
     public void TestEquipFirstSavedOutfit()
     {
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: equip state not reflected when the precondition asserts on paravirt (flaky: passed runs 31164127596 + 31166377912, failed run 31168104702)");
-
         OpenBackpack();
         Views.ExplorePanel.Backpack.OpenSavedOutfits();
         Views.ExplorePanel.Backpack.SavedOutfits.EnsureFirstSlotSaved();
@@ -69,7 +69,13 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
         Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        hair.DoubleClickEquip();
+        // The equip double-click is silently dropped when it lands during a grid re-bind,
+        // and the hover overlay is the only equip-state signal — retry the equip itself
+        // rather than only widening the read that follows it. The per-attempt budget is
+        // long enough that a slow-but-working equip is never double-clicked back off.
+        ClickUntil(() => hair.DoubleClickEquip(),
+                   () => hair.IsEquipped(verificationShot: false),
+                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
         Wait(2);
         // The double-click also selects the item, so the info panel shows its name.
         var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();

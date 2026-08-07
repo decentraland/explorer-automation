@@ -126,7 +126,8 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
 
             AutoProgressionToggle.Click();
             AutoProgressionToggle.WaitFor(20D, verificationShot: false).WaitForComponentProperty(
-                "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI", timeout: 5);
+                "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI",
+                timeout: SlowChassis.SETTLE_TIMEOUT);
             Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
             Reporter.Log($"Auto time progression turned {(enabled ? "on" : "off")}");
         }

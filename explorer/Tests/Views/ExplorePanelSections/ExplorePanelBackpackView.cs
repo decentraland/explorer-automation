@@ -377,7 +377,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // single shot is taken after that wait (a mid-load frame would misrepresent it).
             var gridItem = GridItems[index].WaitFor(20D, verificationShot: false);
             gridItem.WaitForComponentProperty<bool>(
-                "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack", timeout: 10);
+                "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
+                timeout: SlowChassis.SETTLE_TIMEOUT);
             Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
             Reporter.Log($"Grid item {index} finished loading");
         }

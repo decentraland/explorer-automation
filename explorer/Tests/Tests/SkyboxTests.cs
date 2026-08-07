@@ -27,9 +27,6 @@ public class SkyboxTests : BaseTest
     [Test]
     public void TestModifySkyboxTime()
     {
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: skybox toggle isOn not reflected within 5s on paravirt");
-
         OpenSkyboxMenu();
 
         // The slider only reacts while auto progression is off (interactable gating).
