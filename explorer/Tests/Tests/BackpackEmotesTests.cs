@@ -60,6 +60,9 @@ public class BackpackEmotesTests : BaseTest
     [Test]
     public void TestUnequipEmoteWithSlotButton()
     {
+        if (OperatingSystem.IsMacOS())
+            Assert.Ignore("pending macOS chassis tuning: equipped-slot badge does not render within the 20s wait on paravirt (flaky: passed run 31164127596, failed run 31166377912)");
+
         OpenEmotes();
 
         var emotes = Views.ExplorePanel.Backpack.Emotes;
