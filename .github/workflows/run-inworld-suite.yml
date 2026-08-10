@@ -603,6 +603,14 @@ jobs:
       # and serves from S3 unchanged.
       #
       # `always()`: a failed run is exactly when the report matters most.
+      #
+      # Deliberate behaviour change: a report-generation failure now fails this
+      # step, and so the job. metaforge swallowed it — ExplorerTestCommand
+      # returned only the test exit code — so before this an all-green run whose
+      # report failed stayed green with `_not generated_` in the PR comment,
+      # which is how run 31379557564 lost 59 tests' worth of evidence quietly.
+      # Losing the evidence should be loud. Note this is the report-FAILED path
+      # only; "no results at all" below warns and skips instead.
       - name: Generate Allure report
         if: always() && env.DRY_RUN != 'true'
         run: |
@@ -625,19 +633,53 @@ jobs:
                            -print -quit 2>/dev/null || true)
           fi
 
-          # No results at all is a different failure from generation failing:
-          # the test process died before any fixture reported. Nothing to
-          # generate from, so warn and leave the report absent — the locate step
-          # then yields an empty report_path and skips the upload chain, and the
-          # raw results and logs still ship as a workflow artifact.
-          if [ -z "$RESULTS" ] || [ -z "$(ls -A "$RESULTS" 2>/dev/null)" ]; then
-            echo "::warning::No Allure results found — the test process produced none. Skipping report generation; logs are still attached as an artifact."
+          # Gate on *-result.json, not on the directory being non-empty. If the
+          # test host is killed mid-fixture (step timeout, or the cleanup step's
+          # pkill), Allure.NUnit has already flushed attachments and a
+          # *-container.json but no test result — and `allure awesome` happily
+          # turns that into a valid report reading {"total":0} / "passed". A
+          # zero-test report published behind a green link is worse than none,
+          # so require at least one actual result.
+          #
+          # No results is a different failure from generation failing: nothing
+          # ran, so there is nothing to generate. Warn, leave the report absent,
+          # and let the locate step yield an empty report_path and skip the
+          # upload chain. The raw results and logs still ship as an artifact.
+          if [ -z "$RESULTS" ] || \
+             [ -z "$(find "$RESULTS" -maxdepth 1 -name '*-result.json' -print -quit 2>/dev/null)" ]; then
+            echo "::warning::No Allure test results found — the run produced no *-result.json, so nothing reported before it stopped. Skipping report generation; logs are still attached as an artifact."
             exit 0
           fi
 
+          # Stage into a scratch dir and swap it in only once allure has
+          # succeeded. Two reasons, both verified against allure 3.14.3:
+          #
+          #   1. `allure awesome -o DIR` on a DIR that already holds a report
+          #      writes the new one to DIR/awesome/ and leaves the old
+          #      index.html byte-identical at the root. The locate step below
+          #      prefers the root, so it would publish the STALE report under
+          #      this run's URL with no warning. metaforge guarded against this
+          #      by deleting the report dir first. Harmless on an ephemeral
+          #      runner where the dir starts absent; live on a persistent
+          #      self-hosted runner and when running these steps locally.
+          #   2. allure copies every attachment into the tree, so a failure
+          #      partway through (ENOSPC being the realistic one) can leave a
+          #      valid-looking index.html beside incomplete data/ and widgets/.
+          #      Staging means index.html appears at the canonical path only
+          #      when the whole report is there.
+          #
+          # Sibling of the destination, so the mv is a same-filesystem rename.
+          #
+          # Clear the destination BEFORE generating, not after. A previous run's
+          # report has no value here, and if generation then fails, `set -e`
+          # aborts before the mv and leaves nothing behind — so the locate step
+          # correctly reports the report as absent rather than republishing run
+          # N's report under run N+1's URL behind a green [Open] link.
+          STAGE="${REPORT_DIR}.staging"
+          rm -rf "$STAGE" "$REPORT_DIR"
           echo "Generating report from: $RESULTS"
-          mkdir -p "$REPORT_DIR"
-          allure awesome "$RESULTS" -o "$REPORT_DIR"
+          allure awesome "$RESULTS" -o "$STAGE"
+          mv "$STAGE" "$REPORT_DIR"
 
       # Second of the two DRY_RUN gates on the publish chain: a skipped step
       # reports empty outputs, so every downstream step that requires
@@ -648,37 +690,25 @@ jobs:
         if: always() && env.DRY_RUN != 'true'
         run: |
           set -euo pipefail
-          # Canonical path first, and only then a search. A multi-file report is
-          # a tree, so an unanchored `-name index.html` can match a nested one
-          # and hand the publish chain a subdirectory to upload; under
-          # SingleFile there was exactly one file and the ambiguity did not
-          # exist. -maxdepth keeps the fallback from wandering deep for the same
-          # reason.
+          # An exact path check, not a search. metaforge runs with
+          # --report-type None, so the generate step above is the only thing that
+          # writes a report under the data dir, and it stages the tree and swaps
+          # it in atomically — index.html sitting here means a complete report.
+          # Searching would only add ways to pick the wrong index.html.
           REPORT_DIR="$HOME/Library/Application Support/Decentraland/MetaForge/allure-report"
-          if [ -f "$REPORT_DIR/index.html" ]; then
-            REPORT="$REPORT_DIR/index.html"
-          else
-            # -print -quit rather than `| head -1`: under `set -o pipefail` head
-            # closes stdin after one line, find writes again and takes SIGPIPE,
-            # and the pipeline returns non-zero. Same trap documented above at
-            # the Explorer .app lookup.
-            REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
-                          -maxdepth 3 -name "index.html" -path "*allure-report*" \
-                          -print -quit 2>/dev/null || true)
-          fi
-          if [ -z "$REPORT" ]; then
+          if [ ! -f "$REPORT_DIR/index.html" ]; then
             echo "::warning::Allure report not found; skipping upload."
             {
               echo "report_path="
               echo "report_dir="
             } >> "$GITHUB_OUTPUT"
           else
-            echo "Report at: $REPORT"
+            echo "Report at: $REPORT_DIR/index.html"
             # report_dir is what actually gets published — the report is a
             # directory of files now, not one self-contained HTML.
             {
-              echo "report_path=${REPORT}"
-              echo "report_dir=$(dirname "$REPORT")"
+              echo "report_path=${REPORT_DIR}/index.html"
+              echo "report_dir=${REPORT_DIR}"
             } >> "$GITHUB_OUTPUT"
           fi
 
@@ -843,7 +873,8 @@ jobs:
           # `allure awesome <results> --single-file -o <dir>` gives back the
           # openable-from-disk report, which is fine at one fixture's scale.
           # (Note `make explorer-report` does NOT work: its `allure generate
-          # --clean --single-file` is Allure 2 syntax and the pinned CLI is 3.x.)
+          # --clean --single-file` is Allure 2 syntax, and the chassis installs
+          # the Allure 3 CLI, which rejects --clean outright.)
           path: |
             ~/Library/Logs/Decentraland/Explorer/Player.log
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log

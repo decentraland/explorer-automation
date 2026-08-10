@@ -292,39 +292,66 @@ jobs:
                            -print -quit 2>/dev/null || true)
           fi
 
-          # No results at all is a different failure from generation failing:
-          # the test process died before any fixture reported. Let the locate
-          # step below own the hard failure so there is one place that decides
-          # a missing report is fatal.
-          if [ -z "$RESULTS" ] || [ -z "$(ls -A "$RESULTS" 2>/dev/null)" ]; then
-            echo "::warning::No Allure results found — the test process produced none. Skipping report generation."
+          # Gate on *-result.json, not on the directory being non-empty. If the
+          # test host is killed mid-fixture, Allure.NUnit has already flushed
+          # attachments and a *-container.json but no test result — and `allure
+          # awesome` happily turns that into a valid report reading {"total":0} /
+          # "passed". Publishing that would sail straight past the locate step's
+          # hard failure below, which exists precisely so a run cannot ship a
+          # green check with no real artifact.
+          #
+          # No results is a different failure from generation failing: nothing
+          # ran, so there is nothing to generate. Leave the report absent and let
+          # the locate step own the hard failure, so one place decides that a
+          # missing report is fatal.
+          if [ -z "$RESULTS" ] || \
+             [ -z "$(find "$RESULTS" -maxdepth 1 -name '*-result.json' -print -quit 2>/dev/null)" ]; then
+            echo "::warning::No Allure test results found — the run produced no *-result.json, so nothing reported before it stopped. Skipping report generation."
             exit 0
           fi
 
+          # Stage into a scratch dir and swap it in only once allure has
+          # succeeded. Two reasons, both verified against allure 3.14.3:
+          #
+          #   1. `allure awesome -o DIR` on a DIR that already holds a report
+          #      writes the new one to DIR/awesome/ and leaves the old
+          #      index.html byte-identical at the root. The locate step below
+          #      reads the root, so it would publish the STALE report under this
+          #      run's URL with no warning. metaforge guarded against this by
+          #      deleting the report dir first. Harmless on an ephemeral runner
+          #      where the dir starts absent; live on a persistent self-hosted
+          #      runner and when running these steps locally.
+          #   2. allure copies every attachment into the tree, so a failure
+          #      partway through (ENOSPC being the realistic one) can leave a
+          #      valid-looking index.html beside incomplete data/ and widgets/.
+          #      Staging means index.html appears at the canonical path only when
+          #      the whole report is there.
+          #
+          # Sibling of the destination, so the mv is a same-filesystem rename.
+          #
+          # Clear the destination BEFORE generating, not after. A previous run's
+          # report has no value here, and if generation then fails, `set -e`
+          # aborts before the mv and leaves nothing behind — so the locate step
+          # hard-fails as it should rather than republishing run N's report under
+          # run N+1's URL behind a green [Open] link.
+          STAGE="${REPORT_DIR}.staging"
+          rm -rf "$STAGE" "$REPORT_DIR"
           echo "Generating report from: $RESULTS"
-          mkdir -p "$REPORT_DIR"
-          allure awesome "$RESULTS" -o "$REPORT_DIR"
+          allure awesome "$RESULTS" -o "$STAGE"
+          mv "$STAGE" "$REPORT_DIR"
 
       - name: Locate Allure report
         id: report
         if: always()
         run: |
           set -euo pipefail
-          # Canonical path first, and only then a search. A multi-file report is
-          # a tree, so an unanchored `-name index.html` can match a nested one
-          # and hand the publish chain a subdirectory to upload; under
-          # SingleFile there was exactly one file and the ambiguity did not
-          # exist. -maxdepth keeps the fallback from wandering deep for the same
-          # reason.
+          # An exact path check, not a search. metaforge runs with
+          # --report-type None, so the generate step above is the only thing that
+          # writes a report under the data dir, and it stages the tree and swaps
+          # it in atomically — index.html sitting here means a complete report.
+          # Searching would only add ways to pick the wrong index.html.
           REPORT_DIR="$HOME/Library/Application Support/Decentraland/MetaForge/allure-report"
-          if [ -f "$REPORT_DIR/index.html" ]; then
-            REPORT="$REPORT_DIR/index.html"
-          else
-            REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
-                          -maxdepth 3 -name "index.html" -path "*allure-report*" \
-                          -print -quit 2>/dev/null || true)
-          fi
-          if [ -z "$REPORT" ]; then
+          if [ ! -f "$REPORT_DIR/index.html" ]; then
             # Hard fail: the report is the user-visible evidence of the run.
             # Missing it means we can't show pass/fail diffs to reviewers,
             # which defeats the point of the pipeline. Better to fail loudly
@@ -332,11 +359,12 @@ jobs:
             echo "::error::Allure report not found. The generate step above either found no results or failed — check its log."
             exit 1
           fi
+          echo "Report at: $REPORT_DIR/index.html"
           # report_dir is what actually gets published — the report is a
           # directory of files now, not one self-contained HTML.
           {
-            echo "report_path=${REPORT}"
-            echo "report_dir=$(dirname "$REPORT")"
+            echo "report_path=${REPORT_DIR}/index.html"
+            echo "report_dir=${REPORT_DIR}"
           } >> "$GITHUB_OUTPUT"
 
       # An ungranted secret arrives as an empty string, so a family mismatch
