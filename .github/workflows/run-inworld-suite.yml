@@ -577,37 +577,109 @@ jobs:
           # '=' form is mandatory — Spectre.Console parses the space form
           # ("--app-args ...") as a new option starting at --landscape...
           # See MetaForge ExplorerTestSettings.AppArgs description.
+          #
+          # --report-type None: report generation is ours now, in the step
+          # below. metaforge's ReportType offers only LocalServer (generates,
+          # then blocks serving a browser — unusable here), SingleFile, and
+          # None. SingleFile inlines every attachment as base64 into one HTML
+          # and a full-suite run overruns allure's size cap ("The report is too
+          # large to be generated in the single file mode!", run 31379557564),
+          # taking the whole publish chain down with it. None also subsumes
+          # --skip-allure-open: nothing is generated, so there is nothing to
+          # open.
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
-            --report-type SingleFile \
-            --skip-allure-open \
+            --report-type None \
             --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen" \
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
-      # Sole DRY_RUN gate on the publish chain: a skipped step reports empty
-      # outputs, so every downstream step that requires report_path to be
-      # non-empty is already excluded from dry runs by that alone.
+      # The generation metaforge used to do, minus `--single-file`. Writing to
+      # the same directory metaforge used keeps the rest of the publish chain
+      # untouched: the locate step below still finds index.html, and `aws s3
+      # sync` was already syncing a directory, so a multi-file report uploads
+      # and serves from S3 unchanged.
+      #
+      # `always()`: a failed run is exactly when the report matters most.
+      - name: Generate Allure report
+        if: always() && env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          REPORT_DIR="$HOME/Library/Application Support/Decentraland/MetaForge/allure-report"
+
+          # This suite runs metaforge in cwd-mode — the job checks the repo out
+          # at tests_ref and `mf explorer test` builds the NUnit project in
+          # place — so results land in the workspace build output, NOT under the
+          # MetaForge data dir. run-visual-suite.yml deliberately keeps an empty
+          # workspace to stay on metaforge's managed clone, so its copy of this
+          # step resolves a different path. Don't unify them.
+          RESULTS="$GITHUB_WORKSPACE/explorer/Tests/bin/Debug/net10.0/allure-results"
+          if [ ! -d "$RESULTS" ]; then
+            # -print -quit rather than `| head -1`: under `set -o pipefail` head
+            # closes stdin after one line, find writes again and takes SIGPIPE,
+            # and the pipeline returns non-zero. Same trap documented above at
+            # the Explorer .app lookup.
+            RESULTS=$(find "$GITHUB_WORKSPACE/explorer" -type d -name allure-results \
+                           -print -quit 2>/dev/null || true)
+          fi
+
+          # No results at all is a different failure from generation failing:
+          # the test process died before any fixture reported. Nothing to
+          # generate from, so warn and leave the report absent — the locate step
+          # then yields an empty report_path and skips the upload chain, and the
+          # raw results and logs still ship as a workflow artifact.
+          if [ -z "$RESULTS" ] || [ -z "$(ls -A "$RESULTS" 2>/dev/null)" ]; then
+            echo "::warning::No Allure results found — the test process produced none. Skipping report generation; logs are still attached as an artifact."
+            exit 0
+          fi
+
+          echo "Generating report from: $RESULTS"
+          mkdir -p "$REPORT_DIR"
+          allure awesome "$RESULTS" -o "$REPORT_DIR"
+
+      # Second of the two DRY_RUN gates on the publish chain: a skipped step
+      # reports empty outputs, so every downstream step that requires
+      # report_path to be non-empty is already excluded from dry runs by that
+      # alone.
       - name: Locate Allure report
         id: report
         if: always() && env.DRY_RUN != 'true'
         run: |
           set -euo pipefail
-          # -print -quit rather than `| head -1`: under `set -o pipefail` head
-          # closes stdin after one line, find writes again and takes SIGPIPE,
-          # and the pipeline returns non-zero. Same trap documented above at
-          # the Explorer .app lookup.
-          REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
-                        -name "index.html" -path "*allure-report*" \
-                        -print -quit 2>/dev/null || true)
+          # Canonical path first, and only then a search. A multi-file report is
+          # a tree, so an unanchored `-name index.html` can match a nested one
+          # and hand the publish chain a subdirectory to upload; under
+          # SingleFile there was exactly one file and the ambiguity did not
+          # exist. -maxdepth keeps the fallback from wandering deep for the same
+          # reason.
+          REPORT_DIR="$HOME/Library/Application Support/Decentraland/MetaForge/allure-report"
+          if [ -f "$REPORT_DIR/index.html" ]; then
+            REPORT="$REPORT_DIR/index.html"
+          else
+            # -print -quit rather than `| head -1`: under `set -o pipefail` head
+            # closes stdin after one line, find writes again and takes SIGPIPE,
+            # and the pipeline returns non-zero. Same trap documented above at
+            # the Explorer .app lookup.
+            REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
+                          -maxdepth 3 -name "index.html" -path "*allure-report*" \
+                          -print -quit 2>/dev/null || true)
+          fi
           if [ -z "$REPORT" ]; then
             echo "::warning::Allure report not found; skipping upload."
-            echo "report_path=" >> "$GITHUB_OUTPUT"
+            {
+              echo "report_path="
+              echo "report_dir="
+            } >> "$GITHUB_OUTPUT"
           else
             echo "Report at: $REPORT"
-            echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
+            # report_dir is what actually gets published — the report is a
+            # directory of files now, not one self-contained HTML.
+            {
+              echo "report_path=${REPORT}"
+              echo "report_dir=$(dirname "$REPORT")"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       # An ungranted secret arrives as an empty string, so a family mismatch
@@ -662,11 +734,10 @@ jobs:
         env:
           BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
-          REPORT: ${{ steps.report.outputs.report_path }}
+          REPORT_DIR: ${{ steps.report.outputs.report_dir }}
           REPORT_URL: ${{ steps.ids.outputs.report_url }}
         run: |
           set -euo pipefail
-          REPORT_DIR=$(dirname "$REPORT")
           aws s3 sync "$REPORT_DIR" "s3://$BUCKET/$S3_PATH/" \
             --acl public-read \
             --cache-control "public, max-age=300"
@@ -755,11 +826,29 @@ jobs:
           # Every line below is a path pattern — the block scalar is literal
           # text, so comments cannot live inside it. explorer-perf is empty
           # unless the run was dispatched with record_perf.
+          #
+          # allure-results is the raw per-test data (results, attachments) and
+          # is this job's only safety net when report generation fails. It lives
+          # in the cwd-mode build output, NOT under the MetaForge data dir — the
+          # glob here used to say `MetaForge/**/allure-results/**` and so
+          # silently captured nothing, leaving a failed report with no test
+          # detail at all (run 31379557564 yielded only the two logs above).
+          #
+          # The allure-report copy needs an HTTP origin to view: index.html
+          # fetches widgets/*.json and data/* at runtime, and browsers block
+          # fetch() over file://, so opening it straight off disk shows an empty
+          # report. Serve the unzipped directory (`python3 -m http.server`), or
+          # use the S3 link, which is the primary path. Keeping allure-results
+          # here also means you can rebuild whatever shape you want locally —
+          # `allure awesome <results> --single-file -o <dir>` gives back the
+          # openable-from-disk report, which is fine at one fixture's scale.
+          # (Note `make explorer-report` does NOT work: its `allure generate
+          # --clean --single-file` is Allure 2 syntax and the pinned CLI is 3.x.)
           path: |
             ~/Library/Logs/Decentraland/Explorer/Player.log
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
-            ~/Library/Application Support/Decentraland/MetaForge/**/allure-report/**
-            ~/Library/Application Support/Decentraland/MetaForge/**/allure-results/**
+            ~/Library/Application Support/Decentraland/MetaForge/allure-report/**
+            explorer/Tests/bin/Debug/net10.0/allure-results/**
             ${{ runner.temp }}/explorer-perf/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
             ~/Library/Logs/DiagnosticReports/Explorer*
