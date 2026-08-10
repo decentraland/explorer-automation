@@ -66,6 +66,15 @@ internal static class Program
         if (graph.Fixtures.Count == 0)
             return FailSafe("found no [Category(\"InWorld\")] fixtures");
 
+        if (graph.Untrusted is { } untrusted)
+        {
+            if (!selfTest)
+                return FailSafe(untrusted);
+
+            Console.WriteLine($"FAIL  graph is untrusted: {untrusted}");
+            return 1;
+        }
+
         if (selfTest)
             return GoldenCases.Run(graph);
 

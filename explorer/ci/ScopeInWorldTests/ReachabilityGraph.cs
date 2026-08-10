@@ -13,6 +13,7 @@ internal sealed class ReachabilityGraph
     private readonly string _repoRoot;
     private readonly Dictionary<SyntaxTree, SemanticModel> _models = new();
     private readonly Dictionary<ISymbol, List<ISymbol>> _edges = new(SymbolEqualityComparer.Default);
+    private readonly Dictionary<ISymbol, List<ISymbol>> _declarations = new(SymbolEqualityComparer.Default);
 
     /// <summary>InWorld fixture names, sorted.</summary>
     public List<string> Fixtures { get; } = [];
@@ -22,6 +23,9 @@ internal sealed class ReachabilityGraph
 
     /// <summary>fixture name → (reachable file → member path that reaches it).</summary>
     public Dictionary<string, Dictionary<string, string>> Reach { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Why the closure must not be believed, when something about the tree invalidates it.</summary>
+    public string? Untrusted { get; private set; }
 
     private ReachabilityGraph(Compilation compilation, string repoRoot)
     {
@@ -38,10 +42,15 @@ internal sealed class ReachabilityGraph
 
         foreach (var fixture in graph.FindInWorldFixtures())
         {
-            graph.Fixtures.Add(fixture.Name);
-            graph.Reach[fixture.Name] = graph.Closure(fixture);
+            // Reach and the ALL check are keyed on the simple name, and the vstest filter
+            // cannot separate two fixtures that share one either.
+            if (!graph.Reach.TryAdd(fixture.Name, graph.Closure(fixture)))
+                graph.Untrusted ??= $"two InWorld fixtures are both named {fixture.Name}";
+            else
+                graph.Fixtures.Add(fixture.Name);
         }
 
+        graph.Untrusted ??= graph.FindMethodLevelCategory();
         graph.Fixtures.Sort(StringComparer.Ordinal);
         return graph;
     }
@@ -95,10 +104,27 @@ internal sealed class ReachabilityGraph
     private static bool IsCategory(INamedTypeSymbol? attributeClass)
     {
         for (var t = attributeClass; t is not null; t = t.BaseType)
-            if (t.Name == "CategoryAttribute")
+            if (t.Name == "CategoryAttribute"
+                && t.ContainingNamespace?.ToDisplayString().StartsWith("NUnit", StringComparison.Ordinal) == true)
                 return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// A method-level category puts individual tests in the vstest filter without putting
+    /// their fixture in <see cref="Fixtures"/>, so the closure would under-select. None exist
+    /// today; if one appears, the caller must run everything.
+    /// </summary>
+    private string? FindMethodLevelCategory()
+    {
+        foreach (var type in AllTypes(_compilation.Assembly.GlobalNamespace))
+            foreach (var method in type.GetMembers().OfType<IMethodSymbol>())
+                foreach (var attribute in method.GetAttributes())
+                    if (IsCategory(attribute.AttributeClass))
+                        return $"{type.Name}.{method.Name} carries a method-level [Category]";
+
+        return null;
     }
 
     #endregion
@@ -118,9 +144,17 @@ internal sealed class ReachabilityGraph
         Record(fixture, fixture);
 
         // The fixture is entered through its declaration syntax, not through the type rule
-        // below, so its test bodies are the roots of the closure.
-        foreach (var next in WalkDeclarations(fixture))
-            Visit(next, fixture);
+        // below, so its test bodies are the roots of the closure. The base chain is seeded
+        // the same way: NUnit runs the inherited [OneTimeSetUp]/[SetUp] members by
+        // reflection, so nothing in the tree names EnsureInWorld or the boot views it drives.
+        for (INamedTypeSymbol? type = fixture; type is not null && IsLocal(type); type = type.BaseType)
+        {
+            if (!SymbolEqualityComparer.Default.Equals(type, fixture))
+                Visit(type, fixture);
+
+            foreach (var next in DeclarationEdges(type))
+                Visit(next, type);
+        }
 
         while (queue.Count > 0)
         {
@@ -183,9 +217,20 @@ internal sealed class ReachabilityGraph
         // would make ViewContainer and ExplorePanelView link every fixture to every view.
         var edges = symbol is INamedTypeSymbol type
             ? TypeEdges(type.BaseType).ToList()
-            : WalkDeclarations(symbol).ToList();
+            : DeclarationEdges(symbol);
 
         _edges[symbol] = edges;
+        return edges;
+    }
+
+    // Cached separately from EdgesOf: base classes are walked once per derived fixture.
+    private List<ISymbol> DeclarationEdges(ISymbol symbol)
+    {
+        if (_declarations.TryGetValue(symbol, out var cached))
+            return cached;
+
+        var edges = WalkDeclarations(symbol).ToList();
+        _declarations[symbol] = edges;
         return edges;
     }
 

@@ -122,12 +122,12 @@ jobs:
           fi
 
           if [ -f "$RUNNER_TEMP/scope.log" ]; then
+            # Indented code block, not a fence: a path holding a backtick run cannot
+            # break out of it and inject markdown into the summary.
             {
               echo '### InWorld scope'
               echo
-              echo '```'
-              cat "$RUNNER_TEMP/scope.log"
-              echo '```'
+              sed 's/^/    /' "$RUNNER_TEMP/scope.log"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
