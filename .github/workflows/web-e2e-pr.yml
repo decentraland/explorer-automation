@@ -31,6 +31,9 @@ on:
       - '!web/.prettierignore'
       - '!web/.eslintrc.cjs'
       - '.github/workflows/web-e2e-pr.yml'
+      # The setup steps now live in a composite action; a change there is as
+      # capable of breaking this suite as a change to the workflow itself.
+      - '.github/actions/setup-web-e2e/**'
 
 # Cancel an older in-progress run when a new commit lands on the same PR
 # branch. Saves CI minutes during rapid push cycles.
@@ -51,59 +54,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install dependencies
-        # Browsers are installed by the dedicated cache-aware step below — there
-        # is no `postinstall` chromium download here, so `npm ci` is just the
-        # node deps. A tight timeout turns any registry/lifecycle-script stall
-        # into a fast, attributable failure instead of a 30-min job-level kill.
-        timeout-minutes: 5
-        run: npm ci
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/ms-playwright
-          key: pw-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-          # Fall back to any prior `pw-<os>-…` cache if the lockfile-derived
-          # key is a miss (lockfile bumped without changing Playwright). The
-          # `playwright install` step still runs to bring in any missing
-          # browsers, but starting from a warm cache saves a few minutes.
-          restore-keys: |
-            pw-${{ runner.os }}-
-
-      - name: Install Playwright system deps
-        # apt-only (sudo); fast and doesn't touch cdn.playwright.dev, so it sits
-        # outside the retry wrapper below.
-        timeout-minutes: 5
-        run: npx playwright install-deps chromium
-
-      - name: Install Playwright browsers
-        # cdn.playwright.dev intermittently stalls right after the chrome zip
-        # reaches 100% — the next artifact's connection hangs with no data and
-        # no error, so a bare `install` sits idle until the step timeout. Wrap
-        # each attempt in `timeout` so a stalled download is killed and retried
-        # from a fresh connection; a healthy download finishes in seconds, only
-        # a stall burns the per-attempt cap. On a cache hit the browsers are
-        # already present and attempt 1 is a no-op.
-        timeout-minutes: 10
-        run: |
-          for attempt in 1 2 3 4; do
-            echo "::group::playwright install chromium (attempt $attempt)"
-            if timeout 120 npx playwright install chromium; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "attempt $attempt stalled or failed; retrying"
-            echo "::endgroup::"
-          done
-          echo "::error::playwright install chromium failed after 4 attempts"
-          exit 1
+      # Node + web/ deps + Chromium, shared with web-e2e.yml. Writing `.env`
+      # stays here: composite actions can't read `secrets`, and the two
+      # workflows populate deliberately different sets of keys.
+      - uses: ./.github/actions/setup-web-e2e
 
       - name: Write .env from secrets / variables
         # web/shared/helpers/env.ts loads `.env` from the repo root.
