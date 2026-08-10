@@ -173,66 +173,38 @@ jobs:
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Install runtime prerequisites
-        run: |
-          set -euo pipefail
-          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-          chmod +x /tmp/dotnet-install.sh
-          /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"
-          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet --version
+      # dotnet + AltTester + allure + MetaForge + license, shared with
+      # run-inworld-suite.yml. `uses: ./…` resolves against $GITHUB_WORKSPACE,
+      # so the action has to be on disk first:
+      #   `repository:` — a bare checkout in a workflow_call run fetches the
+      #     CALLER's repo, which has no such action.
+      #   `path:` — this job needs an empty workspace. `mf explorer test`
+      #     switches to cwd-mode when the workspace is an explorer-automation
+      #     checkout; here it must keep using MetaForge's managed clone, which
+      #     is what `--tests-ref` and the baseline commit rely on. The cleanup
+      #     step below restores the empty workspace.
+      #   `ref:` — tracks this repo, not `tests_ref`: the chassis is workflow
+      #     infrastructure, and an old tests_ref must not fail the run on a
+      #     missing action.yml.
+      - name: Fetch runner chassis action
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ github.repository == 'decentraland/explorer-automation' && github.sha || 'main' }}
+          path: .chassis
+          sparse-checkout: .github/actions
 
-          # AltTester Desktop ships as a zip wrapping a .dmg + sample build
-          # Pipeline: download zip => extract dmg => mount => copy .app => eject
-          ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_1.zip"
-          curl -fsSL "$ALTTESTER_URL" -o /tmp/alttester.zip
-          unzip -q /tmp/alttester.zip -d /tmp/alttester
-          ALTTESTER_DMG=$(find /tmp/alttester -maxdepth 4 -name "AltTesterDesktop*.dmg" -type f | head -1)
-          [ -n "$ALTTESTER_DMG" ] || { echo "::error::AltTesterDesktop dmg not found in zip"; exit 1; }
-          hdiutil attach "$ALTTESTER_DMG" -nobrowse -quiet
-          ALTTESTER_APP=$(find /Volumes -maxdepth 3 -name "AltTesterDesktop.app" -type d 2>/dev/null | head -1)
-          [ -n "$ALTTESTER_APP" ] || { echo "::error::AltTesterDesktop.app not found under /Volumes after mount"; ls /Volumes; exit 1; }
-          cp -R "$ALTTESTER_APP" /Applications/
-          MOUNT_POINT=$(dirname "$ALTTESTER_APP")
-          hdiutil detach "$MOUNT_POINT" -quiet || true
-          xattr -dr com.apple.quarantine /Applications/AltTesterDesktop.app || true
-          ls /Applications/AltTesterDesktop.app/Contents/MacOS/AltTesterDesktop
+      - name: Set up Explorer test runner
+        uses: ./.chassis/.github/actions/setup-explorer-runner
+        with:
+          github-token: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          alttester-license: ${{ secrets.ALTTESTER_LICENSE }}
 
-          # metaforge expects the "allure" npm package
-          npm install -g allure --no-fund --no-audit --loglevel=error
-          allure --version
-
-          gh --version
-
-      - name: Verify MetaForge access
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Missing REPOS_READ_ONLY_TOKEN secret (PAT with read access to decentraland/MetaForge)"
-            exit 1
-          fi
-          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
-
-      - name: Install metaforge
-        env:
-          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
-        run: |
-          yes | /bin/bash -c "$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh)"
-          echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
-
-      - name: Configure AltTester license
-        env:
-          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ALTTESTER_LICENSE:-}" ]; then
-            echo "::error::Missing ALTTESTER_LICENSE secret. Add it under repo Settings → Secrets → Actions."
-            exit 1
-          fi
-          mf alttester set-license "$ALTTESTER_LICENSE"
+      # Everything the action installed lives outside the workspace (~/.dotnet,
+      # /Applications, $GITHUB_PATH), so dropping the checkout is safe and
+      # restores the empty workspace later steps assume.
+      - name: Drop the chassis checkout
+        run: rm -rf "${GITHUB_WORKSPACE:?}/.chassis"
 
       - name: Pre-install Explorer build
         env:

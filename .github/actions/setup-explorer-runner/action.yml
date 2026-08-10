@@ -4,32 +4,23 @@ description: >-
   .NET, AltTester Desktop, the allure CLI, MetaForge — and activate the
   AltTester license.
 
-# Single definition of the runner chassis FOR THE INWORLD SUITE ONLY.
-# run-visual-suite.yml still installs the same chassis inline and carries its
-# own `--channel 10.0`, its own AltTester 2.3.1 URL and its own MetaForge
-# installer URL. It cannot adopt this action yet: it runs no actions/checkout,
-# and `uses: ./…` resolves against $GITHUB_WORKSPACE. So until it does, the
-# two must be kept in step by hand — a version bumped here has NOT moved the
-# production visual path.
+# Single definition of the runner chassis, used by both macOS suites
+# (run-inworld-suite.yml, run-visual-suite.yml). A version bumped here — dotnet
+# channel, AltTester URL, MetaForge installer URL — moves both, including the
+# production visual path unity-explorer calls.
 #
-# The two copies were near-identical before the split: same bodies, three
-# differing error strings, of which this action keeps the visual wording.
-#
-# macOS-only: the AltTester install goes through hdiutil / .dmg / /Applications
-# and MetaForge's installer writes under ~/Library/Application Support. The
-# Windows chassis (explorer-automation PR #12) needs a different set of steps
-# and is deliberately not folded in here.
+# macOS-only: AltTester installs via hdiutil/.dmg//Applications and MetaForge
+# writes under ~/Library/Application Support. The Windows chassis (PR #12) needs
+# different steps and is deliberately separate.
 #
 # Preconditions:
-#   - The caller has already checked out decentraland/explorer-automation.
-#     `uses: ./…` resolves against $GITHUB_WORKSPACE, so a workflow_call from
-#     another repository reaches this file only because the calling workflow
-#     checks this repo out explicitly. That also couples the action to the
-#     checked-out ref: a caller pinning an old `tests_ref` gets that ref's
-#     copy of this action, the same way it already gets that ref's
-#     explorer/ci/* files.
-#   - Composite actions cannot read the `secrets` context, so both credentials
-#     arrive as inputs.
+#   - The caller has checked this repo out; `uses: ./…` resolves against
+#     $GITHUB_WORKSPACE. The two callers pick the ref differently on purpose:
+#     run-inworld-suite.yml checks out at `tests_ref` (it needs the tests and
+#     explorer/ci/* from that ref anyway, and runs in cwd-mode against it);
+#     run-visual-suite.yml checks out this action alone into a subdirectory at
+#     its own repo's ref, since it gets tests from MetaForge via `--tests-ref`.
+#   - Composite actions cannot read `secrets`, so credentials arrive as inputs.
 #
 # Appends to $GITHUB_PATH — ~/.dotnet and MetaForge's bin dir. Those are
 # visible to every later step of the caller, and to the steps of this action
