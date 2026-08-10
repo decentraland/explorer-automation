@@ -109,15 +109,6 @@ on:
         required: false
         default: false
 
-  # TEMPORARY validation trigger — removed before merge (Task 5).
-  push:
-    branches: [feat/macOS-inWorld-workflow]
-    paths:
-      - '.github/workflows/run-inworld-suite.yml'
-      - '.github/actions/**'
-      - 'explorer/Tests/**'
-      - 'explorer/ci/**'
-
 # macos-14 runners are ephemeral, but serializing keeps concurrent runs for
 # the same caller PR from racing on the S3 path. cancel-in-progress is safe:
 # there is no persistent runner state to unwind.
@@ -133,7 +124,10 @@ jobs:
   run:
     name: InWorld suite (macOS)
     runs-on: macos-14
-    timeout-minutes: 60
+    # Budgeted from the step cap below: 30m test + ~1m40s setup + the
+    # on-failure tail (log dump, artifact upload, 2m-capped cleanup) ≈ 35m.
+    # Measured green run 31177978453: 19m38s wall over 49 tests.
+    timeout-minutes: 40
 
     env:
       BUILD_URL_INPUT: ${{ inputs.build_url || '' }}
@@ -296,9 +290,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # dotnet + AltTester + allure + MetaForge + license — the same chassis
-      # run-visual-suite.yml still installs inline, and the single definition
-      # it should move to. Must come after the checkout above: `uses: ./…`
-      # resolves against $GITHUB_WORKSPACE.
+      # run-visual-suite.yml runs, from the same definition. Must come after
+      # the checkout above: `uses: ./…` resolves against $GITHUB_WORKSPACE.
+      # Unlike the visual suite, this one checks out at `tests_ref`, so a ref
+      # predating the composite fails here on a missing action.yml.
       - name: Set up Explorer test runner
         uses: ./.github/actions/setup-explorer-runner
         with:
@@ -523,7 +518,11 @@ jobs:
 
       - name: Run InWorld suite
         if: env.DRY_RUN != 'true'
-        timeout-minutes: 40
+        # 17m59s measured over 49 tests; PR #47's 8 more put it near 21m, and
+        # paravirt variance near 25m. Must stay below the job cap: a step
+        # timeout still runs the failure log dump and artifact upload, a job
+        # timeout kills both.
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
