@@ -65,6 +65,18 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         targetView.WaitFor();
     }
 
+    /// <summary>
+    /// Empties the search bar. A search term outlives the panel closing, so clear it before
+    /// anything that needs an unfiltered grid. Call with the target tab already open — only the
+    /// active section's grid picks the change up.
+    /// </summary>
+    [AllureStep("Clear the backpack search bar")]
+    public void ClearSearch()
+    {
+        SearchBar.SetText(string.Empty);
+        Reporter.Log("Backpack search bar cleared");
+    }
+
     #endregion
 
     #region Sub views
@@ -400,9 +412,31 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             Reporter.Log($"Clicked grid item {index}");
         }
 
+        /// <summary>
+        /// Whether the grid holds a full page of loaded items — the precondition for addressing
+        /// tiles by index, since a short page parks blank pooled tiles ahead of the real ones and
+        /// a blank answers to its own path while holding nothing.
+        /// </summary>
+        [AllureStep("Check whether the emote grid page is full")]
+        public bool HasFullGridPage() =>
+            // Shot-suppressed: a precondition probe, not a verification.
+            GridItems[0].LoadedIndicator.IsPresent(verificationShot: false);
+
+        [AllureStep("Wait for a full page of emote grid items")]
+        public void WaitForFullGridPage()
+        {
+            // Paravirt ceiling: a cleared search costs a debounce plus a page request.
+            GridItems[0].LoadedIndicator.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+            Reporter.Log("Emote grid shows a full page of loaded items");
+        }
+
         [AllureStep("Wait for grid item to finish loading")]
         public void WaitForGridItemLoaded(int index)
         {
+            // Content first: FullBackpack is the only thing separating a tile that holds an item
+            // from a blank pooled one, and IsLoading reads false on both.
+            GridItems[index].LoadedIndicator.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+
             // Suppress the "appeared" shot — the verified state is IsLoading == false, so the
             // single shot is taken after that wait (a mid-load frame would misrepresent it).
             var gridItem = GridItems[index].WaitFor(20D, verificationShot: false);
@@ -434,6 +468,21 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             Reporter.Log($"Set emote grid item {gridIndex} to slot {slotIndex}");
         }
 
+        /// <summary>
+        /// Equips the grid's leading loaded item into <paramref name="slotIndex"/>. Use when the
+        /// grid is deliberately filtered and index addressing is therefore meaningless —
+        /// <c>FirstLoadedGridItem</c> resolves past the blank tiles a short page puts first.
+        /// </summary>
+        [AllureStep("Set the leading loaded emote to slot")]
+        public void SetFirstLoadedEmote(int slotIndex)
+        {
+            FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+            ClickSlot(slotIndex);
+            FirstLoadedGridItem.Click();
+            FirstLoadedGridItem.DoubleClickEquip();
+            Reporter.Log($"Set the leading loaded emote to slot {slotIndex}");
+        }
+
         [AllureStep("Unequip emote slot if present")]
         public void UnequipEmoteIfPresent(int slotIndex)
         {
@@ -451,15 +500,25 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
-        /// Hover-probes the first few grid items and returns the index of one that is not
+        /// Returns the index of one of the first few grid items that holds an item and is not
         /// equipped in any slot (its EquippedSlot badge is inactive).
         /// </summary>
         [AllureStep("Find an unequipped emote grid item")]
         public int FindUnequippedGridItemIndex(int probeLimit = 12)
         {
+            var loadedTiles = 0;
+
             for (var i = 0; i < probeLimit; i++)
             {
                 // Shot-suppressed probes — target selection, not a test verification.
+
+                // A blank tile's badge is absent for the wrong reason: skip it rather than
+                // returning a target that can never be equipped.
+                if (!GridItems[i].LoadedIndicator.IsPresent(verificationShot: false))
+                    continue;
+
+                loadedTiles++;
+
                 if (!GridItems[i].EquippedSlotBadge.IsPresent(verificationShot: false))
                 {
                     Reporter.Log($"Emote grid item {i} is not equipped — using it");
@@ -468,7 +527,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                 }
             }
 
-            throw new AssertionException($"All of the first {probeLimit} emote grid items are equipped — cannot pick a target");
+            // Two different failures, two different fixes.
+            throw new AssertionException(loadedTiles == 0
+                ? $"None of the first {probeLimit} emote grid tiles hold an item — the grid is empty or still filtered by an earlier search"
+                : $"All {loadedTiles} loaded tiles among the first {probeLimit} emote grid items are equipped — cannot pick a target");
         }
 
         #endregion

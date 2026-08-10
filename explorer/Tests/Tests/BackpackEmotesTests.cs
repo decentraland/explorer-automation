@@ -73,13 +73,32 @@ public class BackpackEmotesTests : BaseTest
     {
         OpenEmotes();
 
+        var emotes = Views.ExplorePanel.Backpack.Emotes;
+
         Views.ExplorePanel.Backpack.SearchBar.SetText("Fist Pump");
-        Views.ExplorePanel.Backpack.Emotes.FirstLoadedGridItem.WaitUntilLoaded();
 
-        Views.ExplorePanel.Backpack.Emotes.UnequipEmoteIfPresent(0);
-        Views.ExplorePanel.Backpack.Emotes.SetEmote(0, 0);
+        // The grid keeps its pre-search tiles until the search debounce elapses, so the page
+        // going short is the observable moment the results landed.
+        Assert.That(WaitUntil(() => !emotes.HasFullGridPage(), timeoutSeconds: SlowChassis.SETTLE_TIMEOUT),
+            Is.True, "Emote grid should refilter to the 'Fist Pump' search results");
 
-        Reporter.Log("Fist Pump equipped to slot 0");
+        emotes.UnequipEmoteIfPresent(0);
+
+        // The leading LOADED tile, not GridItems[0]: on a one-result page index 0 is a blank cell
+        // and clicks on it are no-ops. The equip double-click is droppable, so confirm the slot
+        // filled before asserting.
+        ClickUntil(() => emotes.SetFirstLoadedEmote(0),
+                   () => !emotes.Slots[0].EmptyNameLabel.IsPresent(verificationShot: false),
+                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
+
+        // The slot label names the emote that landed, so it proves the searched item reached the
+        // slot asked for — not merely that something is equipped.
+        var slotName = emotes.Slots[0].NameLabel.WaitForText(
+            text => !string.IsNullOrEmpty(text) && text.Contains("Fist Pump", StringComparison.OrdinalIgnoreCase),
+            timeoutSeconds: SlowChassis.SETTLE_TIMEOUT);
+        Assert.That(slotName, Does.Contain("Fist Pump").IgnoreCase,
+            $"Slot 0 should hold the searched emote after equipping it, but its label reads '{slotName}'");
+        Reporter.Log("Fist Pump equipped to slot 0 and confirmed on the slot label");
 
         Views.ExplorePanel.Close();
     }
@@ -101,7 +120,7 @@ public class BackpackEmotesTests : BaseTest
         emotes.GridItems[gridIndex].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
         Reporter.Log($"Precondition ready — grid item {gridIndex} equipped to slot 5");
 
-        // grid item).
+        // The slot's own button — the grid item's hover Unequip ignores synthetic input.
         emotes.ClickSlot(4);
         emotes.ClickUnequip(4);
 
@@ -144,6 +163,16 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.WaitFor();
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
+
+        // A search term from an earlier test is still applied and shrinks the page, which index
+        // addressing cannot survive. Gate on the symptom, not the field's contents, so a run that
+        // never searched pays one lookup and no extra rebuild. After the tab click on purpose:
+        // clearing only reaches the active section's grid.
+        if (!Views.ExplorePanel.Backpack.Emotes.HasFullGridPage())
+        {
+            Views.ExplorePanel.Backpack.ClearSearch();
+            Views.ExplorePanel.Backpack.Emotes.WaitForFullGridPage();
+        }
     }
 
     /// <summary>
