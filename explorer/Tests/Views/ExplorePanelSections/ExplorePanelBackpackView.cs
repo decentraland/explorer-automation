@@ -15,7 +15,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     // a whole grid page in 5.4s. Every wait below takes one of these, so a chassis that
     // outgrows them is retuned in one place.
     private const double UI_TIMEOUT      = 5D;   // the element is either there or it is not
-    private const double CONTENT_TIMEOUT = 15D;  // waiting on content the client streams in
+    // Not lowered with the rest, twice over: the history of this wait already records it
+    // exceeding 20s, and a dev build was then measured taking 17.5s to fill a grid page
+    // without finishing. Content load tracks asset streaming, not the panel.
+    private const double CONTENT_TIMEOUT = 40D;  // waiting on content the client streams in
     // Deliberately not lowered with the rest: the equip double-click is sensitive to how long
     // the tile has been hovered, and this is the one ceiling that could affect it.
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
