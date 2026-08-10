@@ -11,11 +11,8 @@ public class BackpackOutfitsTests : BaseTest
     // ButtonUnequip is never enabled because the equipped state (EquippedBackground)
     // never activates, even right after equipping an outfit and reopening the panel.
 
-    // Wall-clock budget per equip attempt. Matches BackpackWearablesTests, not
-    // BackpackEmotesTests: this fixture confirms with IsEquipped, which re-hovers on a
-    // negative and costs ~2-3s an evaluation, so the honest budget is an order of magnitude
-    // larger than a fixture confirming with a single slot lookup.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 60;
+    // Wall-clock budget for the equip to show up, matching BackpackWearablesTests.
+    private const double EQUIP_CONFIRM_TIMEOUT = 15;
 
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()
@@ -80,15 +77,11 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
         Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        // The equip double-click is silently dropped when it lands during a grid re-bind,
-        // and the hover overlay is the only equip-state signal — retry the equip itself
-        // rather than only widening the read that follows it. Deliberately not PR #54's
-        // WaitUntil on IsEquipped: polling longer cannot produce a state a dropped click
-        // never started. The deadline-based budget is also what this predicate needs — a
-        // negative IsEquipped re-hovers and costs ~2-3s an evaluation.
-        ClickUntil(() => hair.DoubleClickEquip(),
-                   () => hair.IsEquipped(verificationShot: false),
-                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
+        // One click, no retry — see BackpackWearablesTests.EquipUntilShown. Polls the icon
+        // rather than IsEquipped so the loop does not re-hover.
+        hair.DoubleClickEquip();
+        WaitUntil(() => hair.EquippedIndicator.IsPresent(verificationShot: false),
+                  EQUIP_CONFIRM_TIMEOUT);
         Wait(2);
         // The double-click also selects the item, so the info panel shows its name.
         var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();
