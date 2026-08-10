@@ -64,8 +64,16 @@ runs:
         xattr -dr com.apple.quarantine /Applications/AltTesterDesktop.app || true
         ls /Applications/AltTesterDesktop.app/Contents/MacOS/AltTesterDesktop
 
-        # metaforge expects the "allure" npm package
-        npm install -g allure --no-fund --no-audit --loglevel=error
+        # metaforge expects the "allure" npm package.
+        #
+        # Major pinned deliberately. Both suites now invoke `allure awesome
+        # <results> -o <dir>` themselves rather than letting metaforge do it, so
+        # that CLI contract is this repo's problem: an unpinned major bump would
+        # break report generation in both, including the production visual path
+        # unity-explorer calls, with no change on our side to point at. `3`
+        # resolves to the same version bare `allure` did (3.14.3), so this pin
+        # changes nothing today — it just stops tomorrow from changing it.
+        npm install -g allure@3 --no-fund --no-audit --loglevel=error
         allure --version
 
         gh --version

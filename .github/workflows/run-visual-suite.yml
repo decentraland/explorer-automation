@@ -243,35 +243,129 @@ jobs:
             bootstrap) export SNAPSHOT_MODE=MissingOnly ;;
           esac
 
+          # --report-type None: report generation is ours now, in the step
+          # below. metaforge's ReportType offers only LocalServer (generates,
+          # then blocks serving a browser — unusable here), SingleFile, and
+          # None. SingleFile inlines every attachment as base64 into one HTML
+          # and a large run overruns allure's size cap ("The report is too large
+          # to be generated in the single file mode!"), taking the whole publish
+          # chain down with it. None also subsumes --skip-allure-open: nothing
+          # is generated, so there is nothing to open.
           TEST_EXIT=0
           mf explorer test "${BUILD_URL}" \
             --non-interactive \
             ${TESTS_REF:+--tests-ref "$TESTS_REF"} \
             $RECORD_FLAG \
             --filter "$TEST_FILTER" \
-            --report-type SingleFile \
-            --skip-allure-open \
+            --report-type None \
             || TEST_EXIT=$?
 
           mf explorer server stop --non-interactive || true
           exit "$TEST_EXIT"
+
+      # The generation metaforge used to do, minus `--single-file`. Writing to
+      # the same directory metaforge used keeps the rest of the publish chain
+      # untouched: the locate step below still finds index.html, and `aws s3
+      # sync` was already syncing a directory, so a multi-file report uploads
+      # and serves from S3 unchanged.
+      #
+      # `always()`: a failed run is exactly when the report matters most.
+      - name: Generate Allure report
+        if: always()
+        run: |
+          set -euo pipefail
+          MF_DATA="$HOME/Library/Application Support/Decentraland/MetaForge"
+          REPORT_DIR="$MF_DATA/allure-report"
+
+          # This suite keeps an empty workspace on purpose so `mf explorer test`
+          # stays on metaforge's managed clone rather than switching to cwd-mode
+          # (see the chassis checkout above), so results land under that clone's
+          # build output. run-inworld-suite.yml is checked out in the workspace
+          # and therefore resolves a different path in its copy of this step.
+          # Don't unify them.
+          RESULTS="$MF_DATA/explorer-automation/explorer/Tests/bin/Debug/net10.0/allure-results"
+          if [ ! -d "$RESULTS" ]; then
+            # -print -quit rather than `| head -1`: under `set -o pipefail` head
+            # closes stdin after one line, find writes again and takes SIGPIPE,
+            # and the pipeline returns non-zero.
+            RESULTS=$(find "$MF_DATA" -type d -name allure-results \
+                           -print -quit 2>/dev/null || true)
+          fi
+
+          # Gate on *-result.json, not on the directory being non-empty. If the
+          # test host is killed mid-fixture, Allure.NUnit has already flushed
+          # attachments and a *-container.json but no test result — and `allure
+          # awesome` happily turns that into a valid report reading {"total":0} /
+          # "passed". Publishing that would sail straight past the locate step's
+          # hard failure below, which exists precisely so a run cannot ship a
+          # green check with no real artifact.
+          #
+          # No results is a different failure from generation failing: nothing
+          # ran, so there is nothing to generate. Leave the report absent and let
+          # the locate step own the hard failure, so one place decides that a
+          # missing report is fatal.
+          if [ -z "$RESULTS" ] || \
+             [ -z "$(find "$RESULTS" -maxdepth 1 -name '*-result.json' -print -quit 2>/dev/null)" ]; then
+            echo "::warning::No Allure test results found — the run produced no *-result.json, so nothing reported before it stopped. Skipping report generation."
+            exit 0
+          fi
+
+          # Stage into a scratch dir and swap it in only once allure has
+          # succeeded. Two reasons, both verified against allure 3.14.3:
+          #
+          #   1. `allure awesome -o DIR` on a DIR that already holds a report
+          #      writes the new one to DIR/awesome/ and leaves the old
+          #      index.html byte-identical at the root. The locate step below
+          #      reads the root, so it would publish the STALE report under this
+          #      run's URL with no warning. metaforge guarded against this by
+          #      deleting the report dir first. Harmless on an ephemeral runner
+          #      where the dir starts absent; live on a persistent self-hosted
+          #      runner and when running these steps locally.
+          #   2. allure copies every attachment into the tree, so a failure
+          #      partway through (ENOSPC being the realistic one) can leave a
+          #      valid-looking index.html beside incomplete data/ and widgets/.
+          #      Staging means index.html appears at the canonical path only when
+          #      the whole report is there.
+          #
+          # Sibling of the destination, so the mv is a same-filesystem rename.
+          #
+          # Clear the destination BEFORE generating, not after. A previous run's
+          # report has no value here, and if generation then fails, `set -e`
+          # aborts before the mv and leaves nothing behind — so the locate step
+          # hard-fails as it should rather than republishing run N's report under
+          # run N+1's URL behind a green [Open] link.
+          STAGE="${REPORT_DIR}.staging"
+          rm -rf "$STAGE" "$REPORT_DIR"
+          echo "Generating report from: $RESULTS"
+          allure awesome "$RESULTS" -o "$STAGE"
+          mv "$STAGE" "$REPORT_DIR"
 
       - name: Locate Allure report
         id: report
         if: always()
         run: |
           set -euo pipefail
-          REPORT=$(find "$HOME/Library/Application Support/Decentraland/MetaForge" \
-                        -name "index.html" -path "*allure-report*" 2>/dev/null | head -1)
-          if [ -z "$REPORT" ]; then
+          # An exact path check, not a search. metaforge runs with
+          # --report-type None, so the generate step above is the only thing that
+          # writes a report under the data dir, and it stages the tree and swaps
+          # it in atomically — index.html sitting here means a complete report.
+          # Searching would only add ways to pick the wrong index.html.
+          REPORT_DIR="$HOME/Library/Application Support/Decentraland/MetaForge/allure-report"
+          if [ ! -f "$REPORT_DIR/index.html" ]; then
             # Hard fail: the report is the user-visible evidence of the run.
             # Missing it means we can't show pass/fail diffs to reviewers,
             # which defeats the point of the pipeline. Better to fail loudly
             # than ship a green check with no artifact.
-            echo "::error::Allure report not found under metaforge data dir. metaforge's report-gen step likely failed — check earlier logs for 'allure exited with code'."
+            echo "::error::Allure report not found. The generate step above either found no results or failed — check its log."
             exit 1
           fi
-          echo "report_path=${REPORT}" >> "$GITHUB_OUTPUT"
+          echo "Report at: $REPORT_DIR/index.html"
+          # report_dir is what actually gets published — the report is a
+          # directory of files now, not one self-contained HTML.
+          {
+            echo "report_path=${REPORT_DIR}/index.html"
+            echo "report_dir=${REPORT_DIR}"
+          } >> "$GITHUB_OUTPUT"
 
       # An ungranted secret arrives as an empty string, so a family mismatch
       # otherwise surfaces as an opaque "Input required and not supplied:
@@ -324,20 +418,31 @@ jobs:
         env:
           BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
           S3_PATH: ${{ steps.ids.outputs.s3_path }}
-          REPORT: ${{ steps.report.outputs.report_path }}
+          REPORT_DIR: ${{ steps.report.outputs.report_dir }}
         run: |
           set -euo pipefail
-          REPORT_DIR=$(dirname "$REPORT")
           aws s3 sync "$REPORT_DIR" "s3://$BUCKET/$S3_PATH/" \
             --acl public-read \
             --cache-control "public, max-age=300"
 
       - name: Upload Allure artifact (fallback if S3 fails)
-        if: always() && steps.report.outputs.report_path != ''
+        if: always() && steps.report.outputs.report_dir != ''
         uses: actions/upload-artifact@v6
         with:
           name: allure-report-${{ inputs.mode }}-${{ env.COMMIT_SHA }}
-          path: ${{ steps.report.outputs.report_path }}
+          # The directory, not report_path: a multi-file report's index.html is
+          # a shell that fetches widgets/*.json and data/* at runtime, so
+          # uploading the single file alone yields an artifact that renders
+          # nothing.
+          #
+          # Those fetches also mean the downloaded report needs an HTTP origin —
+          # opening index.html straight off disk shows an empty report, because
+          # browsers block fetch() over file://. Serve the unzipped directory
+          # (`python3 -m http.server`) or just use the S3 link, which is the
+          # primary path. The single-file report this replaces did open from
+          # disk; that convenience is the trade for staying under allure's size
+          # cap.
+          path: ${{ steps.report.outputs.report_dir }}
           retention-days: 14
 
       # ─── Baselines mode: commit regenerated PNGs back to the PR branch ───
