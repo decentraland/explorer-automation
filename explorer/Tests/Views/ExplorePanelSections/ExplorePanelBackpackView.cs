@@ -21,7 +21,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
     private const int OVERLAY_POLL_MS    = 100;
     private const int TAB_SWITCH_MS      = 500;  // between sub-tab toggle retries
-    private const int PRE_EQUIP_SETTLE_MS = 1500;
+    private const int PRE_EQUIP_SETTLE_MS = 500;
 
     // Main tabs (Header/TabSelector) — Wearables ("Avatar") and Emotes toggles.
     public readonly Clickable WearablesTabButton    = new(By.PATH, "//TabSelector/Avatar");
@@ -174,7 +174,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // window; on the macos-14 paravirt runner a single driver round-trip already
             // exceeds that window, so two separate Click calls read as two single clicks and
             // never equip. The interval here is applied by the Player, not by the network.
-            altObj.Click(count: 2, interval: 0.1f);
+            // Click more times than needed to ensure the click lands inside the window.
+            altObj.Click(count: 4, interval: 0.05f);
             Reporter.Log("Double-clicked grid item to equip");
         }
 
