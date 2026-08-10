@@ -21,6 +21,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
     private const int OVERLAY_POLL_MS    = 100;
     private const int TAB_SWITCH_MS      = 500;  // between sub-tab toggle retries
+    private const int PRE_EQUIP_SETTLE_MS = 1500;
 
     // Main tabs (Header/TabSelector) — Wearables ("Avatar") and Emotes toggles.
     public readonly Clickable WearablesTabButton    = new(By.PATH, "//TabSelector/Avatar");
@@ -162,6 +163,12 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             // Shot-suppressed wait: double-click equip is an action, not a verification.
             var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
+
+            // Settle before clicking. Every CI equip that has ever worked had ~1.8s or more of
+            // hovering behind it, and every one clicked within ~1s of the first PointerEnter
+            // has failed. The mechanism is not known — the hover animation is only 0.1s — so
+            // this restores the delay the old three-probe IsEquipped provided by accident.
+            Thread.Sleep(PRE_EQUIP_SETTLE_MS);
             // One Player-side command with count: 2, NOT two driver round-trips. Unity only
             // raises clickCount == 2 when the second click lands inside its double-click
             // window; on the macos-14 paravirt runner a single driver round-trip already
