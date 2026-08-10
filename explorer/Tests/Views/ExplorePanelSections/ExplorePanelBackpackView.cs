@@ -8,6 +8,20 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 {
     #region Elements
 
+    // Wait ceilings for this panel, sized from what CI actually spends rather than from the
+    // repo-wide SlowChassis ceiling. Measured on the paravirt chassis: a static element
+    // appears in under 0.7s, a hover overlay in under 0.5s, streamed content (grid tiles,
+    // outfit slots, info-panel text) in under 2.5s with one 8.2s outlier on a cold grid, and
+    // a whole grid page in 5.4s. Every wait below takes one of these, so a chassis that
+    // outgrows them is retuned in one place.
+    private const double UI_TIMEOUT      = 5D;   // the element is either there or it is not
+    private const double CONTENT_TIMEOUT = 15D;  // waiting on content the client streams in
+    // Deliberately not lowered with the rest: the equip double-click is sensitive to how long
+    // the tile has been hovered, and this is the one ceiling that could affect it.
+    private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
+    private const int OVERLAY_POLL_MS    = 100;
+    private const int TAB_SWITCH_MS      = 500;  // between sub-tab toggle retries
+
     // Main tabs (Header/TabSelector) — Wearables ("Avatar") and Emotes toggles.
     public readonly Clickable WearablesTabButton    = new(By.PATH, "//TabSelector/Avatar");
     public readonly Clickable EmotesTabButton       = new(By.PATH, "//TabSelector/Emotes");
@@ -53,16 +67,16 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed probe — the WaitFor below takes the verification shot.
             if (targetView.IsPresent(verificationShot: false))
             {
-                targetView.WaitFor();
+                targetView.WaitFor(UI_TIMEOUT);
                 return;
             }
 
             tabButton.Click();
-            Thread.Sleep(1000);
+            Thread.Sleep(TAB_SWITCH_MS);
         }
 
         // Final wait throws with a useful message if the tab still is not open.
-        targetView.WaitFor();
+        targetView.WaitFor(UI_TIMEOUT);
     }
 
     /// <summary>
@@ -111,7 +125,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         #region Helper methods
 
         [AllureStep("Wait for grid item content to load")]
-        public void WaitUntilLoaded(double timeout = 20D)
+        public void WaitUntilLoaded(double timeout = CONTENT_TIMEOUT)
         {
             LoadedIndicator.WaitFor(timeout);
         }
@@ -125,16 +139,16 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public AltObject Hover()
         {
             // Shot-suppressed wait: hovering is an action (like Click), not a verification.
-            var altObj = WaitFor(20D, verificationShot: false);
+            var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
             altObj.PointerEnter();
 
             // Wait for the hover overlay to actually enable instead of guessing a fixed delay:
             // exactly one of Equip/Unequip becomes present once the overlay finishes animating in.
-            var deadline = DateTime.UtcNow.AddSeconds(2);
+            var deadline = DateTime.UtcNow.AddSeconds(OVERLAY_SETTLE);
             while (DateTime.UtcNow < deadline
                    && !EquipButton.IsPresent(verificationShot: false)
                    && !UnequipButton.IsPresent(verificationShot: false))
-                Thread.Sleep(100);
+                Thread.Sleep(OVERLAY_POLL_MS);
 
             return altObj;
         }
@@ -147,7 +161,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public void DoubleClickEquip()
         {
             // Shot-suppressed wait: double-click equip is an action, not a verification.
-            var altObj = WaitFor(20D, verificationShot: false);
+            var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
             // One Player-side command with count: 2, NOT two driver round-trips. Unity only
             // raises clickCount == 2 when the second click lands inside its double-click
             // window; on the macos-14 paravirt runner a single driver round-trip already
@@ -171,7 +185,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                     $"Grid item '{ShotName}' holds no content — its equipped state cannot be read.");
 
             // Shot-suppressed wait: reading a component is not a verification on its own.
-            return WaitFor(20D, verificationShot: false)
+            return WaitFor(UI_TIMEOUT, verificationShot: false)
                 .GetComponentProperty<bool>(ITEM_VIEW_COMPONENT, "IsEquipped", ITEM_VIEW_ASSEMBLY);
         }
 
@@ -288,7 +302,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             if (!AvatarSlotHairSelected.IsPresent(verificationShot: false))
             {
                 AvatarSlotHair.Click();
-                AvatarSlotHairSelected.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+                AvatarSlotHairSelected.WaitFor(UI_TIMEOUT, verificationShot: false);
 
                 // The filter command goes out with the selected background, but the grid only
                 // blanks on a later frame; yield one so the wait below cannot be satisfied by
@@ -316,7 +330,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             // One budget shared across the tiles, not one ceiling each — a grid that never
             // finishes would otherwise burn GRID_ITEM_COUNT x SETTLE_TIMEOUT.
-            var deadline = DateTime.UtcNow.AddSeconds(SlowChassis.SETTLE_TIMEOUT);
+            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
             foreach (var item in GridItems)
                 item.LoadedIndicator.WaitFor(
                     Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
@@ -466,7 +480,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public void WaitForFullGridPage()
         {
             // Paravirt ceiling: a cleared search costs a debounce plus a page request.
-            GridItems[0].LoadedIndicator.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+            GridItems[0].LoadedIndicator.WaitFor(CONTENT_TIMEOUT);
             Reporter.Log("Emote grid shows a full page of loaded items");
         }
 
@@ -475,14 +489,14 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             // Content first: FullBackpack is the only thing separating a tile that holds an item
             // from a blank pooled one, and IsLoading reads false on both.
-            GridItems[index].LoadedIndicator.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+            GridItems[index].LoadedIndicator.WaitFor(CONTENT_TIMEOUT, verificationShot: false);
 
             // Suppress the "appeared" shot — the verified state is IsLoading == false, so the
             // single shot is taken after that wait (a mid-load frame would misrepresent it).
-            var gridItem = GridItems[index].WaitFor(20D, verificationShot: false);
+            var gridItem = GridItems[index].WaitFor(UI_TIMEOUT, verificationShot: false);
             gridItem.WaitForComponentProperty<bool>(
                 "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
-                timeout: SlowChassis.SETTLE_TIMEOUT);
+                timeout: CONTENT_TIMEOUT);
             Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
             Reporter.Log($"Grid item {index} finished loading");
         }
@@ -516,7 +530,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Set the leading loaded emote to slot")]
         public void SetFirstLoadedEmote(int slotIndex)
         {
-            FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+            FirstLoadedGridItem.WaitUntilLoaded(CONTENT_TIMEOUT);
             ClickSlot(slotIndex);
             FirstLoadedGridItem.Click();
             FirstLoadedGridItem.DoubleClickEquip();
@@ -673,7 +687,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             }
 
             Slots[0].Save();
-            Slots[0].FullState.WaitFor(30);
+            Slots[0].FullState.WaitFor(CONTENT_TIMEOUT);
             Reporter.Log("Saved current look into outfit slot 1");
         }
 
@@ -707,18 +721,18 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             public AltObject Hover()
             {
                 // Shot-suppressed wait: hovering is an action (like Click), not a verification.
-                var altObj = WaitFor(20D, verificationShot: false);
+                var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
                 altObj.PointerEnter();
 
                 // Wait for a hover-revealed button to actually enable instead of guessing a
                 // fixed delay: exactly one of Save/Equip/Delete becomes present depending on
                 // whether the slot is empty or full.
-                var deadline = DateTime.UtcNow.AddSeconds(2);
+                var deadline = DateTime.UtcNow.AddSeconds(OVERLAY_SETTLE);
                 while (DateTime.UtcNow < deadline
                        && !SaveButton.IsPresent(verificationShot: false)
                        && !EquipButton.IsPresent(verificationShot: false)
                        && !DeleteButton.IsPresent(verificationShot: false))
-                    Thread.Sleep(100);
+                    Thread.Sleep(OVERLAY_POLL_MS);
 
                 return altObj;
             }
