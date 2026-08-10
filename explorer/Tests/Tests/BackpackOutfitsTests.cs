@@ -77,11 +77,10 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
         Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        // One click, no retry — see BackpackWearablesTests.EquipUntilShown. Polls the icon
+        // One click, no retry — see BackpackWearablesTests.EquipUntilShown. Polls the flag
         // rather than IsEquipped so the loop does not re-hover.
         hair.DoubleClickEquip();
-        WaitUntil(() => hair.EquippedIndicator.IsPresent(verificationShot: false),
-                  EQUIP_CONFIRM_TIMEOUT);
+        WaitUntil(hair.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
         Wait(2);
         // The double-click also selects the item, so the info panel shows its name.
         var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();

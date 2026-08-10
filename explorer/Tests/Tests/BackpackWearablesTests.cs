@@ -10,11 +10,8 @@ public class BackpackWearablesTests : BaseTest
     // NOTE: the grid hover overlay's Equip/Unequip Buttons do not respond to synthetic
     // AltTester input in this build, so both equip tests go through the double-click
     // path (BackpackItemView treats clickCount == 2 as Equip).
-
-    // Wall-clock budget for the equip to show up. Every CI equip that worked confirmed within
-    // ~6s, measured through the older and slower hover-based read, so this is roughly double
-    // the worst observation.
-    private const double EQUIP_CONFIRM_TIMEOUT = 15;
+    
+    private const double EQUIP_CONFIRM_TIMEOUT = 8;
     private const int PAGE_FLIP_ATTEMPTS = 3;
 
     [Test]
@@ -117,17 +114,16 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
-    /// Double-clicks the item once and waits for its equipped icon. Deliberately not retried:
-    /// across the CI runs on record every equip that worked landed on the first click, and
-    /// every one that needed a second went on to fail all three — re-issuing the command does
-    /// not change whether Unity raises clickCount == 2. Polls the icon rather than IsEquipped
-    /// so the loop does not re-hover; the caller's assertion does that once.
+    /// Double-clicks the item once and waits for the client's equipped flag. Deliberately not
+    /// retried: across the CI runs on record every equip that worked landed on the first click,
+    /// and every one that needed a second went on to fail all three — re-issuing the command
+    /// does not change whether Unity raises clickCount == 2. Polls the flag rather than
+    /// IsEquipped so the loop does not re-hover; the caller's assertion does that once.
     /// </summary>
     private void EquipUntilShown(ExplorePanelBackpackView.BackpackGridItem item)
     {
         item.DoubleClickEquip();
-        WaitUntil(() => item.EquippedIndicator.IsPresent(verificationShot: false),
-                  EQUIP_CONFIRM_TIMEOUT);
+        WaitUntil(item.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
     }
 
     /// <summary>

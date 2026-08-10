@@ -85,15 +85,17 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     /// A single item in a backpack grid (wearable or emote), with equip/unequip buttons
     /// that are only enabled while the item is hovered.
     /// </summary>
-    public class BackpackGridItem(
-        Clickable root,
-        Clickable equipLocator,
-        Clickable unequipLocator,
-        Locatable loadedLocator,
-        Locatable equippedLocator)
+    public class BackpackGridItem(Clickable root, Clickable equipLocator, Clickable unequipLocator, Locatable loadedLocator)
         : BaseClickableView(root)
     {
         #region Elements
+
+        // Equipped state comes off the view's own flag. Every rendered alternative is unusable:
+        // the Equipped icon is never switched on by OnEquip (only by a re-bind or a pointer
+        // exit), and the overlay's Unequip button needs a hover to be readable at all.
+        // Emote tiles answer to the same component — BackpackEmoteGridItemView derives from it.
+        private const string ITEM_VIEW_COMPONENT = "DCL.Backpack.BackpackItemView";
+        private const string ITEM_VIEW_ASSEMBLY  = "Backpack";
 
         // NOTE: the hover overlay's Equip/Unequip Buttons do NOT respond to synthetic
         // AltTester clicks or taps in this build (verified live — the click lands but no
@@ -103,9 +105,6 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         // FullBackpack is only enabled once the tile has real content; while the tile is
         // still loading, EmptyLoading is shown instead and clicks on it are no-ops.
         public Locatable LoadedIndicator { get; } = loadedLocator;
-        // BackpackItemView.EquippedIcon, set when the tile binds. Hovering hides it, so read
-        // it before any PointerEnter.
-        public Locatable EquippedIndicator { get; } = equippedLocator;
 
         #endregion
 
@@ -159,8 +158,26 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
-        /// Reads the tile's own equipped icon, then hovers so the overlay shows the matching
-        /// Equip/Unequip affordance. The read has to come first — hovering hides the icon.
+        /// Reads BackpackItemView's own equipped flag — the one thing OnEquip actually writes.
+        /// No hover, so it stays true whether the pointer is on the tile or not.
+        /// </summary>
+        [AllureStep("Read grid item equipped flag")]
+        internal bool ReadEquippedFlag()
+        {
+            // A blank pooled tile still carries the component, so its flag reads false for the
+            // wrong reason. Content is a precondition, not part of the answer.
+            if (!LoadedIndicator.IsPresent(verificationShot: false))
+                throw new AssertionException(
+                    $"Grid item '{ShotName}' holds no content — its equipped state cannot be read.");
+
+            // Shot-suppressed wait: reading a component is not a verification on its own.
+            return WaitFor(20D, verificationShot: false)
+                .GetComponentProperty<bool>(ITEM_VIEW_COMPONENT, "IsEquipped", ITEM_VIEW_ASSEMBLY);
+        }
+
+        /// <summary>
+        /// Reads the equipped flag, then hovers so the overlay shows the matching Equip/Unequip
+        /// affordance in the verification shot.
         /// </summary>
         public bool IsEquipped() => IsEquipped(verificationShot: true);
 
@@ -169,16 +186,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Check whether grid item is equipped")]
         internal bool IsEquipped(bool verificationShot)
         {
-            // A blank pooled tile has no icons at all and would read as unequipped, so the
-            // content is a precondition rather than something to fold into the answer.
-            if (!LoadedIndicator.IsPresent(verificationShot: false))
-                throw new AssertionException(
-                    $"Grid item '{ShotName}' holds no content — its equipped state cannot be read.");
+            var equipped = ReadEquippedFlag();
 
-            var equipped = EquippedIndicator.IsPresent(verificationShot: false);
-
-            // Hover after the read, not to take it: the overlay is what the shot below shows,
-            // and callers equip in the same driver session while the pointer is still here.
+            // Hover for the picture, not for the answer: callers equip in the same driver
+            // session while the pointer is still here.
             Hover();
 
             if (verificationShot)
@@ -241,16 +252,14 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                 new(By.PATH, loadedPath),
                 new(By.PATH, $"{loadedPath}/HoverBackground/Equip"),
                 new(By.PATH, $"{loadedPath}/HoverBackground/Unequip"),
-                new(By.PATH, loadedPath),
-                new(By.PATH, $"{loadedPath}/Equipped"));
+                new(By.PATH, loadedPath));
         }
 
         private static BackpackGridItem BuildGridItem(string basePath) => new(
             new(By.PATH, basePath),
             new(By.PATH, $"{basePath}/FullBackpack/HoverBackground/Equip"),
             new(By.PATH, $"{basePath}/FullBackpack/HoverBackground/Unequip"),
-            new(By.PATH, $"{basePath}/FullBackpack"),
-            new(By.PATH, $"{basePath}/FullBackpack/Equipped"));
+            new(By.PATH, $"{basePath}/FullBackpack"));
 
         #endregion
 
@@ -403,9 +412,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                 new(By.PATH, loadedPath),
                 new(By.PATH, $"{loadedPath}/HoverBackground/Equip"),
                 new(By.PATH, $"{loadedPath}/HoverBackground/Unequip"),
-                new(By.PATH, loadedPath),
-                // Emote tiles badge the slot they occupy; there is no Equipped icon here.
-                new(By.PATH, $"{loadedPath}/EquippedSlot"));
+                new(By.PATH, loadedPath));
         }
 
         #endregion
@@ -591,9 +598,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         /// badge that shows the slot number while the emote is equipped.
         /// </summary>
         public class EmoteGridItem(Clickable root, Clickable equipLocator, Clickable unequipLocator, Locatable loadedLocator, Readable equippedSlotLocator)
-            // The badge doubles as the equipped indicator — it is the emote grid's equivalent
-            // of the wearable tile's Equipped icon.
-            : BackpackGridItem(root, equipLocator, unequipLocator, loadedLocator, equippedSlotLocator)
+            : BackpackGridItem(root, equipLocator, unequipLocator, loadedLocator)
         {
             #region Elements
 
