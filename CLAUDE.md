@@ -17,6 +17,19 @@ This repo hosts **two independent test stacks** that share a single test identit
 
 To provision the BIP39 wallet identity used by all in-world tests, use `metaforge account create <name>` directly. See each stack's README for details.
 
+## Writing Style: Comments and PR Descriptions
+
+Keep both short. This applies to every file in the repo, both stacks.
+
+- **Code comments** — one or two lines. Say why the code is the way it is, nothing more. No CI run
+  numbers, no failure narratives, no history of what was tried before, no restating the code.
+- **Do not document external behavior.** How the Unity client, the dapp, or a third-party library
+  behaves belongs in neither comments nor XML docs. Name the constraint in a few words and stop —
+  the reader can go read the client.
+- **XML doc comments** (`///`) — one sentence on what the member is for. Skip when the name says it.
+- **PR descriptions** — what changed and why, in a few lines. No walkthroughs of client internals,
+  no evidence dumps, no before/after essays. Link the issue or run instead of retelling it.
+
 ## When to Read Which CLAUDE.md
 
 - Working on a `.cs` file, a Unity-side flow, or anything under `explorer/` → read [explorer/CLAUDE.md](explorer/CLAUDE.md).

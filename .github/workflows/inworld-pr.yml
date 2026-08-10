@@ -2,12 +2,13 @@ name: InWorld (PR)
 
 # Runs the InWorld suite on PRs, scoped to what the PR actually touches:
 #
-#   changed InWorld fixtures only  -> just those fixtures
-#   CI or shared test infra changed -> the whole Category=InWorld suite
+#   CI or non-symbol-reachable test infra changed -> the whole Category=InWorld suite
+#   anything else under explorer/Tests/           -> the fixtures that can reach it,
+#                                                    resolved by explorer/ci/ScopeInWorldTests
 #
-# "Shared" means anything a single fixture cannot be reasoned about without:
-# the workflows and the runner chassis, explorer/ci/*, BaseTest, GlobalSetup,
-# the csproj, and Common/ + Views/ (page objects every fixture drives through).
+# The scope tool answers "which Category=InWorld fixtures can reach these files"
+# from Roslyn symbols, so a page object only pulls in the fixtures that actually
+# drive it. Any doubt on its side answers ALL.
 #
 # Baselines are excluded — they are visual-suite inputs and cannot change an
 # InWorld result.
@@ -48,11 +49,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # No global.json in the repo, so the SDK the scope tool builds under is
+      # pinned here rather than inherited from the runner image.
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # ~800 MB of packages for a job that only reads symbols; a cold restore is
+      # most of this job's wall clock. No packages.lock.json, so setup-dotnet's
+      # own cache option is unavailable.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('explorer/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # ScopeInWorldTests opens Tests.csproj through MSBuildWorkspace, which needs
+      # the NuGet references resolved on disk or every symbol lookup comes back null.
+      - name: Restore test project
+        run: dotnet restore explorer/Tests/Tests.csproj
+
+      # The closure is only worth trusting while these hold. A drift forces the
+      # broad path below instead of blocking the PR.
+      - name: Verify scope resolver against golden closures
+        id: golden
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          dotnet build explorer/ci/ScopeInWorldTests -c Release --nologo -v quiet
+          dotnet explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll --self-test
+
       - name: Classify changed files
         id: scope
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          GOLDEN: ${{ steps.golden.outcome }}
         run: |
           set -euo pipefail
           CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
@@ -61,11 +93,13 @@ jobs:
           echo "$CHANGED"
           echo "::endgroup::"
 
-          # Anything here can change the outcome of any fixture, so scoping
-          # down would give a green tick that means nothing.
-          BROAD='^(\.github/workflows/|\.github/actions/|explorer/ci/|explorer/Tests/Common/|explorer/Tests/Views/|explorer/Tests/GlobalSetup\.cs$|explorer/Tests/GlobalUsings\.cs$|explorer/Tests/Tests\.csproj$|explorer/Tests/Tests/BaseTest\.cs$|explorer/Tests/Tests/LoggedOutAuthBaseTest\.cs$)'
+          # None of this is symbol-reachable, so the closure below cannot see it and
+          # must not be trusted with it. GlobalSetup is the sharpest case: it is an
+          # assembly-level [SetUpFixture] that no fixture references by symbol, so
+          # letting the graph classify a change there would produce a false green.
+          BROAD='^(\.github/workflows/|\.github/actions/|explorer/ci/|explorer/Tests/GlobalSetup\.cs$|explorer/Tests/GlobalUsings\.cs$|explorer/Tests/Tests\.csproj$)'
           if printf '%s\n' "$CHANGED" | grep -Eq "$BROAD"; then
-            echo "::notice::CI or shared test infrastructure changed — running the whole InWorld suite."
+            echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
             {
               echo "should_run=true"
               echo "filter=Category=InWorld"
@@ -73,32 +107,65 @@ jobs:
             exit 0
           fi
 
-          # Otherwise: only the fixtures that changed AND carry the category.
-          # Reading the category off the checked-out file rather than a hard
-          # coded list means a fixture joining or leaving Category=InWorld
-          # needs no edit here.
-          CLASSES=""
-          while IFS= read -r f; do
-            case "$f" in explorer/Tests/Tests/*.cs) ;; *) continue ;; esac
-            [ -f "$f" ] || continue                       # deleted by this PR
-            grep -q 'Category("InWorld")' "$f" || continue
-            CLASSES="${CLASSES} $(basename "$f" .cs)"
-          done <<< "$CHANGED"
-
-          if [ -z "$CLASSES" ]; then
-            echo "::notice::No InWorld fixtures changed — nothing to run."
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          # Everything else under explorer/Tests/ goes to the resolver. It prints ALL
+          # on any doubt of its own; `|| echo ALL` covers a crash that kills it before
+          # it can, and a failed golden check demotes the answer to ALL as well.
+          SCOPE=ALL
+          if [ "$GOLDEN" = 'success' ]; then
+            SCOPE=$(printf '%s\n' "$CHANGED" \
+              | dotnet explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll \
+                2> "$RUNNER_TEMP/scope.log" \
+              || echo ALL)
+            SCOPE=$(printf '%s' "$SCOPE" | tail -n 1)
+          else
+            echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
           fi
 
-          # Class-name match: the category lives on the class, so a fixture is
-          # wholly in or out and there is no need to AND the category back in.
+          if [ -f "$RUNNER_TEMP/scope.log" ]; then
+            # Indented code block, not a fence: a path holding a backtick run cannot
+            # break out of it and inject markdown into the summary.
+            {
+              echo '### InWorld scope'
+              echo
+              sed 's/^/    /' "$RUNNER_TEMP/scope.log"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           FILTER=""
-          for c in $CLASSES; do
-            [ -n "$FILTER" ] && FILTER="${FILTER}|"
-            FILTER="${FILTER}FullyQualifiedName~${c}"
-          done
-          echo "::notice::Changed InWorld fixtures:${CLASSES}"
+          case "$SCOPE" in
+            NONE)
+              echo "::notice::No InWorld fixture reaches the changed files — nothing to run."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            # Class-name match: the category lives on the class, so a fixture is
+            # wholly in or out and there is no need to AND the category back in.
+            FIXTURES:*)
+              for c in ${SCOPE#FIXTURES:}; do
+                # Interpolated into the vstest filter, so anything that is not a
+                # class name means the resolver is not doing what we think it is.
+                if ! printf '%s' "$c" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
+                  echo "::warning::Resolver returned '$c', which is not a class name — running the whole InWorld suite."
+                  FILTER=""
+                  break
+                fi
+                [ -n "$FILTER" ] && FILTER="${FILTER}|"
+                FILTER="${FILTER}FullyQualifiedName~${c}"
+              done
+              ;;
+            ALL) ;;
+            *)
+              echo "::warning::Resolver printed '$SCOPE' — running the whole InWorld suite."
+              ;;
+          esac
+
+          if [ -z "$FILTER" ]; then
+            echo "::notice::Running the whole InWorld suite."
+            FILTER='Category=InWorld'
+          else
+            echo "::notice::Affected InWorld fixtures:${SCOPE#FIXTURES:}"
+          fi
+
           {
             echo "should_run=true"
             echo "filter=${FILTER}"

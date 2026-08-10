@@ -119,6 +119,8 @@ If you're driving the Explorer + AltTester yourself:
 explorer/
 ├── ExplorerAutomation.sln
 ├── MetaForge.TestLogger/              # custom NUnit logger consumed by metaforge
+├── ci/                                # CI-only helpers, outside the solution
+│   └── ScopeInWorldTests/             # picks the InWorld fixtures a PR's changes can reach
 └── Tests/
     ├── Common/                        # Locatable / Readable / Clickable / Writable + Reporter
     ├── Tests/                         # NUnit fixtures (BaseTest + per-feature classes)
