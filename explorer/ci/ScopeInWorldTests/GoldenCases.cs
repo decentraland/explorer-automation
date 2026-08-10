@@ -10,7 +10,7 @@ internal static class GoldenCases
     private const string EveryFixture = "<all>";
 
     /// <summary>A fixture quietly leaving the category must read as drift, not as narrower scope.</summary>
-    private const int ExpectedFixtureCount = 14;
+    private const int ExpectedFixtureCount = 16;
 
     private static readonly (string Changed, string[] Expected)[] Cases =
     [
@@ -51,11 +51,6 @@ internal static class GoldenCases
         // Driven only from the [Category("Auth")] OTP fixtures and LoggedOutAuthBaseTest.
         "explorer/Tests/Views/OtpVerificationScreenView.cs",
         "explorer/Tests/Views/WelcomeNewAccountScreenView.cs",
-
-        // Driven only from CameraTests and MinimapTests, which carry [Order] but no
-        // [Category]. Restoring their category should drop these two lines.
-        "explorer/Tests/Views/InWorldCameraView.cs",
-        "explorer/Tests/Views/MinimapView.cs",
     ];
 
     public static int Run(ReachabilityGraph graph)
