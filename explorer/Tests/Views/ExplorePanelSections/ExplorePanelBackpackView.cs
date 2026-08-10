@@ -164,17 +164,20 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed wait: double-click equip is an action, not a verification.
             var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
 
-            // Settle before clicking. Every CI equip that has ever worked had ~1.8s or more of
-            // hovering behind it, and every one clicked within ~1s of the first PointerEnter
-            // has failed. The mechanism is not known — the hover animation is only 0.1s — so
-            // this restores the delay the old three-probe IsEquipped provided by accident.
+            // Park the real cursor on the tile in its own frames first. Click queues the move
+            // and the first press together, so that press lands on the frame the pointer
+            // arrives — the frame AnimateHover resets the overlay to zero scale. The presses
+            // then raycast different hierarchies and Unity restarts the click count.
+            // Hover only sends a synthetic PointerEnter, which never moves the mouse device.
+            CommonStuff.AltDriver.MoveMouse(new AltVector2(altObj.x, altObj.y));
+
+            // Let the arrival's hover animation finish before pressing.
             Thread.Sleep(PRE_EQUIP_SETTLE_MS);
-            // One Player-side command with count: 2, NOT two driver round-trips. Unity only
-            // raises clickCount == 2 when the second click lands inside its double-click
-            // window; on the macos-14 paravirt runner a single driver round-trip already
-            // exceeds that window, so two separate Click calls read as two single clicks and
-            // never equip. The interval here is applied by the Player, not by the network.
-            // Click more times than needed to ensure the click lands inside the window.
+            // One Player-side command, NOT separate driver round-trips: a single round-trip on
+            // the macos-14 paravirt runner already exceeds Unity's double-click window, so
+            // separate Click calls read as single clicks and never equip. The interval here is
+            // applied by the Player. More presses than needed, so more than one consecutive
+            // pair gets a chance to land inside the window.
             altObj.Click(count: 4, interval: 0.05f);
             Reporter.Log("Double-clicked grid item to equip");
         }
