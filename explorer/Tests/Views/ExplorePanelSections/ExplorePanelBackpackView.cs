@@ -495,7 +495,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         [AllureStep("Wait for grid item to finish loading")]
-        public void WaitForGridItemLoaded(int index)
+        public void WaitForGridItemLoaded(int index) => WaitForGridItemLoaded(index, verificationShot: true);
+
+        // Shot-suppressed overload for the equip helpers: SetEmote runs this every call, and in
+        // the ten-slot fixture the shots are ten near-identical attachments.
+        internal void WaitForGridItemLoaded(int index, bool verificationShot)
         {
             // Content first: FullBackpack is the only thing separating a tile that holds an item
             // from a blank pooled one, and IsLoading reads false on both.
@@ -507,7 +511,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             gridItem.WaitForComponentProperty<bool>(
                 "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
                 timeout: CONTENT_TIMEOUT);
-            Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
+            if (verificationShot)
+                Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
             Reporter.Log($"Grid item {index} finished loading");
         }
 
@@ -525,9 +530,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Set emote to slot")]
         public void SetEmote(int slotIndex, int gridIndex)
         {
-            WaitForGridItemLoaded(gridIndex);
+            // No selection click: EquipItem takes the item from the tile's own OnEquip and the
+            // target slot from ClickSlot, so selecting it only added another droppable step.
+            WaitForGridItemLoaded(gridIndex, verificationShot: false);
             ClickSlot(slotIndex);
-            ClickGridItem(gridIndex);
             GridItems[gridIndex].Equip();
             Reporter.Log($"Set emote grid item {gridIndex} to slot {slotIndex}");
         }
@@ -542,7 +548,6 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             FirstLoadedGridItem.WaitUntilLoaded(CONTENT_TIMEOUT);
             ClickSlot(slotIndex);
-            FirstLoadedGridItem.Click();
             FirstLoadedGridItem.Equip();
             Reporter.Log($"Set the leading loaded emote to slot {slotIndex}");
         }
