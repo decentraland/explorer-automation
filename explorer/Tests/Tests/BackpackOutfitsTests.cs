@@ -12,7 +12,7 @@ public class BackpackOutfitsTests : BaseTest
     // never activates, even right after equipping an outfit and reopening the panel.
 
     // Wall-clock budget for the equip to show up, matching BackpackWearablesTests.
-    private const double EQUIP_CONFIRM_TIMEOUT = 15;
+    private const double EQUIP_CONFIRM_TIMEOUT = 8;
 
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()
@@ -60,14 +60,10 @@ public class BackpackOutfitsTests : BaseTest
     [Test, Order(3)]
     public void TestEquipFirstSavedOutfit()
     {
-        // Flaky, not broken: the precondition read of hair.IsEquipped() comes back false
-        // even with the equip retried until the hover overlay confirms it. Passed run
-        // 31180360091, failed runs 31168104702 and 31183128982. The hover-probe hardening in
-        // BackpackGridItem.IsEquipped may well settle this — it is gated rather than shipped
-        // on that hope, because one green run cannot demonstrate a flake is gone.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: hair.IsEquipped() precondition reads false intermittently after a confirmed equip (failed runs 31168104702, 31183128982; passed run 31180360091)");
-
+        // Was gated on the hair.IsEquipped() precondition reading false after an equip the
+        // test had already confirmed. Both halves of that are gone: the equip presses a button
+        // rather than hoping for a double-click, and IsEquipped reads the client's own flag
+        // instead of hover-probing an overlay whose PointerEnter could be swallowed.
         OpenBackpack();
         Views.ExplorePanel.Backpack.OpenSavedOutfits();
         Views.ExplorePanel.Backpack.SavedOutfits.EnsureFirstSlotSaved();
