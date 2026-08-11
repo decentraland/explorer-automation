@@ -1,4 +1,4 @@
-﻿namespace ExplorerAutomation.Tests.Tests;
+namespace ExplorerAutomation.Tests.Tests;
 
 // Depth coverage for the explore panel's Communities section (the open-from-sidebar smoke
 // test lives in ExplorePanelTests). Read-only: no community is created, joined or left.

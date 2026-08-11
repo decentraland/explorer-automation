@@ -1,4 +1,4 @@
-﻿namespace ExplorerAutomation.Tests.Tests;
+namespace ExplorerAutomation.Tests.Tests;
 
 // Depth coverage for the explore panel's Places section (the open-from-sidebar smoke test
 // lives in ExplorePanelTests). The in-world Order band 10-19 is full, so this fixture

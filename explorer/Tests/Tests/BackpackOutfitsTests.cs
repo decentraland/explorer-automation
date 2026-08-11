@@ -1,4 +1,4 @@
-﻿using ExplorerAutomation.Tests.Views.ExplorePanelSections;
+using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 namespace ExplorerAutomation.Tests.Tests;
 

@@ -1,4 +1,4 @@
-﻿namespace ExplorerAutomation.Tests.Tests;
+namespace ExplorerAutomation.Tests.Tests;
 
 // Depth coverage for the explore panel's Events section (the open-from-sidebar smoke test
 // lives in ExplorePanelTests). The in-world Order band 10-19 is full, so this fixture
@@ -46,9 +46,7 @@ public class EventsTests : BaseTest
     {
         OpenEvents();
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
-        // Day columns populate asynchronously. A card being present is not enough — the grid
-        // re-binds it afterwards, so clicking on first sight hits a dead tile.
-        Wait(2);
+        Wait(2); // day columns populate asynchronously
 
         // Card resolution + name capture happen inside the retry: the calendar re-binds
         // cards while events stream in, silently dropping clicks and moving anchors.

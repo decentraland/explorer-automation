@@ -100,6 +100,71 @@ swallowed is only undone by another click, so a short budget plus a fresh click 
 one dead selection for the default ceiling — and it lowers the worst case, not just the common
 one. Long ceilings are only ever spent on a path that is already failing.
 
+**A wait's position decides whether it can become a condition.** One that *follows* an
+interaction is waiting for that interaction's effect, and the effect is observable. One that
+*precedes* an interaction is guarding readiness, and readiness usually has no signal — so
+converting it trades a real guarantee for a weaker one, because **findable is not ready**. A
+panel-open helper whose test then reads a grid or a search result keeps its settle; the
+presence-only shortcut tests do not need one.
+
+Timeouts are floors, not ceilings. `WaitForObject` polls with a round trip per iteration, so a
+15s probe spends about 20s. A probe you *expect* to fail therefore costs more than its number
+says — poll `IsPresent` against a deadline instead of catching a `WaitFor`.
+
+A verification shot costs ~200ms, so suppressing one is a timing change as much as a report
+change. In a content-loading fixture, treat removing a shot the way you would treat removing a
+wait.
+
+Boot is a per-process cost, not a per-fixture one: the client stays in world between fixtures,
+so `EnsureInWorld` confirms the main menu and returns rather than re-running the splash, auth
+and loading-screen path. Anything that leaves the client elsewhere still gets the full path.
+
+## Pooled Lists
+
+The explore panel's grids and day columns are recycling lists, so a hierarchy index names a
+*slot*, not a position. The slot may be bound to different data than the label you just read, or
+parked outside the viewport — and a click on an off-screen item is dispatched off-screen and
+silently does nothing, which reads in the report as a click that landed and achieved nothing.
+
+Pick by screen position instead. The `AltObject` from `WaitFor` carries `y` (Unity's bottom-left
+origin) and `mobileY` (the same point measured from the top), so `y > 0 && mobileY > 0` proves the
+centre is on screen without asking for the screen size.
+`ExplorePanelEventsView.FindTopLeftVisibleCard` is the worked example — scan columns left to
+right, keep the smallest `mobileY`, stop at the first column that answers.
+
+Still index-addressed and carrying the same latent bug: `PlacesTests` (the detail click, and the
+search and filter assertions that assume index 0 is the leading result) and `CommunitiesTests`
+(`Cards[0].Title`). Its detail flow brute-forces the problem by clicking cards 0-4 in turn. The
+backpack pools are safe by another route — they blank and re-park tiles rather than scrolling
+them away, and are already fenced by `LoadedIndicator` / `HasFullGridPage`.
+
+## Environment Coupling
+
+A test that asserts flag-gated UI is asserting the environment. Read the document the client
+reads: `https://feature-flags.decentraland.{org|zone}/explorer.json` with a
+`referer: https://decentraland.{env}` header. The hostname strategy is evaluated from that header,
+so a bare request answers with a subset in which live features look off. Keys carry the
+`explorer-` prefix the client strips, and a disabled flag is *absent* rather than `false`. CI
+runs against `org`.
+
+The Nearby Voice Chat tip appears once loading completes and closes only on its own two buttons —
+Escape does not dismiss it. Its dismissal is a per-profile pref and CI creates a fresh account per
+run, so it is up for the whole run and swallows clicks in the bottom-left.
+
+## Diagnosing a Failed Run
+
+Check whether the test took a different code path than the last green run before blaming the diff.
+A branch that only runs when live data exists — or does not — can sit unexercised for months and
+then fail on its first outing. That looks exactly like a regression and is not one.
+
+The artifact carries the evidence. Every test attaches its final frame, and
+`AltTester-Server.log` records each command with the object's resolved screen coordinates, which
+is how a swallowed click is told apart from one dispatched outside the viewport.
+
+An `[AllureStep]` method's arguments are JSON-serialized into the result file, and a delegate
+argument drags its whole reflection graph in at ~14MB per call. Register a type formatter in
+`GlobalSetup` for any new delegate-taking step.
+
 ## Skills
 
 - **`view-writer`** — Always invoke this skill when creating new view classes, modifying existing views, adding elements/sections/sub-views, or registering views in `ViewContainer`. It contains the full POM conventions, region layout rules, and the workflow for discovering element locators via the `alttester-explorer` agent.
