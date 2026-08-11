@@ -60,6 +60,31 @@ the point.
 - **Global usings** are in `GlobalUsings.cs` — don't add per-file usings for things already there.
 - **Reporting**: Use `Reporter.Log()` (not `Console.WriteLine`). Use `Reporter.TakeScreenshot()` for manual screenshots.
 
+## Interaction Mechanics
+
+**Never drive a flow with a double-click.** Where the client offers a button for the same
+action, press the button. Backpack equip is the worked example: `BackpackItemView` maps
+`clickCount == 2` to Equip, but its Equip button raises the same `OnEquip`, so the button
+gets there without depending on Unity's click counting.
+
+Evidence: across the recorded CI runs the double-click equipped roughly half the time, and
+every failure showed the presses arriving as single clicks — the item selected, nothing
+equipped. `AltObject.Click` queues the pointer move and the first press in the same frame,
+and the arriving pointer re-runs the client's hover animation, so consecutive presses can
+resolve against different hierarchies and Unity restarts the count. Press count, interval,
+parking the cursor first and settling before the press each moved the rate; none fixed it.
+Switching to the button took the suite from one-or-both equip tests failing every run to
+green.
+
+**Tap is dead weight in this build.** AltTester's tap path compiles out its
+pointerDown/Up/Click dispatch when the EventSystem runs `InputSystemUIInputModule`, which
+this client does, leaving only `SendMessage` that uGUI `Button` never handles. A tap on a
+uGUI control does nothing at all — reach for `Click`.
+
+**A press must not share a frame with the pointer arriving.** Anything that appears on hover
+(overlay buttons) needs the cursor parked with `AltDriver.MoveMouse` and the animation given
+time before the click, or the press raycasts past a zero-scaled element.
+
 ## Skills
 
 - **`view-writer`** — Always invoke this skill when creating new view classes, modifying existing views, adding elements/sections/sub-views, or registering views in `ViewContainer`. It contains the full POM conventions, region layout rules, and the workflow for discovering element locators via the `alttester-explorer` agent.
