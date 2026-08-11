@@ -1,4 +1,4 @@
-using ExplorerAutomation.Tests.Views.ExplorePanelSections;
+﻿using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 namespace ExplorerAutomation.Tests.Tests;
 
@@ -86,9 +86,9 @@ public class BackpackWearablesTests : BaseTest
         // Open backpack via the keyboard shortcut: more reliable than the sidebar click
         // for the very first interaction post-warmup. The dedicated TestOpenBackpackFromSidebar
         // exercises the click path.
-        PressKey(AltKeyCode.I, delay: 0);
+        PressKey(AltKeyCode.I);
         Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.WearablesTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.Backpack.WearablesTabButton.Click();
         Views.ExplorePanel.Backpack.Wearables.WaitFor();
     }
 

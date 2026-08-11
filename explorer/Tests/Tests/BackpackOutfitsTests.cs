@@ -1,4 +1,4 @@
-using ExplorerAutomation.Tests.Views.ExplorePanelSections;
+﻿using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 namespace ExplorerAutomation.Tests.Tests;
 
@@ -145,9 +145,9 @@ public class BackpackOutfitsTests : BaseTest
 
     private void OpenBackpack()
     {
-        PressKey(AltKeyCode.I, delay: 0);
+        PressKey(AltKeyCode.I);
         Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.WearablesTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.Backpack.WearablesTabButton.Click();
         Views.ExplorePanel.Backpack.WaitFor();
     }
 

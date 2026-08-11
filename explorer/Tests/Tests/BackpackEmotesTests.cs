@@ -1,4 +1,4 @@
-using ExplorerAutomation.Tests.Views.ExplorePanelSections;
+﻿using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 namespace ExplorerAutomation.Tests.Tests;
 
@@ -175,9 +175,9 @@ public class BackpackEmotesTests : BaseTest
     {
         // Open backpack via the keyboard shortcut: more reliable than the sidebar click
         // for the very first interaction post-warmup.
-        PressKey(AltKeyCode.I, delay: 0);
+        PressKey(AltKeyCode.I);
         Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.EmotesTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.Backpack.EmotesTabButton.Click();
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
 
         // Order matters. A search term from an earlier test outlives the panel and shrinks the
