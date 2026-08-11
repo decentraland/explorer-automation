@@ -15,15 +15,12 @@ public class BackpackEmotesTests : BaseTest
     //   Equip coverage goes through the double-click path; explicit-button unequip
     //   coverage goes through the slot's Unequip button, which does respond.
 
-    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate — a
-    // single slot-occupancy lookup, ~0.2s. Deliberately not shared with
-    // BackpackWearablesTests, whose predicate re-hovers and costs an order of magnitude more;
-    // one constant for both would be honest for neither. 15s is what the previous
-    // iteration-counted loop actually spent here. A landed equip fills the slot within a
-    // second or two, so the observed failure is a dropped click and retrying sooner beats
-    // waiting longer. Re-equipping is idempotent (double-click maps to Equip, not to a
+    // Wall-clock budget per equip attempt. A landed equip fills the slot in a second or two
+    // and the measured confirm is ~3s, so this budget exists to retry a dropped click, not to
+    // outwait a slow client. Matches BackpackWearablesTests now that both fixtures confirm
+    // with a cheap read. Re-equipping is idempotent (double-click maps to Equip, not to a
     // toggle), so an extra attempt against an already-equipped item is harmless.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 15;
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 8;
     private const int PAGE_FLIP_ATTEMPTS = 3;
 
     [Test]
@@ -91,6 +88,12 @@ public class BackpackEmotesTests : BaseTest
                    () => !emotes.Slots[0].EmptyNameLabel.IsPresent(verificationShot: false),
                    timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
 
+        // Assert the slot filled before reading its label. EmoteName only exists once an emote
+        // occupies the slot, so reading first reports a failed equip as a missing object and
+        // spends the label's own ceiling getting there.
+        Assert.That(emotes.Slots[0].EmptyNameLabel.IsPresent(), Is.False,
+            "Slot 0 should hold an emote after the equip, but it is still empty");
+
         // The slot label names the emote that landed, so it proves the searched item reached the
         // slot asked for — not merely that something is equipped.
         var slotName = emotes.Slots[0].NameLabel.WaitForText(
@@ -117,7 +120,11 @@ public class BackpackEmotesTests : BaseTest
         ClickUntil(() => emotes.SetEmote(4, gridIndex),
                    () => emotes.GridItems[gridIndex].EquippedSlotBadge.IsPresent(verificationShot: false),
                    timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
-        emotes.GridItems[gridIndex].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+
+        // Assert rather than wait again: ClickUntil just polled this exact condition for the
+        // whole retry budget, so a second wait only adds its own ceiling to a decided failure.
+        Assert.That(emotes.GridItems[gridIndex].EquippedSlotBadge.IsPresent(), Is.True,
+            $"Precondition: grid item {gridIndex} should be equipped before the unequip is exercised");
         Reporter.Log($"Precondition ready — grid item {gridIndex} equipped to slot 5");
 
         // The slot's own button — the grid item's hover Unequip ignores synthetic input.
