@@ -50,20 +50,12 @@ public class EventsTests : BaseTest
         // re-binds it afterwards, so clicking on first sight hits a dead tile.
         Wait(2);
 
-        // The Today column only holds big cards while events are live, so fall back to
-        // tomorrow's first (always-scheduled) small card when nothing is live right now.
         // Card resolution + name capture happen inside the retry: the calendar re-binds
         // cards while events stream in, silently dropping clicks and moving anchors.
         var eventName = string.Empty;
         ClickUntil(() =>
         {
-            var card = Views.ExplorePanel.Events.TodayBigCards[0];
-            if (!card.IsPresent())
-            {
-                Reporter.Log("No live event card in the Today column — using tomorrow's first card");
-                card = Views.ExplorePanel.Events.TomorrowSmallCards[0];
-            }
-
+            var card = Views.ExplorePanel.Events.FindTopLeftVisibleCard();
             eventName = card.EventName.GetText();
             card.Click();
         }, () => Views.ExplorePanel.Events.EventDetail.IsPresent(verificationShot: false));
