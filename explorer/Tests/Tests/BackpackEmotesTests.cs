@@ -22,6 +22,10 @@ public class BackpackEmotesTests : BaseTest
     // toggle), so an extra attempt against an already-equipped item is harmless.
     private const double EQUIP_SETTLE_PER_ATTEMPT = 8;
     private const int PAGE_FLIP_ATTEMPTS = 3;
+    // Short per-read budget on the page-flip loop. The only remedy for a click the grid rebuild
+    // swallowed is another click, so it polls briefly and clicks again rather than spending
+    // WaitForText's default on a selection that never happened.
+    private const double RETRY_READ_TIMEOUT = 4;
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
@@ -196,13 +200,17 @@ public class BackpackEmotesTests : BaseTest
     /// FullBackpack path would be both deterministic and selectable and has never been run,
     /// so it is untried rather than ruled out.
     /// </summary>
-    private string ReadFirstItemName(ExplorePanelBackpackView.EmotesTab emotes, string previousName = null)
+    private string ReadFirstItemName(
+        ExplorePanelBackpackView.EmotesTab emotes,
+        string previousName = null,
+        double timeoutSeconds = 10)
     {
         // Paravirt ceiling, not the 20s default: on CI run 31183128982 no tile in the grid
         // had an enabled FullBackpack inside 20s, so the read failed before it could start.
         emotes.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
         emotes.FirstLoadedGridItem.Click();
-        return emotes.SelectedItemName.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
+        return emotes.SelectedItemName.WaitForText(
+            text => !string.IsNullOrEmpty(text) && text != previousName, timeoutSeconds);
     }
 
     /// <summary>
@@ -220,6 +228,8 @@ public class BackpackEmotesTests : BaseTest
 
         for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
+            // The one deliberate pause left in this fixture: it is the interval between two
+            // samples, so it is the measurement, not padding around one.
             Wait(1);
             var reread = ReadFirstItemName(emotes);
             if (reread == name)
@@ -232,9 +242,10 @@ public class BackpackEmotesTests : BaseTest
     }
 
     /// <summary>
-    /// Clicks a pager arrow and reads the (re-selected) first item name, retrying when
-    /// the name has not changed yet — clicks during the grid rebuild are no-ops and
-    /// leave a stale name in the info panel.
+    /// Clicks a pager arrow and reads the (re-selected) first item name, clicking the tile
+    /// again while the name has not changed yet — clicks during the grid rebuild are no-ops
+    /// and leave a stale name in the info panel, so each attempt gets a short read budget
+    /// rather than one long one.
     /// </summary>
     private string FlipPageAndReadFirstItem(
         ExplorePanelBackpackView.EmotesTab emotes,
@@ -242,14 +253,13 @@ public class BackpackEmotesTests : BaseTest
         string previousName)
     {
         pagerButton.Click();
-        Wait(2);
 
         for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
         {
             // previousName here (PR #54): this read only has to notice the flip, so polling
             // for a differing name is right. No separate WaitUntilLoaded — ReadFirstItemName
             // already waits on the paravirt ceiling, the stronger of the two.
-            var name = ReadFirstItemName(emotes, previousName);
+            var name = ReadFirstItemName(emotes, previousName, RETRY_READ_TIMEOUT);
             if (name != previousName)
                 // Settle before returning, do not trust the first differing read. This is the
                 // value the round-trip assertion compares, so it is the read that has to be
@@ -257,8 +267,6 @@ public class BackpackEmotesTests : BaseTest
                 // the settled incoming page. Settling only the page-1 baseline would leave the
                 // failing read unguarded.
                 return ReadSettledFirstItemName(emotes);
-
-            Wait(2);
         }
 
         // Still reading the outgoing page's name: return a settled read so the caller's

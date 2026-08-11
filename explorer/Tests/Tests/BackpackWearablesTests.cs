@@ -12,7 +12,11 @@ public class BackpackWearablesTests : BaseTest
     // clickCount == 2, which never became reliable through the driver.
 
     private const double EQUIP_CONFIRM_TIMEOUT = 8;
-    private const int PAGE_FLIP_ATTEMPTS = 3;
+    private const int RETRY_ATTEMPTS = 3;
+    // Short per-read budget on the retrying loops below. The only remedy for a click the grid
+    // rebuild swallowed is another click, so these poll briefly and click again rather than
+    // spending WaitForText's default on a selection that never happened.
+    private const double RETRY_READ_TIMEOUT = 4;
 
     [Test]
     public void TestEquipWearableFromGrid()
@@ -40,19 +44,13 @@ public class BackpackWearablesTests : BaseTest
 
         // "Punk" is a base-collection hair every account owns.
         Views.ExplorePanel.Backpack.SearchBar.SetText("Punk");
-        // Give the grid a beat to refilter before the first read: a click during the
-        // transition can land on a stale (pre-search) tile, or briefly find no item
-        // selected at all while the info panel is between states — verified live, this
-        // is NOT redundant with WaitUntilLoaded() below (that alone returns true on the
-        // stale tile too).
-        Wait(2);
 
-        // shows a matching item. Settled read: the grid pool keeps pre-search tiles enabled
-        // while results stream in, so a single read can land on one the search is about to
-        // replace — the same exposure as the pagination round-trip, just cheaper to hit here
-        // because every surviving tile matches the query.
-        var itemName = ReadSettledFirstItemName(Views.ExplorePanel.Backpack.Wearables);
-        Assert.That(itemName.ToLowerInvariant(), Does.Contain("punk"),
+        // The results landing is observable on the info panel, so poll for it rather than
+        // guessing the debounce. The grid pool keeps the pre-search tiles enabled and
+        // clickable while results stream in, and a read taken before the re-bind names one
+        // of those — which a two-agreeing-reads settle cannot tell apart from a real result.
+        var itemName = SelectFirstItemNamed(Views.ExplorePanel.Backpack.Wearables, "Punk");
+        Assert.That(itemName, Does.Contain("Punk").IgnoreCase,
             $"Selected search result '{itemName}' should match the search term 'Punk'");
         Reporter.Log($"Search returned and selected '{itemName}'");
 
@@ -115,11 +113,40 @@ public class BackpackWearablesTests : BaseTest
     private string SelectItemAndReadName(
         ExplorePanelBackpackView.BackpackGridItem item,
         Readable nameLabel,
-        string previousName = null)
+        string previousName = null,
+        double timeoutSeconds = 10)
     {
         item.Click();
-        return nameLabel.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName);
+        return nameLabel.WaitForText(text => !string.IsNullOrEmpty(text) && text != previousName, timeoutSeconds);
     }
+
+    /// <summary>
+    /// Clicks the grid's leading loaded item until the info panel names something matching
+    /// <paramref name="term"/>, so the search landing is waited on rather than timed. Re-clicks
+    /// each attempt: a click that lands while the pool is re-binding is silently dropped, and
+    /// polling the label harder does not undo that. Returns the last name read, so a search
+    /// that never produced a match still fails on the caller's assertion.
+    /// </summary>
+    private string SelectFirstItemNamed(ExplorePanelBackpackView.WearablesTab wearables, string term)
+    {
+        var name = string.Empty;
+
+        for (var attempt = 0; attempt < RETRY_ATTEMPTS; attempt++)
+        {
+            wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+            wearables.FirstLoadedGridItem.Click();
+            name = wearables.SelectedItemName.WaitForText(
+                text => Matches(text, term), RETRY_READ_TIMEOUT);
+
+            if (Matches(name, term))
+                return name;
+        }
+
+        return name;
+    }
+
+    private static bool Matches(string text, string term) =>
+        !string.IsNullOrEmpty(text) && text.Contains(term, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Reads the leading item's name until two consecutive reads agree, so a baseline is
@@ -143,6 +170,8 @@ public class BackpackWearablesTests : BaseTest
 
         for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
+            // The one deliberate pause left in this fixture: it is the interval between two
+            // samples, so it is the measurement, not padding around one.
             Wait(1);
             wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
             var reread = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
@@ -156,8 +185,10 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
-    /// Clicks a pager arrow and reads the (re-selected) first item name, retrying once
-    /// when the name has not changed yet — the grid rebuild can swallow the first click.
+    /// Clicks a pager arrow and reads the (re-selected) first item name, clicking the tile
+    /// again while the name has not changed yet — the grid rebuild can swallow a click, and
+    /// only another click fixes that, so each attempt gets a short read budget rather than
+    /// one long one.
     /// </summary>
     private string FlipPageAndReadFirstItem(
         ExplorePanelBackpackView.WearablesTab wearables,
@@ -165,14 +196,14 @@ public class BackpackWearablesTests : BaseTest
         string previousName)
     {
         pagerButton.Click();
-        Wait(2);
 
-        for (var attempt = 0; attempt < PAGE_FLIP_ATTEMPTS; attempt++)
+        for (var attempt = 0; attempt < RETRY_ATTEMPTS; attempt++)
         {
             // Paravirt ceiling on the load wait (ours), previousName on the read (PR #54):
             // this read only has to notice the flip, so polling for a differing name is right.
             wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
-            var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName, previousName);
+            var name = SelectItemAndReadName(
+                wearables.FirstLoadedGridItem, wearables.SelectedItemName, previousName, RETRY_READ_TIMEOUT);
             if (name != previousName)
                 // Settle before returning, do not trust the first differing read. This is the
                 // value the round-trip assertion compares, so it is the read that has to be
@@ -180,8 +211,6 @@ public class BackpackWearablesTests : BaseTest
                 // the settled incoming page. Settling only the page-1 baseline would leave the
                 // failing read unguarded.
                 return ReadSettledFirstItemName(wearables);
-
-            Wait(2);
         }
 
         // Still reading the outgoing page's name: return a settled read so the caller's

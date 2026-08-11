@@ -136,6 +136,18 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
+        /// Waits until the tile is not mid-equip — the client drops clicks on a loading tile,
+        /// so this is the gate between equipping an item and addressing it again.
+        /// </summary>
+        [AllureStep("Wait for grid item to be idle")]
+        public void WaitUntilIdle()
+        {
+            WaitFor(UI_TIMEOUT, verificationShot: false)
+                .WaitForComponentProperty<bool>(ITEM_VIEW_COMPONENT, "IsLoading", false, ITEM_VIEW_ASSEMBLY,
+                    timeout: CONTENT_TIMEOUT);
+        }
+
+        /// <summary>
         /// Moves the pointer over the item so the HoverBackground overlay (with the
         /// Equip/Unequip buttons) becomes enabled. Hover state only survives within a
         /// single driver session, so callers must click in the same test step.

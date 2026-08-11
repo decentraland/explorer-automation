@@ -13,6 +13,9 @@ public class BackpackOutfitsTests : BaseTest
 
     // Wall-clock budget for the equip to show up, matching BackpackWearablesTests.
     private const double EQUIP_CONFIRM_TIMEOUT = 8;
+    // Budget for the info panel to name the tile just selected. Short on purpose: nothing
+    // here retries the click, so a longer one only delays a decided failure.
+    private const double NAME_READ_TIMEOUT = 4;
 
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()
@@ -69,36 +72,41 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Backpack.SavedOutfits.EnsureFirstSlotSaved();
 
         // Diverge the avatar from the saved outfit: equip a different hair.
+        // EnsureHairCategory already leaves the grid page loaded, so nothing to settle after it.
         Views.ExplorePanel.Backpack.OpenCategories();
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
-        Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         // No retry — see BackpackWearablesTests.EquipUntilShown. Polls the flag rather than
         // IsEquipped so the loop does not re-hover.
         hair.Equip();
         WaitUntil(hair.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
-        Wait(2);
-        // The Equip button only equips, so select the tile to make the info panel name it.
+
+        // The Equip button only equips, so select the tile to make the info panel name it —
+        // once the equip's load cycle has ended, because a click on a loading tile is dropped.
+        hair.WaitUntilIdle();
         hair.Click();
-        var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();
+        var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName
+                            .WaitForText(text => !string.IsNullOrEmpty(text), NAME_READ_TIMEOUT);
         Assert.That(hair.IsEquipped(), Is.True, "Precondition: the alternative hair should be equipped");
         Reporter.Log($"Avatar diverged from saved outfit (equipped hair '{hairName}')");
 
         Views.ExplorePanel.Backpack.OpenSavedOutfits();
         Views.ExplorePanel.Backpack.SavedOutfits.Slots[0].Equip();
-        Wait(3);
 
         // Re-apply the hair filter (it does not reliably survive the sub-tab switch).
         // The grid keeps its deterministic sort, so the same grid index still points at
         // the hair equipped above — verify identity via the info panel before asserting.
         Views.ExplorePanel.Backpack.OpenCategories();
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
-        Wait(2);
         hair.Click();
-        Wait(1);
-        var reselectedName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();
+        var reselectedName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName
+                                  .WaitForText(text => text == hairName, NAME_READ_TIMEOUT);
         Assert.That(reselectedName, Is.EqualTo(hairName),
             "Grid should still show the same hair at the same index after the sub-tab switch");
+
+        // The outfit re-dresses the avatar asynchronously, so poll for the revert instead of
+        // pausing for it. Assert through IsEquipped so the report still gets the tile's shot.
+        WaitUntil(() => !hair.ReadEquippedFlag(), EQUIP_CONFIRM_TIMEOUT);
         Assert.That(hair.IsEquipped(), Is.False,
             "Equipping the saved outfit should have reverted the hair change");
         Reporter.Log("Saved outfit equipped — avatar reverted to the saved look");
