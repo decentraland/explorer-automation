@@ -176,6 +176,8 @@ Wait(2);  // wait for search results to filter
 
 Use `Wait()` only when there's no element to wait on. If you can wait for a specific element instead (e.g. a loading indicator disappearing), that's always better.
 
+Most pauses are standing in for a condition you can actually read — a flag clearing, a label naming what was just selected, a tile leaving its loading state. Reach for `WaitUntil()`, `WaitForText()` or a `WaitFor()` on that condition and delete the `Wait()`. A fixed pause survives only where nothing is observable, or where the delay *is* the measurement (the interval between two settle samples).
+
 ## Test Complexity Spectrum
 
 ### Simple: open/close verification
@@ -266,6 +268,7 @@ After the view-writer creates the required views, write the test using the newly
 - **No raw locators in tests.** Tests call view methods and view element fields only. If you need a new element, add it to the view first.
 - **No `Thread.Sleep`.** Use `Wait()` from BaseTest for brief animation pauses. Use `WaitFor()` / `WaitForGone()` for element-based waits.
 - **No double-clicks, and no `Tap` on uGUI controls.** The driver cannot deliver `clickCount == 2` dependably — it equipped roughly half the time before the backpack fixtures moved to the Equip button — and `Tap` reaches uGUI buttons not at all in this build. Drive the action through whatever button the client exposes for it. See `explorer/CLAUDE.md` → "Interaction Mechanics".
+- **Never spend wall-clock without a need behind it.** Adding a wait, widening a timeout and raising an attempt count are the same move, and each has to name the failure it prevents — "to be safe" is not one. Size a retry loop's per-attempt budget to what the retry fixes: when only a fresh click undoes a dropped one, a short budget and another click beats polling one dead selection for the default ceiling. See `explorer/CLAUDE.md` → "Waits and Retries".
 - **No `Console.WriteLine`.** Use `Reporter.Log()` for all logging.
 - **Tests must be independent.** Each test can run in any order. `[SetUp]` presses Escape to reset state. If a test opens a panel, it must close it before ending.
 - **Every new Explorer fixture must carry `[Order(N)]` with `N < 1000`.** This rule is specific to the Explorer (C#/NUnit) test stack under `explorer/` — the web/Playwright stack has its own ordering model and is unaffected. The Explorer `Auth` fixtures use Order 1000+ because they sign out, and NUnit runs fixtures *without* `[Order]` AFTER fixtures with `[Order]` — so an unannotated fixture would slot in after Auth and fail `EnsureInWorld`. Current bands: in-world `10–19`, visual `20–29`, Auth `1000+`. Pick the next free number in the relevant band. See `explorer/README.md` → "Fixture ordering invariant".

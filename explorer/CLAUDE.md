@@ -85,6 +85,21 @@ uGUI control does nothing at all — reach for `Click`.
 (overlay buttons) needs the cursor parked with `AltDriver.MoveMouse` and the animation given
 time before the click, or the press raycasts past a zero-scaled element.
 
+## Waits and Retries
+
+**Never spend wall-clock without a need behind it.** Adding a wait, widening a ceiling and
+raising an attempt count are the same move, and each has to name the failure it prevents.
+"To be safe" is not one, and neither is symmetry with a neighbouring call site.
+
+Wait on the state a pause would stand in for — a flag clearing, a label naming what was just
+selected, a tile leaving its loading state. A fixed pause is only right where there is nothing
+to observe, or where the delay *is* the measurement (the interval between two settle samples).
+
+Size a retry loop's per-attempt budget to what the retry fixes. A click the grid rebuild
+swallowed is only undone by another click, so a short budget plus a fresh click beats polling
+one dead selection for the default ceiling — and it lowers the worst case, not just the common
+one. Long ceilings are only ever spent on a path that is already failing.
+
 ## Skills
 
 - **`view-writer`** — Always invoke this skill when creating new view classes, modifying existing views, adding elements/sections/sub-views, or registering views in `ViewContainer`. It contains the full POM conventions, region layout rules, and the workflow for discovering element locators via the `alttester-explorer` agent.

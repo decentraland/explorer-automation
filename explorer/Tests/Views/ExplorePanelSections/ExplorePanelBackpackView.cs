@@ -22,8 +22,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     // Deliberately not lowered with the rest: equipping presses a button that only exists
     // while the overlay is up, so this is the one ceiling that can cost an equip.
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
-    private const int OVERLAY_POLL_MS    = 100;
-    private const int TAB_SWITCH_MS      = 500;  // between sub-tab toggle retries
+    private const double TAB_SWITCH_SETTLE = 0.5D; // for a sub-tab toggle to take
+    private const int POLL_MS            = 100;
     private const int PRE_EQUIP_SETTLE_MS = 500;
 
     // Main tabs (Header/TabSelector) — Wearables ("Avatar") and Emotes toggles.
@@ -76,7 +76,12 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             }
 
             tabButton.Click();
-            Thread.Sleep(TAB_SWITCH_MS);
+
+            // Poll the toggle taking rather than pausing for it, on the same budget the pause
+            // used — a switch that lands is not made any more certain by waiting out the rest.
+            var deadline = DateTime.UtcNow.AddSeconds(TAB_SWITCH_SETTLE);
+            while (DateTime.UtcNow < deadline && !targetView.IsPresent(verificationShot: false))
+                Thread.Sleep(POLL_MS);
         }
 
         // Final wait throws with a useful message if the tab still is not open.
@@ -132,7 +137,21 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Wait for grid item content to load")]
         public void WaitUntilLoaded(double timeout = CONTENT_TIMEOUT)
         {
-            LoadedIndicator.WaitFor(timeout);
+            // Shot-suppressed: every caller waits here as a precondition for clicking the tile,
+            // and takes its own shot once the interaction it was gating has happened.
+            LoadedIndicator.WaitFor(timeout, verificationShot: false);
+        }
+
+        /// <summary>
+        /// Waits until the tile is not mid-equip — the client drops clicks on a loading tile,
+        /// so this is the gate between equipping an item and addressing it again.
+        /// </summary>
+        [AllureStep("Wait for grid item to be idle")]
+        public void WaitUntilIdle()
+        {
+            WaitFor(UI_TIMEOUT, verificationShot: false)
+                .WaitForComponentProperty<bool>(ITEM_VIEW_COMPONENT, "IsLoading", false, ITEM_VIEW_ASSEMBLY,
+                    timeout: CONTENT_TIMEOUT);
         }
 
         /// <summary>
@@ -153,7 +172,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             while (DateTime.UtcNow < deadline
                    && !EquipButton.IsPresent(verificationShot: false)
                    && !UnequipButton.IsPresent(verificationShot: false))
-                Thread.Sleep(OVERLAY_POLL_MS);
+                Thread.Sleep(POLL_MS);
 
             return altObj;
         }
@@ -755,7 +774,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                        && !SaveButton.IsPresent(verificationShot: false)
                        && !EquipButton.IsPresent(verificationShot: false)
                        && !DeleteButton.IsPresent(verificationShot: false))
-                    Thread.Sleep(OVERLAY_POLL_MS);
+                    Thread.Sleep(POLL_MS);
 
                 return altObj;
             }
