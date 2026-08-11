@@ -88,7 +88,7 @@ public class BackpackWearablesTests : BaseTest
         // exercises the click path.
         PressKey(AltKeyCode.I, delay: 0);
         Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.WearablesTabButton.Click();
+        Views.ExplorePanel.Backpack.WearablesTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Backpack.Wearables.WaitFor();
     }
 

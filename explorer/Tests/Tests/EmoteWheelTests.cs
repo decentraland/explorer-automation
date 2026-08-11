@@ -14,7 +14,7 @@ public class EmoteWheelTests : BaseTest
     [Test]
     public void TestOpenEmoteWheelFromSidebar()
     {
-        Views.MainMenu.EmoteWheelButton.Click();
+        Views.MainMenu.EmoteWheelButton.Click(settleMs: 0);
         Views.EmotesWheel.WaitFor();
         Assert.That(Views.EmotesWheel.TitleLabel.GetText(), Is.EqualTo("Emotes"),
             "Emote wheel should show its Emotes title");

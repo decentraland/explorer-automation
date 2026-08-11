@@ -26,7 +26,7 @@ public class ChatTests : BaseTest
         Reporter.Log("Chat opened from the sidebar chat button");
 
         // The sidebar chat button toggles: a second click closes the panel again.
-        Views.MainMenu.ChatButton.Click();
+        Views.MainMenu.ChatButton.Click(settleMs: 0);
         Views.Chat.ConversationsToolbar.WaitForGone();
         Assert.That(Views.Chat.InputPlaceholder.GetText(), Is.EqualTo(ChatPanelView.PLACEHOLDER_CLOSED),
             "Chat input should show 'Press Enter to chat' after closing");
@@ -201,7 +201,7 @@ public class ChatTests : BaseTest
         }
 
         Reporter.Log("Escape did not close the chat — falling back to the sidebar chat button");
-        Views.MainMenu.ChatButton.Click();
+        Views.MainMenu.ChatButton.Click(settleMs: 0);
 
         // Final authoritative wait so a genuine failure produces the standard error.
         Views.Chat.ConversationsToolbar.WaitForGone();

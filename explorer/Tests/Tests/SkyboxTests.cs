@@ -62,7 +62,7 @@ public class SkyboxTests : BaseTest
 
     private void OpenSkyboxMenu()
     {
-        Views.MainMenu.SkyboxButton.Click();
+        Views.MainMenu.SkyboxButton.Click(settleMs: 0);
         Views.MainMenu.Skybox.WaitFor();
         // The widget's show animation eats clicks right after it becomes findable (same
         // pattern as the help menu); there is no raycaster signal here, so fixed wait.

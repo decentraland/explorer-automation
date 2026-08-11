@@ -76,7 +76,7 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
             return;
 
         Reporter.Log("Escape did not dismiss the panel — falling back to CloseButton click");
-        CloseButton.Click();
+        CloseButton.Click(settleMs: 0);
         WaitForGone(15);
     }
 

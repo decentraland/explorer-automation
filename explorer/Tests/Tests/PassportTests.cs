@@ -19,7 +19,7 @@ public class PassportTests : BaseTest
         OpenOwnPassport();
         Reporter.Log("Own passport opened from the sidebar profile menu");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
         Reporter.Log("Passport closed via its close button");
     }
@@ -49,7 +49,7 @@ public class PassportTests : BaseTest
             "Overview should contain the Equipped Items module");
         Reporter.Log("Overview shows avatar preview, About Me, and Equipped Items modules");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
@@ -86,7 +86,7 @@ public class PassportTests : BaseTest
             "Passport header should show the original name after reverting");
         Reporter.Log($"Name reverted to '{originalName}'");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
@@ -117,7 +117,7 @@ public class PassportTests : BaseTest
             "About Me should display the new bio after saving");
 
         // Close and reopen the passport to verify the bio persisted past the edit session.
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
         OpenOwnPassport();
         Assert.That(Views.Passport.Overview.AboutMe.BioText.GetText(), Is.EqualTo(tempBio),
@@ -129,7 +129,7 @@ public class PassportTests : BaseTest
             "About Me should display the original bio after restoring");
         Reporter.Log($"Bio restored to '{originalBio}'");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
@@ -149,18 +149,18 @@ public class PassportTests : BaseTest
             "At least one equipped wearable tile should be shown in the passport");
         Reporter.Log("Equipped items grid shows the currently equipped wearables");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
     private void OpenOwnPassport()
     {
-        Views.MainMenu.ProfileButton.Click();
+        Views.MainMenu.ProfileButton.Click(settleMs: 0);
         // The menu runs its show animation with the raycaster off and eats clicks until it is
         // back on, so wait on the raycaster rather than on the animation's length.
         Views.ProfileMenu.WaitFor().WaitForComponentProperty(
             "UnityEngine.UI.GraphicRaycaster", "enabled", true, "UnityEngine.UI", timeout: 15);
-        Views.ProfileMenu.PreviewProfileButton.Click();
+        Views.ProfileMenu.PreviewProfileButton.Click(settleMs: 0);
         Views.Passport.WaitFor();
         Views.Passport.Overview.WaitFor();
     }

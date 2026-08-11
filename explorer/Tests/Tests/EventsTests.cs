@@ -15,7 +15,7 @@ public class EventsTests : BaseTest
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
 
         // Clicking a non-today day selector swaps the calendar for the single-day list.
-        Views.ExplorePanel.Events.DaySelectorButtons[2].Click();
+        Views.ExplorePanel.Events.DaySelectorButtons[2].Click(settleMs: 0);
         Views.ExplorePanel.Events.EventsByDay.WaitFor();
 
         // The counter first shows just the day ("Fri, Aug 07") and appends the event count
@@ -31,7 +31,7 @@ public class EventsTests : BaseTest
             "Single-day view should show a '<day> (N)' results counter");
         Reporter.Log($"Switched to single-day view: {counter}");
 
-        Views.ExplorePanel.Events.GoToTodayButton.Click();
+        Views.ExplorePanel.Events.GoToTodayButton.Click(settleMs: 0);
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
         Views.ExplorePanel.Events.EventsByDay.WaitForGone();
         Reporter.Log("Returned to the calendar view via Today button");
@@ -74,7 +74,7 @@ public class EventsTests : BaseTest
             "Event detail should contain a DESCRIPTION block");
         Reporter.Log($"Event detail opened for '{eventName}'");
 
-        Views.ExplorePanel.Events.EventDetail.CloseButton.Click();
+        Views.ExplorePanel.Events.EventDetail.CloseButton.Click(settleMs: 0);
         Views.ExplorePanel.Events.EventDetail.WaitForGone();
 
         Views.ExplorePanel.Close();

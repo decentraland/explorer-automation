@@ -6,13 +6,20 @@ namespace ExplorerAutomation.Tests.Views.Elements;
 /// </summary>
 public record Clickable(By by, string name) : Locatable(by, name)
 {
+    private const int SETTLE_MS = 200;
+
+    /// <summary>
+    /// Clicks and settles for <paramref name="settleMs"/>. Pass <c>settleMs: 0</c> when the call
+    /// site waits on the state the click produces — that wait already proves it landed. Keep the
+    /// settle for anything on a hover overlay or a rebuilding grid tile.
+    /// </summary>
     [AllureStep("Click on object")]
-    public void Click()
+    public void Click(int settleMs = SETTLE_MS)
     {
         // Shot-suppressed wait: Click is an action, not a verification, so no screenshot here.
         var altObject = WaitFor(20D, verificationShot: false);
         altObject.Click();
-        Thread.Sleep(200);
+        Thread.Sleep(settleMs);
     }
 
     [AllureStep("Tap on object")]
@@ -23,7 +30,7 @@ public record Clickable(By by, string name) : Locatable(by, name)
         // overlays. Prefer Click; reach for Tap when a verified click has no effect.
         var altObject = WaitFor(20D, verificationShot: false);
         altObject.Tap();
-        Thread.Sleep(200);
+        Thread.Sleep(SETTLE_MS);
     }
 
     /// <summary>

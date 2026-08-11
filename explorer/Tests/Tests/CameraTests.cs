@@ -27,7 +27,7 @@ public class CameraTests : BaseTest
     [Test]
     public void TestOpenCameraFromSidebar()
     {
-        Views.MainMenu.InWorldCameraButton.Click();
+        Views.MainMenu.InWorldCameraButton.Click(settleMs: 0);
         Views.InWorldCamera.WaitFor();
         Reporter.Log("Camera HUD opened from the sidebar camera button");
 

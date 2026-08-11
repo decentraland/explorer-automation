@@ -147,7 +147,7 @@ public class BackpackOutfitsTests : BaseTest
     {
         PressKey(AltKeyCode.I, delay: 0);
         Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.WearablesTabButton.Click();
+        Views.ExplorePanel.Backpack.WearablesTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Backpack.WaitFor();
     }
 
@@ -155,7 +155,7 @@ public class BackpackOutfitsTests : BaseTest
     {
         slot.Delete();
         Views.ConfirmationDialog.WaitFor();
-        Views.ConfirmationDialog.YesButton.Click();
+        Views.ConfirmationDialog.YesButton.Click(settleMs: 0);
         Views.ConfirmationDialog.WaitForGone();
         slot.EmptyState.WaitFor(30);
     }

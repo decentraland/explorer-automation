@@ -75,7 +75,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
                 return;
             }
 
-            tabButton.Click();
+            tabButton.Click(settleMs: 0);
 
             // Poll the toggle taking rather than pausing for it, on the same budget the pause
             // used — a switch that lands is not made any more certain by waiting out the rest.
@@ -330,7 +330,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed probe — the shot below records the state the helper verified.
             if (!AvatarSlotHairSelected.IsPresent(verificationShot: false))
             {
-                AvatarSlotHair.Click();
+                AvatarSlotHair.Click(settleMs: 0);
                 AvatarSlotHairSelected.WaitFor(UI_TIMEOUT, verificationShot: false);
 
                 // The filter command goes out with the selected background, but the grid only

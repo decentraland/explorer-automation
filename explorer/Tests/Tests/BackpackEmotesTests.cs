@@ -177,7 +177,7 @@ public class BackpackEmotesTests : BaseTest
         // for the very first interaction post-warmup.
         PressKey(AltKeyCode.I, delay: 0);
         Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.EmotesTabButton.Click();
+        Views.ExplorePanel.Backpack.EmotesTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
 
         // Order matters. A search term from an earlier test outlives the panel and shrinks the

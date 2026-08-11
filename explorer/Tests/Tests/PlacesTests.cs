@@ -17,7 +17,7 @@ public class PlacesTests : BaseTest
     {
         OpenPlaces();
 
-        Views.ExplorePanel.Places.RecentTabButton.Click();
+        Views.ExplorePanel.Places.RecentTabButton.Click(settleMs: 0);
         // The counter enables before its text is refreshed — poll for the actual text
         // instead of guessing a fixed settle time.
         var recentCounterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(text => text.StartsWith("Recent"));
@@ -25,19 +25,19 @@ public class PlacesTests : BaseTest
             "Recent tab should show the 'Recent (N)' results counter");
         Reporter.Log("Recent tab opened");
 
-        Views.ExplorePanel.Places.FavoritesTabButton.Click();
+        Views.ExplorePanel.Places.FavoritesTabButton.Click(settleMs: 0);
         var favoritesCounterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(text => text.StartsWith("Favorites"));
         Assert.That(favoritesCounterText, Does.StartWith("Favorites"),
             "Favorites tab should show the 'Favorites (N)' results counter");
         Reporter.Log("Favorites tab opened");
 
-        Views.ExplorePanel.Places.MyPlacesTabButton.Click();
+        Views.ExplorePanel.Places.MyPlacesTabButton.Click(settleMs: 0);
         var myPlacesCounterText = Views.ExplorePanel.Places.ResultsCounter.WaitForText(text => text.StartsWith("My Places"));
         Assert.That(myPlacesCounterText, Does.StartWith("My Places"),
             "My Places tab should show the 'My Places (N)' results counter");
         Reporter.Log("My Places tab opened");
 
-        Views.ExplorePanel.Places.ExploreTabButton.Click();
+        Views.ExplorePanel.Places.ExploreTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Places.ResultsCounter.WaitForGone();
         Reporter.Log("Explore tab restored — counter hidden");
 
@@ -63,7 +63,7 @@ public class PlacesTests : BaseTest
             "First search result should match the query");
         Reporter.Log("Search for 'Genesis Plaza' returned matching results");
 
-        Views.ExplorePanel.Places.ClearSearchButton.Click();
+        Views.ExplorePanel.Places.ClearSearchButton.Click(settleMs: 0);
         Views.ExplorePanel.Places.ResultsCounter.WaitForGone();
         Reporter.Log("Search cleared");
 
@@ -108,7 +108,7 @@ public class PlacesTests : BaseTest
             "Place detail title should match the clicked card");
         Reporter.Log($"Place detail opened for '{placeName}'");
 
-        Views.ExplorePanel.Places.PlaceDetail.CloseButton.Click();
+        Views.ExplorePanel.Places.PlaceDetail.CloseButton.Click(settleMs: 0);
         Views.ExplorePanel.Places.PlaceDetail.WaitForGone();
 
         Views.ExplorePanel.Close();
@@ -159,7 +159,7 @@ public class PlacesTests : BaseTest
     {
         OpenPlaces();
 
-        Views.ExplorePanel.Places.FilterSortButton.Click();
+        Views.ExplorePanel.Places.FilterSortButton.Click(settleMs: 0);
         Views.ExplorePanel.Places.FiltersContent.WaitFor(10);
         Assert.That(Views.ExplorePanel.Places.TrendingToggle.IsPresent(), Is.True,
             "Filter dropdown should contain the Trending sort toggle");
@@ -169,7 +169,7 @@ public class PlacesTests : BaseTest
             "Filter dropdown should contain the Compatible Only view toggle");
         Reporter.Log("Filter & Sort dropdown opened with all controls");
 
-        Views.ExplorePanel.Places.FilterSortButton.Click();
+        Views.ExplorePanel.Places.FilterSortButton.Click(settleMs: 0);
         Views.ExplorePanel.Places.FiltersContent.WaitForGone(10);
         Reporter.Log("Filter & Sort dropdown closed");
 

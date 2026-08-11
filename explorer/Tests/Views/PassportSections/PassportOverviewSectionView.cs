@@ -79,7 +79,7 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
             // slow swap reports the missing input rather than a nested invocation exception.
             BioInput.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
             BioInput.SetText(bio, submit: false);
-            SaveBioButton.Click();
+            SaveBioButton.Click(settleMs: 0);
             // The read-only field comes back before the profile update round-trip lands, so
             // its presence alone is not the signal — poll until it carries the saved text.
             // Deliberately does not throw on timeout: the caller asserts the bio itself and

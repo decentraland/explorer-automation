@@ -131,7 +131,7 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
                 return;
             }
 
-            AutoProgressionToggle.Click();
+            AutoProgressionToggle.Click(settleMs: 0);
             AutoProgressionToggle.WaitFor(20D, verificationShot: false).WaitForComponentProperty(
                 "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI",
                 timeout: SlowChassis.SETTLE_TIMEOUT);

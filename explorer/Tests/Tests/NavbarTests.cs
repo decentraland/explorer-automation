@@ -58,7 +58,7 @@ public class NavbarTests : BaseTest
     [Test]
     public void TestOpenAndCloseNotificationsPanel()
     {
-        Views.MainMenu.NotificationsButton.Click();
+        Views.MainMenu.NotificationsButton.Click(settleMs: 0);
         Views.MainMenu.Notifications.WaitFor();
 
         Assert.That(Views.MainMenu.Notifications.TitleLabel.GetText(), Is.EqualTo("NOTIFICATIONS"),
@@ -66,7 +66,7 @@ public class NavbarTests : BaseTest
         Reporter.Log("Notifications panel opened from the sidebar bell");
 
         // The bell toggles: a second click closes the panel again.
-        Views.MainMenu.NotificationsButton.Click();
+        Views.MainMenu.NotificationsButton.Click(settleMs: 0);
         Views.MainMenu.Notifications.WaitForGone();
         Reporter.Log("Notifications panel closed by clicking the bell again");
     }
@@ -74,7 +74,7 @@ public class NavbarTests : BaseTest
     [Test]
     public void TestOpenHelpMenu()
     {
-        Views.MainMenu.HelpButton.Click();
+        Views.MainMenu.HelpButton.Click(settleMs: 0);
         Views.MainMenu.Help.WaitFor();
         Reporter.Log("Help menu opened from the sidebar");
 
@@ -96,20 +96,20 @@ public class NavbarTests : BaseTest
     [Test]
     public void TestOpenControlsPanelFromHelpMenu()
     {
-        Views.MainMenu.HelpButton.Click();
+        Views.MainMenu.HelpButton.Click(settleMs: 0);
         Views.MainMenu.Help.WaitFor();
 
         // The context menu's show animation eats clicks right after the view becomes findable,
         // and there is no raycaster signal here — so click again if the panel never opened.
         // Per-attempt budget matches the WaitFor below, so only a swallowed click is retried.
-        ClickUntil(() => Views.MainMenu.Help.MouseAndKeyControlsButton.Click(),
+        ClickUntil(() => Views.MainMenu.Help.MouseAndKeyControlsButton.Click(settleMs: 0),
             () => Views.ControlsPanel.IsPresent(verificationShot: false),
             attempts: 2, timeoutPerAttempt: 20);
         Views.ControlsPanel.WaitFor();
         Reporter.Log("Mouse and Key Controls panel opened from the help menu");
 
         // Same guard on the panel's own exit button.
-        ClickUntil(() => Views.ControlsPanel.ExitButton.Click(),
+        ClickUntil(() => Views.ControlsPanel.ExitButton.Click(settleMs: 0),
             () => !Views.ControlsPanel.IsPresent(verificationShot: false),
             attempts: 2, timeoutPerAttempt: 20);
         Views.ControlsPanel.WaitForGone();
