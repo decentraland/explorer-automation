@@ -530,10 +530,13 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Set emote to slot")]
         public void SetEmote(int slotIndex, int gridIndex)
         {
-            // No selection click: EquipItem takes the item from the tile's own OnEquip and the
-            // target slot from ClickSlot, so selecting it only added another droppable step.
+            // The tile click is not about selection. SelectItem runs a SetLoadingSlot cycle,
+            // and its completion sets CanHover back to true on every other tile — without it a
+            // grid left un-hoverable by an earlier test never raises the overlay, so Equip
+            // waits out its ceiling looking for a button that cannot appear.
             WaitForGridItemLoaded(gridIndex, verificationShot: false);
             ClickSlot(slotIndex);
+            ClickGridItem(gridIndex);
             GridItems[gridIndex].Equip();
             Reporter.Log($"Set emote grid item {gridIndex} to slot {slotIndex}");
         }
@@ -546,8 +549,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Set the leading loaded emote to slot")]
         public void SetFirstLoadedEmote(int slotIndex)
         {
+            // See SetEmote — the tile click restores CanHover across the grid.
             FirstLoadedGridItem.WaitUntilLoaded(CONTENT_TIMEOUT);
             ClickSlot(slotIndex);
+            FirstLoadedGridItem.Click();
             FirstLoadedGridItem.Equip();
             Reporter.Log($"Set the leading loaded emote to slot {slotIndex}");
         }
