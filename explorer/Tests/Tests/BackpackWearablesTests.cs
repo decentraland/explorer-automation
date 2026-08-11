@@ -33,39 +33,6 @@ public class BackpackWearablesTests : BaseTest
         Views.ExplorePanel.Close();
     }
 
-    /// <summary>
-    /// Covers the client's own double-click equip (BackpackItemView maps clickCount == 2 to
-    /// Equip). Separate from the button path because it exercises a different client entry
-    /// point, not because the two should behave differently.
-    /// </summary>
-    [Test]
-    public void TestDoubleClickEquipWearable()
-    {
-        // The feature works for a human; the driver cannot deliver it dependably. Unity only
-        // raises clickCount == 2 when both presses resolve to the same handler inside its
-        // window, and AltTester queues the pointer move with the first press, so the hover
-        // overlay re-animates underneath it. Roughly half the recorded attempts equipped.
-        // Everything tried — count 2 vs 4, intervals, cursor parking, settling — moved the
-        // rate but never fixed it, so this is gated rather than left flaking.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending a reliable synthetic double-click: clickCount == 2 reaches the client on roughly half of attempts, the rest register as a selection");
-
-        OpenWearables();
-
-        Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
-        Reporter.Log("Grid filtered to hair wearables");
-
-        var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        target.DoubleClickEquip();
-        WaitUntil(target.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
-
-        Assert.That(target.IsEquipped(), Is.True,
-            "Grid item should report equipped after a double-click");
-        Reporter.Log("Wearable equipped via double-click");
-
-        Views.ExplorePanel.Close();
-    }
-
     [Test]
     public void TestSearchWearable()
     {

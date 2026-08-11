@@ -19,8 +19,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     // exceeding 20s, and a dev build was then measured taking 17.5s to fill a grid page
     // without finishing. Content load tracks asset streaming, not the panel.
     private const double CONTENT_TIMEOUT = 40D;  // waiting on content the client streams in
-    // Deliberately not lowered with the rest: the equip double-click is sensitive to how long
-    // the tile has been hovered, and this is the one ceiling that could affect it.
+    // Deliberately not lowered with the rest: equipping presses a button that only exists
+    // while the overlay is up, so this is the one ceiling that can cost an equip.
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
     private const int OVERLAY_POLL_MS    = 100;
     private const int TAB_SWITCH_MS      = 500;  // between sub-tab toggle retries
@@ -179,25 +179,6 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // stays up for this press.
             EquipButton.Click();
             Reporter.Log("Equipped grid item via the overlay button");
-        }
-
-        /// <summary>
-        /// Equips by double-clicking the tile — BackpackItemView's clickCount == 2 path. Only
-        /// for the test that covers that interaction; anything equipping as setup wants
-        /// <see cref="Equip"/>, which does not depend on Unity's click counting.
-        /// </summary>
-        [AllureStep("Equip grid item via double-click")]
-        public void DoubleClickEquip()
-        {
-            var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
-            CommonStuff.AltDriver.MoveMouse(new AltVector2(altObj.x, altObj.y));
-            Thread.Sleep(PRE_EQUIP_SETTLE_MS);
-
-            // One Player-side command: a driver round-trip between two Click calls already
-            // exceeds Unity's double-click window on this chassis. More presses than needed, so
-            // more than one consecutive pair gets a chance to land inside it.
-            altObj.Click(count: 4, interval: 0.05f);
-            Reporter.Log("Double-clicked grid item to equip");
         }
 
         /// <summary>
