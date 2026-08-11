@@ -43,7 +43,10 @@ public record Readable(By by, string name) : Locatable(by, name)
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         while (DateTime.UtcNow < deadline)
         {
-            text = GetText(20D, verificationShot: false);
+            // Bound the element wait by what is left of the caller's budget. Hardcoding it
+            // meant a caller asking for 40s failed at 20s, and one asking for 10s blocked for
+            // 20s on a single read.
+            text = GetText(Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
             if (predicate(text))
             {
                 matched = true;
