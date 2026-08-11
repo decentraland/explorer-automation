@@ -8,57 +8,57 @@ public class ShortcutsTests : BaseTest
     [Test]
     public void TestOpenEventsWithShortcut()
     {
-        PressKey(AltKeyCode.X);
+        PressKey(AltKeyCode.X, delay: 0);
         Views.ExplorePanel.WaitFor();
 
         Assert.That(Views.ExplorePanel.Events.IsPresent(), Is.True, "Events section should be visible after pressing X");
         Reporter.Log("Events section opened via shortcut");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 
     [Test]
     public void TestOpenPlacesWithShortcut()
     {
-        PressKey(AltKeyCode.Z);
+        PressKey(AltKeyCode.Z, delay: 0);
 
         Views.ExplorePanel.Places.WaitFor();
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 
     [Test]
     public void TestOpenCommunitiesWithShortcut()
     {
-        PressKey(AltKeyCode.O);
+        PressKey(AltKeyCode.O, delay: 0);
 
         Views.ExplorePanel.Communities.WaitFor();
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 
     [Test]
     public void TestOpenMapWithShortcut()
     {
-        PressKey(AltKeyCode.M);
+        PressKey(AltKeyCode.M, delay: 0);
 
         Views.ExplorePanel.Navmap.WaitFor();
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 
     [Test]
     public void TestOpenBackpackWithShortcut()
     {
-        PressKey(AltKeyCode.I);
+        PressKey(AltKeyCode.I, delay: 0);
 
         Views.ExplorePanel.Backpack.WaitFor();
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 
@@ -72,22 +72,22 @@ public class ShortcutsTests : BaseTest
         if (OperatingSystem.IsMacOS())
             Assert.Ignore("macOS TCC dialog for ~/Downloads steals focus");
 
-        PressKey(AltKeyCode.K);
+        PressKey(AltKeyCode.K, delay: 0);
 
         Views.ExplorePanel.Gallery.WaitFor();
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 
     [Test]
     public void TestOpenSettingsWithShortcut()
     {
-        PressKey(AltKeyCode.P);
+        PressKey(AltKeyCode.P, delay: 0);
 
         Views.ExplorePanel.Settings.WaitFor();
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
     }
 }

@@ -67,7 +67,7 @@ public class MinimapTests : BaseTest
         Assert.That(labels, Does.Contain("Reload Scene"), "Context menu should offer Reload Scene");
         Reporter.Log($"Context menu entries: {string.Join(", ", labels)}");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.Minimap.ContextMenu.WaitForGone();
         Reporter.Log("Context menu closed with Escape");
     }
@@ -79,11 +79,11 @@ public class MinimapTests : BaseTest
 
         // Collapse and Expand are a swap-pair: only one of the two is active at a time,
         // so waiting for the counterpart proves the state actually changed.
-        Views.Minimap.CollapseButton.Click();
+        Views.Minimap.CollapseButton.Click(settleMs: 0);
         Views.Minimap.ExpandButton.WaitFor();
         Reporter.Log("Minimap collapsed");
 
-        Views.Minimap.ExpandButton.Click();
+        Views.Minimap.ExpandButton.Click(settleMs: 0);
         Views.Minimap.CollapseButton.WaitFor();
         Reporter.Log("Minimap expanded again");
     }
@@ -93,7 +93,7 @@ public class MinimapTests : BaseTest
     {
         Views.Minimap.WaitFor();
 
-        Views.Minimap.MapRenderButton.Click();
+        Views.Minimap.MapRenderButton.Click(settleMs: 0);
         Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Clicking the minimap opened the full navmap");
 

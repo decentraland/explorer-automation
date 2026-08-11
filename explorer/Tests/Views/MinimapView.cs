@@ -81,7 +81,7 @@ public class MinimapView() : BaseView(new(By.PATH, "//BodyUI/Minimap"))
     {
         // Shot-suppressed probes: state polling is control flow, not a verification.
         var before = FavoriteHeartFill.IsPresent(verificationShot: false);
-        FavoriteButton.Click();
+        FavoriteButton.Click(settleMs: 0);
 
         var deadline = DateTime.UtcNow.AddSeconds(timeout);
         while (DateTime.UtcNow < deadline && FavoriteHeartFill.IsPresent(verificationShot: false) == before)

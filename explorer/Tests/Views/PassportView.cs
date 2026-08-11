@@ -76,7 +76,7 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
         // the unchanged name (verified live) — so wait for the pre-fill first.
         NameEditor.WaitForPrefill();
         NameEditor.NameInput.SetText(newName, submit: false);
-        NameEditor.SaveButton.Click();
+        NameEditor.SaveButton.Click(settleMs: 0);
         NameEditor.WaitForGone(SlowChassis.SETTLE_TIMEOUT);
         Reporter.Log($"Saved username '{newName}' via the name editor");
     }

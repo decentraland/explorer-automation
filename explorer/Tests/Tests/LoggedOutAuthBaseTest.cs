@@ -30,7 +30,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
 
         Reporter.Log("In-world detected — opening profile menu to sign out");
         var profileMenu = OpenSidebarMenuWithRetry(
-            () => Views.MainMenu.ProfileButton.Click(),
+            () => Views.MainMenu.ProfileButton.Click(settleMs: 0),
             Views.ProfileMenu,
             "profile menu");
 
@@ -82,14 +82,14 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         if (Views.OtpVerificationScreen.IsPresent())
         {
             Reporter.Log("Stuck on OTP verification screen — pressing Back to return to login selection");
-            Views.OtpVerificationScreen.BackButton.Click();
+            Views.OtpVerificationScreen.BackButton.Click(settleMs: 0);
             Views.AuthenticationMainScreen.LoginSelectionScreen.WaitFor(30);
             Reporter.Log("Returned to logged-out auth screen");
             return;
         }
 
         Reporter.Log("Cached-account screen present — clicking 'Use a Different Account'");
-        Views.AuthenticationMainScreen.UseADifferentAccountButton.Click();
+        Views.AuthenticationMainScreen.UseADifferentAccountButton.Click(settleMs: 0);
         Views.AuthenticationMainScreen.LoginSelectionScreen.WaitFor(30);
         Reporter.Log("Reached logged-out auth screen");
     }
@@ -145,7 +145,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     protected void OpenExplorePanelViaShortcut(int attempts = 3, int perAttemptSeconds = 15)
     {
         OpenSidebarMenuWithRetry(
-            () => PressKey(AltKeyCode.I),
+            () => PressKey(AltKeyCode.I, delay: 0),
             Views.ExplorePanel,
             "explore panel",
             attempts,

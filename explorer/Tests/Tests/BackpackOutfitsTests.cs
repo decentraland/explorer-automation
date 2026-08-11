@@ -155,7 +155,7 @@ public class BackpackOutfitsTests : BaseTest
     {
         slot.Delete();
         Views.ConfirmationDialog.WaitFor();
-        Views.ConfirmationDialog.YesButton.Click();
+        Views.ConfirmationDialog.YesButton.Click(settleMs: 0);
         Views.ConfirmationDialog.WaitForGone();
         slot.EmptyState.WaitFor(30);
     }

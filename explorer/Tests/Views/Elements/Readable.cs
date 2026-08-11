@@ -33,8 +33,14 @@ public record Readable(By by, string name) : Locatable(by, name)
     /// or update asynchronously after an action (search results, tab counters, info panels)
     /// instead of guessing a fixed settle time.
     /// </summary>
+    public string WaitForText(Func<string, bool> predicate, double timeoutSeconds = 10, double pollIntervalSeconds = 0.5) =>
+        WaitForText(predicate, timeoutSeconds, pollIntervalSeconds, verificationShot: true);
+
+    // Shot-suppressed overload for settle loops that call this several times for one logical
+    // read (re-reading a streaming grid's label until two reads agree): only the read the
+    // caller keeps is a verification, so the caller takes the single shot.
     [AllureStep("Wait for text to match")]
-    public string WaitForText(Func<string, bool> predicate, double timeoutSeconds = 10, double pollIntervalSeconds = 0.5)
+    internal string WaitForText(Func<string, bool> predicate, double timeoutSeconds, double pollIntervalSeconds, bool verificationShot)
     {
         // Shot-suppressed reads inside the poll loop (see PassportView.WaitForUserName): a
         // capture per iteration would both spam the report and eat the wall-clock deadline.
@@ -55,7 +61,8 @@ public record Readable(By by, string name) : Locatable(by, name)
             Thread.Sleep(TimeSpan.FromSeconds(pollIntervalSeconds));
         }
 
-        Reporter.TakeVerificationShot($"{(matched ? "text" : "timeout")}_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"{(matched ? "text" : "timeout")}_{ShotName}");
         return text;
     }
 }
