@@ -26,14 +26,13 @@ public class BackpackEmotesTests : BaseTest
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
     {
-        // Never passed on this chassis. After all ten equips one grid item — a different one
-        // each run (0, 5, 1, 3) — has no equipped-slot badge, so an earlier emote is being
-        // displaced as later slots are filled. Retrying the equip and then retrying on slot
-        // occupancy both left it failing, which points at grid/slot behaviour rather than at
-        // the test's waits. Runs 31164127596, 31176916555, 31180360091, 31183128982.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: one grid item loses its equipped-slot badge after all ten slots are filled, a different item each run (runs 31164127596, 31176916555, 31180360091, 31183128982)");
-
+        // Ten sequential equips — by far the heaviest thing this fixture does. It was gated on
+        // one grid item losing its badge, a different one each run, diagnosed as the grid
+        // displacing an earlier emote. That was measured when equipping was a double-click
+        // that landed about half the time, and ten in a row cannot all survive those odds, so
+        // the diagnosis never had a reliable equip under it. If a badge still goes missing now
+        // that equipping presses the Equip button, the cause is grid/slot behaviour and
+        // belongs in a client bug rather than in a wider wait here.
         OpenEmotes();
 
         var emotes = Views.ExplorePanel.Backpack.Emotes;
@@ -53,11 +52,17 @@ public class BackpackEmotesTests : BaseTest
                        timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
         }
 
+        // Only the final equip's badge can still be propagating; the earlier ones were
+        // confirmed slots ago, so assert those instead of paying a ceiling per item.
+        emotes.GridItems[ExplorePanelBackpackView.EmotesTab.SLOT_COUNT - 1]
+              .EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+
         for (var i = 0; i < ExplorePanelBackpackView.EmotesTab.SLOT_COUNT; i++)
         {
             // Every badge must still be lit after the last equip: filling a later slot
             // must not evict an emote already assigned to an earlier one.
-            emotes.GridItems[i].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+            Assert.That(emotes.GridItems[i].EquippedSlotBadge.IsPresent(verificationShot: false), Is.True,
+                $"Emote {i} should still be equipped after all ten slots are filled");
         }
 
         Reporter.Log("All emote slots equipped sequentially and badges verified");

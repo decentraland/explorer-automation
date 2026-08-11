@@ -552,7 +552,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             ClickSlot(slotIndex);
 
-            if (Slots[slotIndex].UnequipButton.IsPresent())
+            // Shot-suppressed probe — this is control flow, and UnequipAll runs it ten times.
+            if (Slots[slotIndex].UnequipButton.IsPresent(verificationShot: false))
             {
                 ClickUnequip(slotIndex);
                 Reporter.Log($"Unequipped emote slot {slotIndex}");
