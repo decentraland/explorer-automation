@@ -1,4 +1,4 @@
-namespace ExplorerAutomation.Tests.Tests;
+﻿namespace ExplorerAutomation.Tests.Tests;
 
 // Depth coverage for the explore panel's Places section (the open-from-sidebar smoke test
 // lives in ExplorePanelTests). The in-world Order band 10-19 is full, so this fixture
@@ -190,7 +190,7 @@ public class PlacesTests : BaseTest
     /// </summary>
     private void OpenPlaces()
     {
-        ClickUntil(() => PressKey(AltKeyCode.Z, delay: 0),
+        ClickUntil(() => PressKey(AltKeyCode.Z),
                    () => Views.ExplorePanel.Places.IsPresent());
         Views.ExplorePanel.Places.WaitFor();
     }

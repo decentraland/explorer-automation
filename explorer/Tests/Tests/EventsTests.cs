@@ -1,4 +1,4 @@
-namespace ExplorerAutomation.Tests.Tests;
+﻿namespace ExplorerAutomation.Tests.Tests;
 
 // Depth coverage for the explore panel's Events section (the open-from-sidebar smoke test
 // lives in ExplorePanelTests). The in-world Order band 10-19 is full, so this fixture
@@ -46,10 +46,9 @@ public class EventsTests : BaseTest
     {
         OpenEvents();
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
-        // Day columns populate asynchronously — wait for a candidate card instead of a fixed
-        // pause; the re-binding that follows is the retry loop's job below.
-        WaitUntil(() => Views.ExplorePanel.Events.TodayBigCards[0].IsPresent(verificationShot: false)
-                        || Views.ExplorePanel.Events.TomorrowSmallCards[0].IsPresent(verificationShot: false), 2);
+        // Day columns populate asynchronously. A card being present is not enough — the grid
+        // re-binds it afterwards, so clicking on first sight hits a dead tile.
+        Wait(2);
 
         // The Today column only holds big cards while events are live, so fall back to
         // tomorrow's first (always-scheduled) small card when nothing is live right now.
@@ -59,16 +58,13 @@ public class EventsTests : BaseTest
         ClickUntil(() =>
         {
             var card = Views.ExplorePanel.Events.TodayBigCards[0];
-            // Shot-suppressed throughout: picking the column and reading the target's name are
-            // part of the click action, and ClickUntil re-runs both on every attempt. The one
-            // shot for the loop is the EventDetail wait below, on the frame it settled on.
-            if (!card.IsPresent(verificationShot: false))
+            if (!card.IsPresent())
             {
                 Reporter.Log("No live event card in the Today column — using tomorrow's first card");
                 card = Views.ExplorePanel.Events.TomorrowSmallCards[0];
             }
 
-            eventName = card.EventName.GetText(20D, verificationShot: false);
+            eventName = card.EventName.GetText();
             card.Click();
         }, () => Views.ExplorePanel.Events.EventDetail.IsPresent(verificationShot: false));
 
@@ -109,7 +105,7 @@ public class EventsTests : BaseTest
     /// </summary>
     private void OpenEvents()
     {
-        ClickUntil(() => PressKey(AltKeyCode.X, delay: 0),
+        ClickUntil(() => PressKey(AltKeyCode.X),
                    () => Views.ExplorePanel.Events.IsPresent());
         Views.ExplorePanel.Events.WaitFor();
     }
