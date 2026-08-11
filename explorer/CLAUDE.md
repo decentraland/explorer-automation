@@ -85,6 +85,33 @@ uGUI control does nothing at all — reach for `Click`.
 (overlay buttons) needs the cursor parked with `AltDriver.MoveMouse` and the animation given
 time before the click, or the press raycasts past a zero-scaled element.
 
+**`SoftMask` vetoes presses inside it.** `Coffee.UISoftMask.SoftMask` implements
+`ICanvasRaycastFilter`, and Unity consults the filters on a hit graphic's *ancestors*, so a
+SoftMask on a container rejects every press in its whole subtree — the press falls through to
+whatever is behind. The passport carries three (`BackgroundContainer`, `Viewport`, one nested)
+and `ProfileNameEditor` two, one of which gates its `SaveButton`; `ExplorePanelUI` carries none,
+which is why that panel has always been drivable. Disabling the component makes its filter
+permissive (`IsRaycastLocationValid` returns true when not `isActiveAndEnabled`), which is what
+`PassportEditPress.DisableSoftMasks` does. Grep a prefab for `SoftMask` before assuming a
+press-does-nothing symptom is timing.
+
+**A panel whose backdrop is a close button hides its own failures.** The passport's
+`Background_Close` is a full-screen close `Button` at sibling index 0, so a press that misses
+anything closes the panel — which is indistinguishable from a press that hit `CloseButton`. Tests
+that only read text and then close therefore pass whether or not their clicks land. Prefer a
+control with an observable non-close outcome (a tab switching sections) when checking that presses
+reach a panel at all, and be suspicious of "passing" coverage built on a close.
+
+**When a press lands but nothing happens, check `interactable` before blaming the harness.**
+uGUI raises no event for a disabled button and there is no error to read. The name editor gates
+`saveButtonInteractable` on `NameInputFieldView.IsValidName` — at most 15 characters — while the
+input accepts three times that, so an over-long name types in fine and Save silently does nothing.
+
+**`FindObjectAtCoordinates` is not a hit test.** It answers which object *contains* a point in
+scene-graph order, so for stacked UI it returns the first full-screen ancestor rather than what a
+press would reach — it reported a passport backdrop for points over a working button. Do not use
+it to reason about where a press lands.
+
 ## Waits and Retries
 
 **Never spend wall-clock without a need behind it.** Adding a wait, widening a ceiling and
