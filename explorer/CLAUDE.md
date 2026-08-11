@@ -156,12 +156,15 @@ silently does nothing, which reads in the report as a click that landed and achi
 Pick by screen position instead. The `AltObject` from `WaitFor` carries `y` (Unity's bottom-left
 origin) and `mobileY` (the same point measured from the top), so `y > 0 && mobileY > 0` proves the
 centre is on screen without asking for the screen size.
-`ExplorePanelEventsView.FindTopLeftVisibleCard` is the worked example — scan columns left to
-right, keep the smallest `mobileY`, stop at the first column that answers.
+`FindTopLeftVisibleCard` is the worked example, in two shapes: the events view scans day columns
+left to right and stops at the first that answers, the places view scans the whole grid for the
+smallest `mobileY` and breaks ties on `x`. Probe the element that will be clicked, not its parent.
+The places grid also gates presses behind its skeleton — `WaitForResultsInteractive` waits for
+`LoadedState`'s `CanvasGroup` to start blocking raycasts, which only happens once the fade ends.
 
-Still index-addressed and carrying the same latent bug: `PlacesTests` (the detail click, and the
-search and filter assertions that assume index 0 is the leading result) and `CommunitiesTests`
-(`Cards[0].Title`). Its detail flow brute-forces the problem by clicking cards 0-4 in turn. The
+Still index-addressed and carrying the same latent bug: `PlacesTests`'s search and filter
+assertions, which assume index 0 is the leading result, and `CommunitiesTests` (`Cards[0].Title`).
+Its detail flow brute-forces the problem by clicking cards 0-4 in turn. The
 backpack pools are safe by another route — they blank and re-park tiles rather than scrolling
 them away, and are already fenced by `LoadedIndicator` / `HasFullGridPage`.
 
@@ -191,6 +194,20 @@ is how a swallowed click is told apart from one dispatched outside the viewport.
 An `[AllureStep]` method's arguments are JSON-serialized into the result file, and a delegate
 argument drags its whole reflection graph in at ~14MB per call. Register a type formatter in
 `GlobalSetup` for any new delegate-taking step.
+
+## Skips
+
+A skip reason is a claim, and an old one has usually never been re-tested. Every macOS skip this
+suite carried named a cause the client contradicts. `TestOpenPlaceDetail` blamed chassis timing,
+while the driver log showed its press dispatched below the bottom of the screen. The two Gallery
+tests blamed a TCC prompt for `~/Downloads`, which the Explorer only touches when a reel is
+downloaded — that skip began as a pre-macOS `Assert.Ignore("can't access user device")` and was
+given its explanation afterwards, so no run ever stood behind it.
+
+Read the client for the mechanism before trusting a reason, and check whether another test already
+drives the same state by a different route: `TestSwitchBetweenAllTabs` had been opening
+`GallerySection` all along, on the very chassis where the Gallery tests were skipped for supposedly
+not being able to.
 
 ## Skills
 
