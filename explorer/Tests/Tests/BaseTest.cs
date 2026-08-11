@@ -7,6 +7,8 @@ public abstract class BaseTest
     private const string PERF_ENV = "EXPLORER_PERF_RECORD";
     private const string PERF_DIR_ENV = "EXPLORER_PERF_DIR";
 
+    private static bool _bootedInWorld;
+
     protected Exception ExceptionFromOneTimeSetUp;
 
     private string _perfCsvPath;
@@ -169,6 +171,14 @@ public abstract class BaseTest
     [AllureStep("Ensure player is in-world")]
     protected virtual void EnsureInWorld()
     {
+        // Boot is a process-wide cost: the client stays live between fixtures, so once one
+        // has booted, the rest only need the main menu to confirm we're still in world.
+        if (_bootedInWorld && Views.MainMenu.IsPresent(verificationShot: false))
+        {
+            Reporter.Log("Already in-world from an earlier fixture — skipping boot");
+            return;
+        }
+
         // MinimumSpecsScreen overlays the splash on hardware that doesn't meet
         // the recommended specs (CI 4-vCPU runner). The modal is instantiated
         // late in MainSceneLoader bootstrap (VerifyMinimumHardwareRequirementMet),
@@ -230,14 +240,11 @@ public abstract class BaseTest
         // hardware hits MainMenu in ~10-30s and never approaches this ceiling.
         Views.MainMenu.WaitFor(240);
 
-        // The SidebarController subscribes its onClick listeners in OnViewInstantiated,
-        // which fires asynchronously after the SidebarView GameObject appears in the scene.
-        // The first sidebar click / shortcut after EnsureInWorld returns can land in that
-        // gap and get silently dropped. There's no public signal for when subscriptions
-        // are wired, so we settle for a fixed wait. Empirically ~20s is enough for the
-        // first test method of the first in-world fixture; subsequent fixtures don't need
-        // it (the system is already warm) but the cost is small.
+        // The sidebar wires its onClick listeners asynchronously after SidebarView appears,
+        // and a click landing in that gap is silently dropped. No signal to wait on, so
+        // settle for a fixed wait — paid once, on the boot that reaches here.
         Thread.Sleep(20_000);
+        _bootedInWorld = true;
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
