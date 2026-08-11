@@ -15,7 +15,7 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// the panel becomes findable get eaten because the raycaster ignores them. Override
     /// WaitFor to also wait for the raycaster to be re-enabled.
     /// </summary>
-    public override AltObject WaitFor(double timeout = 20D)
+    internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
         // Suppress the base "appeared" shot — the panel is only verified ready once the
         // raycaster is re-enabled, so the single shot is taken after that wait completes
@@ -27,7 +27,8 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
             true,
             "UnityEngine.UI",
             timeout: 10);
-        Reporter.TakeVerificationShot($"appeared_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 
