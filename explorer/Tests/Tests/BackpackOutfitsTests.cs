@@ -145,7 +145,7 @@ public class BackpackOutfitsTests : BaseTest
 
     private void OpenBackpack()
     {
-        PressKey(AltKeyCode.I);
+        PressKey(AltKeyCode.I, delay: 0);
         Views.ExplorePanel.WaitFor();
         Views.ExplorePanel.Backpack.WearablesTabButton.Click();
         Views.ExplorePanel.Backpack.WaitFor();

@@ -44,7 +44,7 @@ public class EmailOtpLoginTests : LoggedOutAuthBaseTest
         OpenExplorePanelViaShortcut();
         Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True,
             "Backpack section should be visible after pressing I");
-        PressEscape();
+        PressEscape(delay: 0);
         Views.ExplorePanel.WaitForGone();
 
         // Step 6 — jump (no HUD-presence assertion afterwards; the jump itself doesn't have

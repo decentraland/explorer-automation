@@ -109,7 +109,7 @@ public class DeeplinkLoginVerificationTests : BaseTest
     {
         // This build's sidebar has no Map button (verified via UiDump `--all` dumps), so the
         // M shortcut is the stable entry point to the navmap.
-        PressKey(AltKeyCode.M);
+        PressKey(AltKeyCode.M, delay: 0);
         Views.ExplorePanel.WaitFor();
 
         Assert.That(Views.ExplorePanel.Navmap.IsPresent(), Is.True,

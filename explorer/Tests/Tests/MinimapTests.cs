@@ -67,7 +67,7 @@ public class MinimapTests : BaseTest
         Assert.That(labels, Does.Contain("Reload Scene"), "Context menu should offer Reload Scene");
         Reporter.Log($"Context menu entries: {string.Join(", ", labels)}");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.Minimap.ContextMenu.WaitForGone();
         Reporter.Log("Context menu closed with Escape");
     }

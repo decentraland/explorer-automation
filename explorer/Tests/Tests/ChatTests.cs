@@ -36,13 +36,13 @@ public class ChatTests : BaseTest
     [Test]
     public void TestOpenChatWithEnterAndCloseWithEscape()
     {
-        PressKey(AltKeyCode.Return);
+        PressKey(AltKeyCode.Return, delay: 0);
         Views.Chat.ConversationsToolbar.WaitFor();
         Assert.That(Views.Chat.InputPlaceholder.GetText(), Is.EqualTo(ChatPanelView.PLACEHOLDER_OPEN),
             "Chat input should be focused after pressing Enter");
         Reporter.Log("Chat opened with the Enter key");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.Chat.ConversationsToolbar.WaitForGone();
         Reporter.Log("Chat closed with Escape");
     }
@@ -132,7 +132,7 @@ public class ChatTests : BaseTest
             Views.MainMenu.ChatButton.Click();
             if (!TryWaitForToolbarGone(3))
             {
-                PressEscape(); // last resort; the probe below repairs the desync this causes
+                PressEscape(delay: 0); // last resort; the probe below repairs the desync this causes
                 TryWaitForToolbarGone(3);
             }
         }
@@ -193,7 +193,7 @@ public class ChatTests : BaseTest
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            PressEscape();
+            PressEscape(delay: 0);
             if (TryWaitForToolbarGone(3))
                 return;
 

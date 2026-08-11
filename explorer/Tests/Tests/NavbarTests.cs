@@ -89,7 +89,7 @@ public class NavbarTests : BaseTest
         Assert.That(Views.MainMenu.Help.DiscordButton.IsPresent(), Is.True,
             "Help menu should contain the Discord entry");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.MainMenu.Help.WaitForGone();
     }
 

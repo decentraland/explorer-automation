@@ -188,7 +188,7 @@ public class PlacesTests : BaseTest
     /// </summary>
     private void OpenPlaces()
     {
-        ClickUntil(() => PressKey(AltKeyCode.Z),
+        ClickUntil(() => PressKey(AltKeyCode.Z, delay: 0),
                    () => Views.ExplorePanel.Places.IsPresent());
         Views.ExplorePanel.Places.WaitFor();
     }

@@ -101,7 +101,7 @@ public class EventsTests : BaseTest
     /// </summary>
     private void OpenEvents()
     {
-        ClickUntil(() => PressKey(AltKeyCode.X),
+        ClickUntil(() => PressKey(AltKeyCode.X, delay: 0),
                    () => Views.ExplorePanel.Events.IsPresent());
         Views.ExplorePanel.Events.WaitFor();
     }

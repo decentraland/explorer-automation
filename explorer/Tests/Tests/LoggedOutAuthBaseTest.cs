@@ -145,7 +145,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     protected void OpenExplorePanelViaShortcut(int attempts = 3, int perAttemptSeconds = 15)
     {
         OpenSidebarMenuWithRetry(
-            () => PressKey(AltKeyCode.I),
+            () => PressKey(AltKeyCode.I, delay: 0),
             Views.ExplorePanel,
             "explore panel",
             attempts,

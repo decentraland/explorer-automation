@@ -336,6 +336,10 @@ public abstract class BaseTest
 
     #region Input Helpers
 
+    /// <summary>
+    /// Presses a key and settles for <paramref name="delay"/> seconds. Pass <c>delay: 0</c> when
+    /// the call site waits on the state the press produces — that wait already proves it arrived.
+    /// </summary>
     [AllureStep("Press key")]
     protected void PressKey(AltKeyCode keyCode, float delay = 0.5f)
     {
@@ -345,9 +349,9 @@ public abstract class BaseTest
     }
 
     [AllureStep("Press Escape")]
-    protected void PressEscape()
+    protected void PressEscape(float delay = 0.5f)
     {
-        PressKey(AltKeyCode.Escape);
+        PressKey(AltKeyCode.Escape, delay);
     }
 
     #endregion

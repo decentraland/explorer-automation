@@ -136,7 +136,7 @@ public class CommunitiesTests : BaseTest
     /// </summary>
     private void OpenCommunities()
     {
-        ClickUntil(() => PressKey(AltKeyCode.O),
+        ClickUntil(() => PressKey(AltKeyCode.O, delay: 0),
                    () => Views.ExplorePanel.Communities.IsPresent());
         Views.ExplorePanel.Communities.WaitFor();
     }

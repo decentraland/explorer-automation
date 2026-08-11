@@ -175,7 +175,7 @@ public class BackpackEmotesTests : BaseTest
     {
         // Open backpack via the keyboard shortcut: more reliable than the sidebar click
         // for the very first interaction post-warmup.
-        PressKey(AltKeyCode.I);
+        PressKey(AltKeyCode.I, delay: 0);
         Views.ExplorePanel.WaitFor();
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
         Views.ExplorePanel.Backpack.Emotes.WaitFor();

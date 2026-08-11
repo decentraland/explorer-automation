@@ -10,7 +10,7 @@ public class NavmapTests : BaseTest
     {
         // This build's sidebar has no Map button (verified via UiDump `--all` dumps), so the
         // M shortcut is the stable entry point to the navmap.
-        PressKey(AltKeyCode.M);
+        PressKey(AltKeyCode.M, delay: 0);
         Views.ExplorePanel.Navmap.WaitFor();
 
         Views.ExplorePanel.Navmap.AllCategoryButton.Click();

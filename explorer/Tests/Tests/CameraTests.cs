@@ -11,7 +11,7 @@ public class CameraTests : BaseTest
     [Test]
     public void TestToggleCameraWithShortcut()
     {
-        PressKey(AltKeyCode.C);
+        PressKey(AltKeyCode.C, delay: 0);
         Views.InWorldCamera.WaitFor();
         Reporter.Log("Camera HUD opened with C");
 
@@ -19,7 +19,7 @@ public class CameraTests : BaseTest
         Views.InWorldCamera.CameraReelButton.WaitFor();
         Reporter.Log("SHOOT and gallery controls are visible");
 
-        PressKey(AltKeyCode.C);
+        PressKey(AltKeyCode.C, delay: 0);
         Views.InWorldCamera.WaitForGone();
         Reporter.Log("Camera HUD closed with C");
     }
@@ -45,6 +45,8 @@ public class CameraTests : BaseTest
         // camera reel service, and only the gallery's explicit "download reel" action
         // (ReelCommonActions.DownloadReelToFileAsync) writes under ~/Downloads.
         // Side effect: each run adds one photo to the shared dev account's camera reel.
+        // Settle kept: the Space press below has to clear the window in which a freshly shown
+        // HUD swallows keyboard input.
         PressKey(AltKeyCode.C);
         Views.InWorldCamera.WaitFor();
 
@@ -52,11 +54,11 @@ public class CameraTests : BaseTest
         if (!Views.InWorldCamera.TakeScreenshotButton.IsPresent())
             Assert.Ignore("Camera reel storage is full on the test account — cannot take more photos");
 
-        PressKey(AltKeyCode.Space);
+        PressKey(AltKeyCode.Space, delay: 0);
         Views.InWorldCamera.WaitForCaptureFx();
         Reporter.Log("Photo captured");
 
-        PressKey(AltKeyCode.C);
+        PressKey(AltKeyCode.C, delay: 0);
         Views.InWorldCamera.WaitForGone();
     }
 }

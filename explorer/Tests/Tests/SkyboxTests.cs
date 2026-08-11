@@ -20,7 +20,7 @@ public class SkyboxTests : BaseTest
             "Skybox widget should show a HH:mm time of day");
         Reporter.Log("Skybox widget shows title, auto toggle, slider and time label");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.MainMenu.Skybox.WaitForGone();
     }
 
@@ -56,7 +56,7 @@ public class SkyboxTests : BaseTest
         }
 
         Views.MainMenu.Skybox.SetAutoProgression(autoProgressionWasOn);
-        PressEscape();
+        PressEscape(delay: 0);
         Views.MainMenu.Skybox.WaitForGone();
     }
 
