@@ -29,9 +29,9 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     public readonly Readable  UserIDText          = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/UserID");
     public readonly Clickable CopyNameButton      = new(By.PATH, "//UserBasicInfo_PassportSubView/UserNameContainer/CopyButton");
     public readonly Clickable CopyIDButton        = new(By.PATH, "//UserBasicInfo_PassportSubView/UserIDContainer/CopyButton");
-    // Bare name deliberately: the pencil is NOT a descendant of Passport(Clone) in this
-    // build — scoping it to //Passport(Clone)//EditNameButton stopped resolving entirely
-    // (CI run 31180360091, "was not found within 20 seconds").
+    // Bare name, though the pencil does sit under UserBasicInfo_PassportSubView: the module leaves
+    // both pencils inactive until the own-profile check resolves, and AltTester skips inactive
+    // objects, so a scoped lookup races that and finds nothing.
     public readonly Clickable EditNameButton      = new(By.NAME, "EditNameButton");
     public readonly Clickable ClaimNameButton     = new(By.PATH, "//UserBasicInfo_PassportSubView//ClaimNameButton");
 
@@ -40,6 +40,10 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     // unreachable on this account — kept for accounts with a claimed NAME.
     public readonly Locatable NameColorPicker       = new(By.PATH, "//UserBasicInfo_PassportSubView//NameColorPicker");
     public readonly Clickable ChangeNameColorButton = new(By.NAME, "ChangeColorButton");
+
+    // Module roots, waited on by WaitUntilReady. The Overview modules carry their own roots as
+    // sub-views; the header module has none of its own because its fields are path-scoped to it.
+    public readonly Locatable BasicInfoModule = new(By.NAME, "UserBasicInfo_PassportSubView");
 
     public readonly Locatable OfficialMarkImage  = new(By.PATH, "//UserBasicInfo_PassportSubView/UserNameContainer/OfficialMark");
     public readonly Locatable VerifiedMarkImage  = new(By.PATH, "//UserBasicInfo_PassportSubView/UserNameContainer/VerifiedMark");
@@ -63,14 +67,42 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     #region Helper methods
 
     /// <summary>
+    /// Waits until the passport has finished building — the popup, its raycaster, then the module
+    /// roots — so a press does not land on a half-built panel.
+    /// </summary>
+    [AllureStep("Wait for the passport to finish building")]
+    public void WaitUntilReady()
+    {
+        var passport = WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+        // The MVC ViewBase disables the root's GraphicRaycaster while the show animation plays, and
+        // WaitFor only proves the GameObject exists — the same guard ExplorePanelView carries.
+        passport.WaitForComponentProperty("UnityEngine.UI.GraphicRaycaster", "enabled", true,
+            "UnityEngine.UI", timeout: SlowChassis.SETTLE_TIMEOUT);
+        // Module roots only. Their contents are conditional — an empty badges row and links list
+        // swap in placeholder labels — so waiting on a tile hangs for an account that has none.
+        // Shots suppressed: one capture of the built panel replaces four near-identical frames.
+        BasicInfoModule.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+        Overview.BadgesOverview.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+        Overview.AboutMe.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+        Overview.EquippedItems.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+        Reporter.TakeVerificationShot("ready_Passport");
+    }
+
+    /// <summary>
     /// Renames the user through the passport name editor modal (unclaimed-name flow):
     /// opens the editor, types the new name, saves, and waits for the modal to close.
     /// </summary>
     [AllureStep("Rename user via the passport name editor")]
     public void RenameUser(string newName)
     {
-        EditNameButton.ClickOrTap(() => NameEditor.IsPresent(verificationShot: false));
-        NameEditor.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+        // No WaitFor on the modal after this: Open only returns once it is present, and it
+        // reports a genuine failure better than the stock element error would.
+        PassportEditPress.Open(EditNameButton,
+            () => NameEditor.IsPresent(verificationShot: false), "the name editor");
+        // The modal carries its own SoftMask, so SaveButton is vetoed the same way the pencil was
+        // and the editor never closes. ClaimedNameContainer is left alone — it stays inactive for
+        // an unclaimed name, so it has no press to veto.
+        PassportEditPress.DisableSoftMasks("//ProfileNameEditor(Clone)/NonClaimedNameContainer");
         // The modal pre-fills the input with the current name asynchronously after opening.
         // Typing before that lands gets overwritten by the pre-fill, and Save then submits
         // the unchanged name (verified live) — so wait for the pre-fill first.
