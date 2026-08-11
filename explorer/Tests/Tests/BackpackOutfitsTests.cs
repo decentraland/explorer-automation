@@ -77,12 +77,13 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
         Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        // One click, no retry — see BackpackWearablesTests.EquipUntilShown. Polls the flag
-        // rather than IsEquipped so the loop does not re-hover.
-        hair.DoubleClickEquip();
+        // No retry — see BackpackWearablesTests.EquipUntilShown. Polls the flag rather than
+        // IsEquipped so the loop does not re-hover.
+        hair.Equip();
         WaitUntil(hair.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
         Wait(2);
-        // The double-click also selects the item, so the info panel shows its name.
+        // The Equip button only equips, so select the tile to make the info panel name it.
+        hair.Click();
         var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();
         Assert.That(hair.IsEquipped(), Is.True, "Precondition: the alternative hair should be equipped");
         Reporter.Log($"Avatar diverged from saved outfit (equipped hair '{hairName}')");

@@ -115,9 +115,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         private const string ITEM_VIEW_COMPONENT = "DCL.Backpack.BackpackItemView";
         private const string ITEM_VIEW_ASSEMBLY  = "Backpack";
 
-        // NOTE: the hover overlay's Equip/Unequip Buttons do NOT respond to synthetic
-        // AltTester clicks or taps in this build (verified live — the click lands but no
-        // equip happens). Use DoubleClickEquip to actually equip.
+        // The overlay buttons ignore Tap: AltTester's tap path compiles out its pointerDown/
+        // Up/Click dispatch when the EventSystem runs InputSystemUIInputModule, which this
+        // client does, leaving only SendMessage that uGUI Button does not listen for. Click
+        // reaches them, but only once the overlay is up — see Equip.
         public Clickable EquipButton   { get; } = equipLocator;
         public Clickable UnequipButton { get; } = unequipLocator;
         // FullBackpack is only enabled once the tile has real content; while the tile is
@@ -158,29 +159,43 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
-        /// BackpackItemView.OnPointerClick treats clickCount == 2 as Equip, so two rapid
-        /// clicks equip without needing the hover overlay.
+        /// Equips the item through the hover overlay's Equip button. The button and the
+        /// double-click both reach BackpackItemView.OnEquip, but the button does not depend on
+        /// Unity raising clickCount == 2, which no amount of tuning made reliable here.
+        /// </summary>
+        [AllureStep("Equip grid item via the overlay button")]
+        public void Equip()
+        {
+            // Park the real cursor on the tile and let the overlay animate in before pressing.
+            // Click queues its pointer move and press in one frame, and the arriving pointer
+            // fires OnPointerEnter, which resets HoverBackground to zero scale — so a press
+            // aimed at the button on that frame raycasts straight past it. Hover alone cannot
+            // do this: its PointerEnter is synthetic and never moves the mouse device.
+            var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
+            CommonStuff.AltDriver.MoveMouse(new AltVector2(altObj.x, altObj.y));
+            Thread.Sleep(PRE_EQUIP_SETTLE_MS);
+
+            // Moving from the tile to its own child does not re-enter the tile, so the overlay
+            // stays up for this press.
+            EquipButton.Click();
+            Reporter.Log("Equipped grid item via the overlay button");
+        }
+
+        /// <summary>
+        /// Equips by double-clicking the tile — BackpackItemView's clickCount == 2 path. Only
+        /// for the test that covers that interaction; anything equipping as setup wants
+        /// <see cref="Equip"/>, which does not depend on Unity's click counting.
         /// </summary>
         [AllureStep("Equip grid item via double-click")]
         public void DoubleClickEquip()
         {
-            // Shot-suppressed wait: double-click equip is an action, not a verification.
             var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
-
-            // Park the real cursor on the tile in its own frames first. Click queues the move
-            // and the first press together, so that press lands on the frame the pointer
-            // arrives — the frame AnimateHover resets the overlay to zero scale. The presses
-            // then raycast different hierarchies and Unity restarts the click count.
-            // Hover only sends a synthetic PointerEnter, which never moves the mouse device.
             CommonStuff.AltDriver.MoveMouse(new AltVector2(altObj.x, altObj.y));
-
-            // Let the arrival's hover animation finish before pressing.
             Thread.Sleep(PRE_EQUIP_SETTLE_MS);
-            // One Player-side command, NOT separate driver round-trips: a single round-trip on
-            // the macos-14 paravirt runner already exceeds Unity's double-click window, so
-            // separate Click calls read as single clicks and never equip. The interval here is
-            // applied by the Player. More presses than needed, so more than one consecutive
-            // pair gets a chance to land inside the window.
+
+            // One Player-side command: a driver round-trip between two Click calls already
+            // exceeds Unity's double-click window on this chassis. More presses than needed, so
+            // more than one consecutive pair gets a chance to land inside it.
             altObj.Click(count: 4, interval: 0.05f);
             Reporter.Log("Double-clicked grid item to equip");
         }
@@ -532,7 +547,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             WaitForGridItemLoaded(gridIndex);
             ClickSlot(slotIndex);
             ClickGridItem(gridIndex);
-            GridItems[gridIndex].DoubleClickEquip();
+            GridItems[gridIndex].Equip();
             Reporter.Log($"Set emote grid item {gridIndex} to slot {slotIndex}");
         }
 
@@ -547,7 +562,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             FirstLoadedGridItem.WaitUntilLoaded(CONTENT_TIMEOUT);
             ClickSlot(slotIndex);
             FirstLoadedGridItem.Click();
-            FirstLoadedGridItem.DoubleClickEquip();
+            FirstLoadedGridItem.Equip();
             Reporter.Log($"Set the leading loaded emote to slot {slotIndex}");
         }
 
