@@ -29,6 +29,19 @@ metaforge explorer test <PR-number-or-branch>
 
 Tests connect to AltTester Desktop at `127.0.0.1:13000`. The Explorer must be instrumented and connected before running.
 
+## CI Scope
+
+The InWorld PR workflow picks which fixtures to run by Roslyn reachability, so the size of a
+run follows what the branch touches. A shared primitive — `Tests/Views/Elements/*`,
+`BaseView`, `BaseTest` — is reachable from every fixture, so changing one expands the run
+from a handful of fixtures to the whole suite, roughly 8 minutes to 25.
+
+When a primitive change is incidental to the work (a suppressed screenshot, a corrected
+default), land it on `main` first and rebase the branch onto it. The change leaves the PR
+diff, the scope drops back to the fixtures actually under test, and the primitive still
+ships. Keep it in the PR when the primitive *is* the thing under test — then the wide run is
+the point.
+
 ## Architecture
 
 **Page Object Model (POM)** pattern with NUnit test fixtures. Two main areas:
