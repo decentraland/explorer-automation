@@ -9,6 +9,8 @@ public class ExplorePanelPlacesView : BaseSection
 
     private const int CARD_COUNT     = 15;
     private const int CATEGORY_COUNT = 10;
+    // Only ever spent re-reading a thumbnail a presence probe just resolved.
+    private const double THUMBNAIL_TIMEOUT = 5D;
 
     private const string CARDS_CONTAINER =
         "//Places/Content/PlacesResults/ResultsContainer/LoadedState/ResultsScrollView/Viewport/ResultsContainer";
@@ -67,6 +69,68 @@ public class ExplorePanelPlacesView : BaseSection
 
     #endregion
 
+    #region Helper methods
+
+    /// <summary>
+    /// Waits until the results grid accepts presses. The skeleton only hands the loaded
+    /// CanvasGroup its raycasts back when the fade-in completes, so a press before that is
+    /// rejected by the group rather than by the card.
+    /// </summary>
+    [AllureStep("Wait for the places results grid to accept presses")]
+    public void WaitForResultsInteractive(double timeout = SlowChassis.SETTLE_TIMEOUT)
+    {
+        LoadedState.WaitFor(timeout, verificationShot: false)
+                   .WaitForComponentProperty("UnityEngine.CanvasGroup", "blocksRaycasts", true,
+                        "UnityEngine.UIModule", timeout: timeout);
+        Reporter.Log("Places results grid accepts presses");
+    }
+
+    /// <summary>
+    /// Returns the card whose thumbnail sits left-top-most on screen — the only safe click
+    /// target, since the recycling grid keeps a live row parked outside the viewport, and a
+    /// press dispatched there does nothing at all. Top-left also keeps the press clear of the
+    /// Nearby Voice Chat tip, which sits bottom-left for the whole of a CI run.
+    /// </summary>
+    [AllureStep("Find the left-top-most visible place card")]
+    public PlaceCard FindTopLeftVisibleCard()
+    {
+        PlaceCard topLeft = null;
+        var topLeftY = int.MaxValue;
+        var topLeftX = int.MaxValue;
+
+        foreach (var card in Cards)
+        {
+            // The thumbnail is what gets clicked, so the thumbnail is what has to be on screen.
+            // Shot-suppressed probes — target selection, not a test verification.
+            if (!card.Thumbnail.IsPresent(verificationShot: false))
+                continue;
+
+            var thumbnail = card.Thumbnail.WaitFor(THUMBNAIL_TIMEOUT, verificationShot: false);
+            if (!IsOnScreen(thumbnail))
+                continue;
+
+            // Grid rows share a mobileY exactly, so an equal row falls to the leftmost column.
+            if (thumbnail.mobileY > topLeftY || (thumbnail.mobileY == topLeftY && thumbnail.x >= topLeftX))
+                continue;
+
+            topLeft  = card;
+            topLeftY = thumbnail.mobileY;
+            topLeftX = thumbnail.x;
+        }
+
+        if (topLeft is null)
+            throw new AssertionException(
+                "No place card thumbnail is on screen — the results grid is empty or never finished loading");
+
+        Reporter.Log($"Picked the place card whose thumbnail is at x={topLeftX}, mobileY={topLeftY}");
+        return topLeft;
+    }
+
+    // Centre inside both edges — y is bottom-origin, mobileY top-origin, so no screen size needed.
+    private static bool IsOnScreen(AltObject thumbnail) => thumbnail.y > 0 && thumbnail.mobileY > 0;
+
+    #endregion
+
     #region Sub views
 
     /// <summary>
@@ -76,9 +140,10 @@ public class ExplorePanelPlacesView : BaseSection
     /// a hover overlay whose Interactions row and JUMP IN button sit at the card's center,
     /// so a root click can favorite/teleport instead. Click <see cref="Thumbnail"/> (top of
     /// the card, never covered by the overlay) to open the detail popup.
-    /// Also note the grid pools its 15 card instances: after an in-session refresh (search,
-    /// category chip) the hierarchy index no longer matches the visual order, but element
-    /// paths within one card always refer to that same card's content.
+    /// Also note the grid is a recycling LoopGridView: the hierarchy index names a slot, not a
+    /// position, and one live row is always parked outside the viewport. Click via
+    /// <see cref="FindTopLeftVisibleCard"/>; element paths within one card always refer to that
+    /// same card's content.
     /// </summary>
     public class PlaceCard : BaseClickableView
     {
