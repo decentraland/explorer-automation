@@ -156,10 +156,10 @@ public class PassportTests : BaseTest
     private void OpenOwnPassport()
     {
         Views.MainMenu.ProfileButton.Click();
-        Views.ProfileMenu.WaitFor();
-        // Sidebar context menus eat clicks for ~1s after becoming findable (same
-        // show-animation guard as the help menu — see NavbarTests).
-        Wait(1);
+        // The menu runs its show animation with the raycaster off and eats clicks until it is
+        // back on, so wait on the raycaster rather than on the animation's length.
+        Views.ProfileMenu.WaitFor().WaitForComponentProperty(
+            "UnityEngine.UI.GraphicRaycaster", "enabled", true, "UnityEngine.UI", timeout: 15);
         Views.ProfileMenu.PreviewProfileButton.Click();
         Views.Passport.WaitFor();
         Views.Passport.Overview.WaitFor();

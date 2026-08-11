@@ -98,17 +98,20 @@ public class NavbarTests : BaseTest
     {
         Views.MainMenu.HelpButton.Click();
         Views.MainMenu.Help.WaitFor();
-        // The context menu's show animation eats clicks right after the view becomes findable
-        // (verified live: an immediate click reports success but the panel never opens).
-        // There is no raycaster signal to wait on here, so settle for a brief fixed wait.
-        Wait(1);
 
-        Views.MainMenu.Help.MouseAndKeyControlsButton.Click();
+        // The context menu's show animation eats clicks right after the view becomes findable,
+        // and there is no raycaster signal here — so click again if the panel never opened.
+        // Per-attempt budget matches the WaitFor below, so only a swallowed click is retried.
+        ClickUntil(() => Views.MainMenu.Help.MouseAndKeyControlsButton.Click(),
+            () => Views.ControlsPanel.IsPresent(verificationShot: false),
+            attempts: 2, timeoutPerAttempt: 20);
         Views.ControlsPanel.WaitFor();
         Reporter.Log("Mouse and Key Controls panel opened from the help menu");
-        Wait(1); // same show-animation guard before clicking the panel's own exit button
 
-        Views.ControlsPanel.ExitButton.Click();
+        // Same guard on the panel's own exit button.
+        ClickUntil(() => Views.ControlsPanel.ExitButton.Click(),
+            () => !Views.ControlsPanel.IsPresent(verificationShot: false),
+            attempts: 2, timeoutPerAttempt: 20);
         Views.ControlsPanel.WaitForGone();
         Reporter.Log("Controls panel closed via its exit button");
     }

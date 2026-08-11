@@ -96,9 +96,8 @@ public class CommunitiesTests : BaseTest
             var card = Views.ExplorePanel.Communities.Cards[i];
             var cardTitle = card.Title.GetText();
             card.Thumbnail.Click();
-            Wait(2);
 
-            if (Views.ExplorePanel.Communities.CommunityDetail.IsPresent())
+            if (WaitUntil(() => Views.ExplorePanel.Communities.CommunityDetail.IsPresent(verificationShot: false), 2))
                 communityName = cardTitle;
             else
                 Reporter.Log($"Card {i} ('{cardTitle}') click did not open the detail — likely below the fold, trying next card");

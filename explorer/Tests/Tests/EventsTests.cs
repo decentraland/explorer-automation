@@ -44,7 +44,10 @@ public class EventsTests : BaseTest
     {
         OpenEvents();
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
-        Wait(2); // day columns populate asynchronously
+        // Day columns populate asynchronously — wait for a candidate card instead of a fixed
+        // pause; the re-binding that follows is the retry loop's job below.
+        WaitUntil(() => Views.ExplorePanel.Events.TodayBigCards[0].IsPresent(verificationShot: false)
+                        || Views.ExplorePanel.Events.TomorrowSmallCards[0].IsPresent(verificationShot: false), 2);
 
         // The Today column only holds big cards while events are live, so fall back to
         // tomorrow's first (always-scheduled) small card when nothing is live right now.
