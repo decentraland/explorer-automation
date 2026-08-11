@@ -47,14 +47,19 @@ public record Locatable(By by, string name)
         }
     }
 
+    public void WaitForGone(double timeout = 20D) => WaitForGone(timeout, verificationShot: true);
+
+    // Shot-suppressed overload for best-effort probes (e.g. "did Escape close the panel?") —
+    // those are control flow, and one fires on every test's cleanup.
     [AllureStep("Wait for object to disappear")]
-    public void WaitForGone(double timeout = 20D)
+    internal void WaitForGone(double timeout, bool verificationShot)
     {
         Reporter.Log($"Waiting for object {this} to disappear.");
         try
         {
             CommonStuff.AltDriver.WaitForObjectNotBePresent(by, name, timeout: timeout);
-            Reporter.TakeVerificationShot($"gone_{ShotName}");
+            if (verificationShot)
+                Reporter.TakeVerificationShot($"gone_{ShotName}");
         }
         catch (WaitTimeOutException)
         {

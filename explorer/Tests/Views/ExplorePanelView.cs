@@ -88,7 +88,9 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// </summary>
     private bool TryWaitForGone(double timeoutSec)
     {
-        try { WaitForGone(timeoutSec); return true; }
+        // Shot-suppressed: this only answers "did Escape work?", and the panel closing is
+        // every test's cleanup rather than anything one of them verifies.
+        try { WaitForGone(timeoutSec, verificationShot: false); return true; }
         catch { return false; }
     }
 

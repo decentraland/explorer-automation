@@ -25,6 +25,7 @@ public abstract class BaseView(Locatable root)
     // and for control-flow probes/retry loops that are not test verifications.
     internal AltObject WaitFor(double timeout, bool verificationShot) => root.WaitFor(timeout, verificationShot);
     internal bool IsPresent(bool verificationShot) => root.IsPresent(verificationShot);
+    internal void WaitForGone(double timeout, bool verificationShot) => root.WaitForGone(timeout, verificationShot);
 
     /// <summary>
     /// Waits for the view's root element to disappear from the scene.
