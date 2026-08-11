@@ -176,15 +176,13 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
 
-        // A search term from an earlier test is still applied and shrinks the page, which index
-        // addressing cannot survive. Gate on the symptom, not the field's contents, so a run that
-        // never searched pays one lookup and no extra rebuild. After the tab click on purpose:
-        // clearing only reaches the active section's grid.
-        if (!Views.ExplorePanel.Backpack.Emotes.HasFullGridPage())
-        {
-            Views.ExplorePanel.Backpack.ClearSearch();
-            Views.ExplorePanel.Backpack.Emotes.WaitForFullGridPage();
-        }
+        // Order matters. A search term from an earlier test outlives the panel and shrinks the
+        // page, which index addressing cannot survive, so clear it first — after the tab click,
+        // because clearing only reaches the active section's grid. Then wait out the rebuild
+        // that the clear triggers. Both unconditional: gating the clear on a full page asked
+        // one tile whether sixteen were ready, and every caller here addresses tiles by index.
+        Views.ExplorePanel.Backpack.ClearSearch();
+        Views.ExplorePanel.Backpack.Emotes.WaitForGridPageLoaded();
     }
 
     /// <summary>

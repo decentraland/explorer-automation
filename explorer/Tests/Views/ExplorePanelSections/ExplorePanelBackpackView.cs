@@ -486,34 +486,36 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed: a precondition probe, not a verification.
             GridItems[0].LoadedIndicator.IsPresent(verificationShot: false);
 
-        [AllureStep("Wait for a full page of emote grid items")]
-        public void WaitForFullGridPage()
+        /// <summary>
+        /// Waits until every tile on the page holds content. Index addressing is only meaningful
+        /// once the whole page is up: a wait on one tile returns while the rest are still blank,
+        /// and a blank tile reads as unequipped. Full pages only — a search shrinks the page.
+        /// </summary>
+        [AllureStep("Wait for the whole emote grid page to load")]
+        public void WaitForGridPageLoaded()
         {
-            // Paravirt ceiling: a cleared search costs a debounce plus a page request.
-            GridItems[0].LoadedIndicator.WaitFor(CONTENT_TIMEOUT);
-            Reporter.Log("Emote grid shows a full page of loaded items");
+            // One budget shared across the tiles, not one ceiling each.
+            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            foreach (var item in GridItems)
+                item.LoadedIndicator.WaitFor(
+                    Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
+
+            Reporter.TakeVerificationShot("loaded_EmoteGridPage");
+            Reporter.Log("Emote grid page finished loading");
         }
 
-        [AllureStep("Wait for grid item to finish loading")]
-        public void WaitForGridItemLoaded(int index) => WaitForGridItemLoaded(index, verificationShot: true);
-
-        // Shot-suppressed overload for the equip helpers: SetEmote runs this every call, and in
-        // the ten-slot fixture the shots are ten near-identical attachments.
-        internal void WaitForGridItemLoaded(int index, bool verificationShot)
+        /// <summary>
+        /// Waits until the tile is not mid-equip. Content is the page wait's job; this is the
+        /// separate gate that matters between equips, because the client refuses clicks on a
+        /// loading tile and suppresses hover on every other tile while one is loading.
+        /// </summary>
+        [AllureStep("Wait for grid item to be idle")]
+        internal void WaitForGridItemIdle(int index)
         {
-            // Content first: FullBackpack is the only thing separating a tile that holds an item
-            // from a blank pooled one, and IsLoading reads false on both.
-            GridItems[index].LoadedIndicator.WaitFor(CONTENT_TIMEOUT, verificationShot: false);
-
-            // Suppress the "appeared" shot — the verified state is IsLoading == false, so the
-            // single shot is taken after that wait (a mid-load frame would misrepresent it).
-            var gridItem = GridItems[index].WaitFor(UI_TIMEOUT, verificationShot: false);
-            gridItem.WaitForComponentProperty<bool>(
-                "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
-                timeout: CONTENT_TIMEOUT);
-            if (verificationShot)
-                Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
-            Reporter.Log($"Grid item {index} finished loading");
+            GridItems[index].WaitFor(UI_TIMEOUT, verificationShot: false)
+                .WaitForComponentProperty<bool>(
+                    "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
+                    timeout: CONTENT_TIMEOUT);
         }
 
         [AllureStep("Unequip all emote slots")]
@@ -534,7 +536,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // and its completion sets CanHover back to true on every other tile — without it a
             // grid left un-hoverable by an earlier test never raises the overlay, so Equip
             // waits out its ceiling looking for a button that cannot appear.
-            WaitForGridItemLoaded(gridIndex, verificationShot: false);
+            WaitForGridItemIdle(gridIndex);
             ClickSlot(slotIndex);
             ClickGridItem(gridIndex);
             GridItems[gridIndex].Equip();
