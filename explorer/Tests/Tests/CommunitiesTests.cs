@@ -67,7 +67,12 @@ public class CommunitiesTests : BaseTest
         Assert.That(titleText,
             Is.EqualTo("Results for 'Decentraland'"),
             "Search should retitle the grid with the query");
-        Assert.That(Views.ExplorePanel.Communities.BrowseResultsCount.GetText(), Does.Match(@"^\(\d+\)$"),
+        // The count lands after the title, so it needs its own wait — reading it off the back
+        // of the title wait is a race the search loses whenever it resolves quickly.
+        var countText = Views.ExplorePanel.Communities.BrowseResultsCount.WaitForText(
+            text => text.StartsWith('(') && text.EndsWith(')'));
+
+        Assert.That(countText, Does.Match(@"^\(\d+\)$"),
             "Search should show a result count");
         Assert.That(Views.ExplorePanel.Communities.Cards[0].Title.GetText(), Is.Not.Empty,
             "Search should return community cards");
