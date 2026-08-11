@@ -49,16 +49,9 @@ public class ExplorePanelTests : BaseTest
         Views.ExplorePanel.Close();
     }
 
-    // Opening the Gallery section makes the Explorer touch ~/Downloads (Camera Reel storage,
-    // see unity-explorer ReelCommonActions.cs), which on macOS triggers the system
-    // "wants to access your Downloads folder" TCC dialog that steals focus and breaks
-    // AltTester input. Windows has no equivalent TCC prompt, so the test can run there.
     [Test]
     public void TestOpenGalleryFromSidebar()
     {
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("macOS TCC dialog for ~/Downloads steals focus");
-
         Views.MainMenu.GalleryButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Gallery.WaitFor();

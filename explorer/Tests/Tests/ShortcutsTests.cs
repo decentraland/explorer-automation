@@ -62,16 +62,9 @@ public class ShortcutsTests : BaseTest
         Views.ExplorePanel.WaitForGone();
     }
 
-    // Same reason as TestOpenGalleryFromSidebar: opening Gallery touches ~/Downloads (Camera
-    // Reel storage in unity-explorer ReelCommonActions.cs) and triggers macOS's TCC dialog,
-    // which steals focus from the Explorer window. Windows has no equivalent TCC prompt,
-    // so the test can run there.
     [Test]
     public void TestOpenGalleryWithShortcut()
     {
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("macOS TCC dialog for ~/Downloads steals focus");
-
         PressKey(AltKeyCode.K, delay: 0);
 
         Views.ExplorePanel.Gallery.WaitFor();
