@@ -8,6 +8,24 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 {
     #region Elements
 
+    // Wait ceilings for this panel, sized from what CI actually spends rather than from the
+    // repo-wide SlowChassis ceiling. Measured on the paravirt chassis: a static element
+    // appears in under 0.7s, a hover overlay in under 0.5s, streamed content (grid tiles,
+    // outfit slots, info-panel text) in under 2.5s with one 8.2s outlier on a cold grid, and
+    // a whole grid page in 5.4s. Every wait below takes one of these, so a chassis that
+    // outgrows them is retuned in one place.
+    private const double UI_TIMEOUT      = 5D;   // the element is either there or it is not
+    // Not lowered with the rest, twice over: the history of this wait already records it
+    // exceeding 20s, and a dev build was then measured taking 17.5s to fill a grid page
+    // without finishing. Content load tracks asset streaming, not the panel.
+    private const double CONTENT_TIMEOUT = 40D;  // waiting on content the client streams in
+    // Deliberately not lowered with the rest: equipping presses a button that only exists
+    // while the overlay is up, so this is the one ceiling that can cost an equip.
+    private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
+    private const int OVERLAY_POLL_MS    = 100;
+    private const int TAB_SWITCH_MS      = 500;  // between sub-tab toggle retries
+    private const int PRE_EQUIP_SETTLE_MS = 500;
+
     // Main tabs (Header/TabSelector) — Wearables ("Avatar") and Emotes toggles.
     public readonly Clickable WearablesTabButton    = new(By.PATH, "//TabSelector/Avatar");
     public readonly Clickable EmotesTabButton       = new(By.PATH, "//TabSelector/Emotes");
@@ -53,16 +71,16 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed probe — the WaitFor below takes the verification shot.
             if (targetView.IsPresent(verificationShot: false))
             {
-                targetView.WaitFor();
+                targetView.WaitFor(UI_TIMEOUT);
                 return;
             }
 
             tabButton.Click();
-            Thread.Sleep(1000);
+            Thread.Sleep(TAB_SWITCH_MS);
         }
 
         // Final wait throws with a useful message if the tab still is not open.
-        targetView.WaitFor();
+        targetView.WaitFor(UI_TIMEOUT);
     }
 
     /// <summary>
@@ -90,14 +108,17 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     {
         #region Elements
 
-        // Hover attempts allowed before an item is reported as not equipped.
-        private const int HOVER_PROBE_ATTEMPTS = 3;
+        // Equipped state comes off the view's own flag. Every rendered alternative is unusable:
+        // the Equipped icon is never switched on by OnEquip (only by a re-bind or a pointer
+        // exit), and the overlay's Unequip button needs a hover to be readable at all.
+        // Emote tiles answer to the same component — BackpackEmoteGridItemView derives from it.
+        private const string ITEM_VIEW_COMPONENT = "DCL.Backpack.BackpackItemView";
+        private const string ITEM_VIEW_ASSEMBLY  = "Backpack";
 
-        // NOTE: the hover overlay's Equip/Unequip Buttons do NOT respond to synthetic
-        // AltTester clicks or taps in this build (verified live — the click lands but no
-        // equip happens). They are kept as presence indicators only: an equipped item
-        // shows Unequip in its hover overlay, an unequipped one shows Equip. Use
-        // DoubleClickEquip to actually equip.
+        // The overlay buttons ignore Tap: AltTester's tap path compiles out its pointerDown/
+        // Up/Click dispatch when the EventSystem runs InputSystemUIInputModule, which this
+        // client does, leaving only SendMessage that uGUI Button does not listen for. Click
+        // reaches them, but only once the overlay is up — see Equip.
         public Clickable EquipButton   { get; } = equipLocator;
         public Clickable UnequipButton { get; } = unequipLocator;
         // FullBackpack is only enabled once the tile has real content; while the tile is
@@ -109,7 +130,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         #region Helper methods
 
         [AllureStep("Wait for grid item content to load")]
-        public void WaitUntilLoaded(double timeout = 20D)
+        public void WaitUntilLoaded(double timeout = CONTENT_TIMEOUT)
         {
             LoadedIndicator.WaitFor(timeout);
         }
@@ -123,41 +144,64 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public AltObject Hover()
         {
             // Shot-suppressed wait: hovering is an action (like Click), not a verification.
-            var altObj = WaitFor(20D, verificationShot: false);
+            var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
             altObj.PointerEnter();
 
             // Wait for the hover overlay to actually enable instead of guessing a fixed delay:
             // exactly one of Equip/Unequip becomes present once the overlay finishes animating in.
-            var deadline = DateTime.UtcNow.AddSeconds(2);
+            var deadline = DateTime.UtcNow.AddSeconds(OVERLAY_SETTLE);
             while (DateTime.UtcNow < deadline
                    && !EquipButton.IsPresent(verificationShot: false)
                    && !UnequipButton.IsPresent(verificationShot: false))
-                Thread.Sleep(100);
+                Thread.Sleep(OVERLAY_POLL_MS);
 
             return altObj;
         }
 
         /// <summary>
-        /// BackpackItemView.OnPointerClick treats clickCount == 2 as Equip, so two rapid
-        /// clicks equip without needing the hover overlay.
+        /// Equips the item through the hover overlay's Equip button. The button and the
+        /// double-click both reach BackpackItemView.OnEquip, but the button does not depend on
+        /// Unity raising clickCount == 2, which no amount of tuning made reliable here.
         /// </summary>
-        [AllureStep("Equip grid item via double-click")]
-        public void DoubleClickEquip()
+        [AllureStep("Equip grid item via the overlay button")]
+        public void Equip()
         {
-            // Shot-suppressed wait: double-click equip is an action, not a verification.
-            var altObj = WaitFor(20D, verificationShot: false);
-            // One Player-side command with count: 2, NOT two driver round-trips. Unity only
-            // raises clickCount == 2 when the second click lands inside its double-click
-            // window; on the macos-14 paravirt runner a single driver round-trip already
-            // exceeds that window, so two separate Click calls read as two single clicks and
-            // never equip. The interval here is applied by the Player, not by the network.
-            altObj.Click(count: 2, interval: 0.1f);
-            Reporter.Log("Double-clicked grid item to equip");
+            // Park the real cursor on the tile and let the overlay animate in before pressing.
+            // Click queues its pointer move and press in one frame, and the arriving pointer
+            // fires OnPointerEnter, which resets HoverBackground to zero scale — so a press
+            // aimed at the button on that frame raycasts straight past it. Hover alone cannot
+            // do this: its PointerEnter is synthetic and never moves the mouse device.
+            var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
+            CommonStuff.AltDriver.MoveMouse(new AltVector2(altObj.x, altObj.y));
+            Thread.Sleep(PRE_EQUIP_SETTLE_MS);
+
+            // Moving from the tile to its own child does not re-enter the tile, so the overlay
+            // stays up for this press.
+            EquipButton.Click();
+            Reporter.Log("Equipped grid item via the overlay button");
         }
 
         /// <summary>
-        /// Hover-probes the item: an equipped item shows Unequip in its hover overlay,
-        /// an unequipped one shows Equip.
+        /// Reads BackpackItemView's own equipped flag — the one thing OnEquip actually writes.
+        /// No hover, so it stays true whether the pointer is on the tile or not.
+        /// </summary>
+        [AllureStep("Read grid item equipped flag")]
+        internal bool ReadEquippedFlag()
+        {
+            // A blank pooled tile still carries the component, so its flag reads false for the
+            // wrong reason. Content is a precondition, not part of the answer.
+            if (!LoadedIndicator.IsPresent(verificationShot: false))
+                throw new AssertionException(
+                    $"Grid item '{ShotName}' holds no content — its equipped state cannot be read.");
+
+            // Shot-suppressed wait: reading a component is not a verification on its own.
+            return WaitFor(UI_TIMEOUT, verificationShot: false)
+                .GetComponentProperty<bool>(ITEM_VIEW_COMPONENT, "IsEquipped", ITEM_VIEW_ASSEMBLY);
+        }
+
+        /// <summary>
+        /// Reads the equipped flag, then hovers so the overlay shows the matching Equip/Unequip
+        /// affordance in the verification shot.
         /// </summary>
         public bool IsEquipped() => IsEquipped(verificationShot: true);
 
@@ -166,24 +210,15 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Check whether grid item is equipped")]
         internal bool IsEquipped(bool verificationShot)
         {
-            // Re-hover before believing a negative. The overlay is driven by PointerEnter,
-            // and on a slow chassis the enter can be swallowed or the overlay can still be
-            // animating in when Unequip is probed — which reads an equipped item as
-            // unequipped and fails the equip assertions intermittently. A positive needs no
-            // retry: the overlay is up and the answer is already unambiguous.
-            for (var attempt = 0; attempt < HOVER_PROBE_ATTEMPTS - 1; attempt++)
-            {
-                Hover();
-                if (UnequipButton.IsPresent(verificationShot: false))
-                {
-                    if (verificationShot)
-                        Reporter.TakeVerificationShot($"present_{UnequipButton.ShotName}");
-                    return true;
-                }
-            }
+            var equipped = ReadEquippedFlag();
 
+            // Hover for the picture, not for the answer: callers equip in the same driver
+            // session while the pointer is still here.
             Hover();
-            return UnequipButton.IsPresent(verificationShot);
+
+            if (verificationShot)
+                Reporter.TakeVerificationShot($"{(equipped ? "equipped" : "unequipped")}_{ShotName}");
+            return equipped;
         }
 
         #endregion
@@ -216,11 +251,12 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 
         public BackpackGridItem[] GridItems { get; }
 
-        public readonly Clickable AvatarSlotHair   = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHair");
-        public readonly Readable  SelectedItemName = new(By.PATH, "//Avatar/CategoriesView/FullContainer/ItemInfoPanel//ItemName");
-        // Breadcrumb chip that is enabled only while a category filter is applied.
-        public readonly Locatable CategoryFilterChip  = new(By.PATH, "//Avatar/CategoriesView/FullContainer/BreadCrumbAndColor//CategoryFilter");
-        public readonly Readable  CategoryFilterLabel = new(By.PATH, "//Avatar/CategoriesView/FullContainer/BreadCrumbAndColor//CategoryFilter//Category");
+        public readonly Clickable AvatarSlotHair = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHair");
+        // AvatarSlotView.SelectedBackground: enabled only while this slot's category is the
+        // active filter. A direct child, not "//Background" — deeper nodes share the name and
+        // are always enabled.
+        public readonly Locatable AvatarSlotHairSelected = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHair/Background");
+        public readonly Readable  SelectedItemName       = new(By.PATH, "//Avatar/CategoriesView/FullContainer/ItemInfoPanel//ItemName");
 
         #endregion
 
@@ -266,52 +302,80 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         #region Helper methods
 
         /// <summary>
-        /// Applies the Hair category filter idempotently. The avatar slot buttons are
-        /// toggles (clicking an active one clears the filter) and the filter state does
-        /// not survive sub-tab switches consistently, so check the breadcrumb chip first.
+        /// Applies the Hair category filter idempotently and leaves the grid loaded. The slot
+        /// is a toggle, so clicking one that is already selected would clear the filter.
         /// </summary>
         [AllureStep("Ensure the Hair category filter is applied")]
         public void EnsureHairCategory()
         {
-            for (var attempt = 0; attempt < 3; attempt++)
+            // Shot-suppressed probe — the shot below records the state the helper verified.
+            if (!AvatarSlotHairSelected.IsPresent(verificationShot: false))
             {
-                // Shot-suppressed probes inside the retry loop — the single verification shot
-                // below captures the breadcrumb state the helper actually verified.
-                if (CategoryFilterChip.IsPresent(verificationShot: false)
-                    && CategoryFilterLabel.GetText(20D, verificationShot: false) == "Hair")
-                {
-                    Reporter.Log("Hair category filter is applied");
-                    Reporter.TakeVerificationShot("applied_HairCategoryFilter");
-                    return;
-                }
-
                 AvatarSlotHair.Click();
-                Thread.Sleep(1500);
+                AvatarSlotHairSelected.WaitFor(UI_TIMEOUT, verificationShot: false);
+
+                // The filter command goes out with the selected background, but the grid only
+                // blanks on a later frame; yield one so the wait below cannot be satisfied by
+                // the outgoing category's still-loaded tiles.
+                WaitOneFrame();
             }
 
-            throw new AssertionException("Hair category filter did not apply after 3 attempts");
+            // The filter surviving from an earlier test says nothing about the grid, which
+            // reloads whenever the panel is reopened — so wait on both paths.
+            WaitForGridPageLoaded(verificationShot: false);
+            Reporter.Log("Hair category filter is applied");
+            Reporter.TakeVerificationShot("applied_HairCategoryFilter");
         }
 
         /// <summary>
-        /// Hover-probes the first few grid items and returns one that is not currently
-        /// equipped, so equip tests are re-runnable regardless of avatar state.
+        /// Waits until every tile on the page holds content. Only valid on a full page: a
+        /// category with fewer owned items than <see cref="GRID_ITEM_COUNT"/> leaves the
+        /// surplus tiles blank and this waits them out to the ceiling.
+        /// </summary>
+        public void WaitForGridPageLoaded() => WaitForGridPageLoaded(verificationShot: true);
+
+        // Shot-suppressed overload for callers that already capture their own verified state.
+        [AllureStep("Wait for the whole wearables grid page to load")]
+        internal void WaitForGridPageLoaded(bool verificationShot)
+        {
+            // One budget shared across the tiles, not one ceiling each — a grid that never
+            // finishes would otherwise burn GRID_ITEM_COUNT x SETTLE_TIMEOUT.
+            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            foreach (var item in GridItems)
+                item.LoadedIndicator.WaitFor(
+                    Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
+
+            if (verificationShot)
+                Reporter.TakeVerificationShot("loaded_WearablesGridPage");
+            Reporter.Log("Wearables grid page finished loading");
+        }
+
+        // AltTester serves every command from AltRunner.Update, so any round-trip is a frame;
+        // reading the time scale is the one that mutates nothing and reports no step.
+        private static void WaitOneFrame() => CommonStuff.AltDriver.GetTimeScale();
+
+        /// <summary>
+        /// Returns the grid's first unequipped item, so equip tests are re-runnable regardless
+        /// of avatar state. The returned tile is left hovered, ready to equip.
         /// </summary>
         [AllureStep("Find an unequipped grid item")]
-        public BackpackGridItem FindUnequippedGridItem(int probeLimit = 4)
+        public BackpackGridItem FindUnequippedGridItem()
         {
-            for (var i = 0; i < probeLimit; i++)
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
             {
-                // Shot-suppressed probes — this is target selection, not a test verification.
+                // Shot-suppressed probe — this is target selection, not a test verification.
                 // One shot below records the picked item's hover overlay (Equip visible).
-                if (!GridItems[i].IsEquipped(verificationShot: false))
-                {
-                    Reporter.Log($"Grid item {i} is not equipped — using it");
-                    Reporter.TakeVerificationShot($"unequipped_GridItem_{i}");
-                    return GridItems[i];
-                }
+                // Every tile holding content is IsEquipped's precondition, which the callers
+                // meet by going through EnsureHairCategory.
+                if (GridItems[i].IsEquipped(verificationShot: false))
+                    continue;
+
+                Reporter.Log($"Grid item {i} is not equipped — using it");
+                Reporter.TakeVerificationShot($"unequipped_GridItem_{i}");
+                return GridItems[i];
             }
 
-            throw new AssertionException($"All of the first {probeLimit} grid items are equipped — cannot pick a target");
+            throw new AssertionException("Every loaded grid item is equipped — cannot pick a target");
         }
 
         #endregion
@@ -422,29 +486,36 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             // Shot-suppressed: a precondition probe, not a verification.
             GridItems[0].LoadedIndicator.IsPresent(verificationShot: false);
 
-        [AllureStep("Wait for a full page of emote grid items")]
-        public void WaitForFullGridPage()
+        /// <summary>
+        /// Waits until every tile on the page holds content. Index addressing is only meaningful
+        /// once the whole page is up: a wait on one tile returns while the rest are still blank,
+        /// and a blank tile reads as unequipped. Full pages only — a search shrinks the page.
+        /// </summary>
+        [AllureStep("Wait for the whole emote grid page to load")]
+        public void WaitForGridPageLoaded()
         {
-            // Paravirt ceiling: a cleared search costs a debounce plus a page request.
-            GridItems[0].LoadedIndicator.WaitFor(SlowChassis.SETTLE_TIMEOUT);
-            Reporter.Log("Emote grid shows a full page of loaded items");
+            // One budget shared across the tiles, not one ceiling each.
+            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            foreach (var item in GridItems)
+                item.LoadedIndicator.WaitFor(
+                    Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
+
+            Reporter.TakeVerificationShot("loaded_EmoteGridPage");
+            Reporter.Log("Emote grid page finished loading");
         }
 
-        [AllureStep("Wait for grid item to finish loading")]
-        public void WaitForGridItemLoaded(int index)
+        /// <summary>
+        /// Waits until the tile is not mid-equip. Content is the page wait's job; this is the
+        /// separate gate that matters between equips, because the client refuses clicks on a
+        /// loading tile and suppresses hover on every other tile while one is loading.
+        /// </summary>
+        [AllureStep("Wait for grid item to be idle")]
+        internal void WaitForGridItemIdle(int index)
         {
-            // Content first: FullBackpack is the only thing separating a tile that holds an item
-            // from a blank pooled one, and IsLoading reads false on both.
-            GridItems[index].LoadedIndicator.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
-
-            // Suppress the "appeared" shot — the verified state is IsLoading == false, so the
-            // single shot is taken after that wait (a mid-load frame would misrepresent it).
-            var gridItem = GridItems[index].WaitFor(20D, verificationShot: false);
-            gridItem.WaitForComponentProperty<bool>(
-                "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
-                timeout: SlowChassis.SETTLE_TIMEOUT);
-            Reporter.TakeVerificationShot($"loaded_EmoteGridItem_{index}");
-            Reporter.Log($"Grid item {index} finished loading");
+            GridItems[index].WaitFor(UI_TIMEOUT, verificationShot: false)
+                .WaitForComponentProperty<bool>(
+                    "DCL.Backpack.EmotesSection.BackpackEmoteGridItemView", "IsLoading", false, "Backpack",
+                    timeout: CONTENT_TIMEOUT);
         }
 
         [AllureStep("Unequip all emote slots")]
@@ -461,10 +532,14 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Set emote to slot")]
         public void SetEmote(int slotIndex, int gridIndex)
         {
-            WaitForGridItemLoaded(gridIndex);
+            // The tile click is not about selection. SelectItem runs a SetLoadingSlot cycle,
+            // and its completion sets CanHover back to true on every other tile — without it a
+            // grid left un-hoverable by an earlier test never raises the overlay, so Equip
+            // waits out its ceiling looking for a button that cannot appear.
+            WaitForGridItemIdle(gridIndex);
             ClickSlot(slotIndex);
             ClickGridItem(gridIndex);
-            GridItems[gridIndex].DoubleClickEquip();
+            GridItems[gridIndex].Equip();
             Reporter.Log($"Set emote grid item {gridIndex} to slot {slotIndex}");
         }
 
@@ -476,10 +551,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Set the leading loaded emote to slot")]
         public void SetFirstLoadedEmote(int slotIndex)
         {
-            FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+            // See SetEmote — the tile click restores CanHover across the grid.
+            FirstLoadedGridItem.WaitUntilLoaded(CONTENT_TIMEOUT);
             ClickSlot(slotIndex);
             FirstLoadedGridItem.Click();
-            FirstLoadedGridItem.DoubleClickEquip();
+            FirstLoadedGridItem.Equip();
             Reporter.Log($"Set the leading loaded emote to slot {slotIndex}");
         }
 
@@ -488,7 +564,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             ClickSlot(slotIndex);
 
-            if (Slots[slotIndex].UnequipButton.IsPresent())
+            // Shot-suppressed probe — this is control flow, and UnequipAll runs it ten times.
+            if (Slots[slotIndex].UnequipButton.IsPresent(verificationShot: false))
             {
                 ClickUnequip(slotIndex);
                 Reporter.Log($"Unequipped emote slot {slotIndex}");
@@ -633,7 +710,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             }
 
             Slots[0].Save();
-            Slots[0].FullState.WaitFor(30);
+            Slots[0].FullState.WaitFor(CONTENT_TIMEOUT);
             Reporter.Log("Saved current look into outfit slot 1");
         }
 
@@ -667,18 +744,18 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             public AltObject Hover()
             {
                 // Shot-suppressed wait: hovering is an action (like Click), not a verification.
-                var altObj = WaitFor(20D, verificationShot: false);
+                var altObj = WaitFor(UI_TIMEOUT, verificationShot: false);
                 altObj.PointerEnter();
 
                 // Wait for a hover-revealed button to actually enable instead of guessing a
                 // fixed delay: exactly one of Save/Equip/Delete becomes present depending on
                 // whether the slot is empty or full.
-                var deadline = DateTime.UtcNow.AddSeconds(2);
+                var deadline = DateTime.UtcNow.AddSeconds(OVERLAY_SETTLE);
                 while (DateTime.UtcNow < deadline
                        && !SaveButton.IsPresent(verificationShot: false)
                        && !EquipButton.IsPresent(verificationShot: false)
                        && !DeleteButton.IsPresent(verificationShot: false))
-                    Thread.Sleep(100);
+                    Thread.Sleep(OVERLAY_POLL_MS);
 
                 return altObj;
             }

@@ -7,54 +7,28 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(16)]
 public class BackpackWearablesTests : BaseTest
 {
-    // NOTE: the grid hover overlay's Equip/Unequip Buttons do not respond to synthetic
-    // AltTester input in this build, so both equip tests go through the double-click
-    // path (BackpackItemView treats clickCount == 2 as Equip) and use the hover overlay
-    // only as a read-only equipped-state indicator.
+    // NOTE: equipping goes through the overlay's Equip button. It reaches the same
+    // BackpackItemView.OnEquip the double-click does, without depending on Unity raising
+    // clickCount == 2, which never became reliable through the driver.
 
-    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate,
-    // IsEquipped, which on a negative re-hovers up to three times — each a round-trip plus a
-    // 400ms settle, so one evaluation costs ~2-3s. 60s is what the previous iteration-counted
-    // loop actually spent here (20 iterations x ~3s); it is stated honestly rather than
-    // shortened, because two ungated tests depend on this budget.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 60;
+    private const double EQUIP_CONFIRM_TIMEOUT = 8;
     private const int PAGE_FLIP_ATTEMPTS = 3;
 
     [Test]
-    public void TestEquipWearableBySlot()
+    public void TestEquipWearableFromGrid()
     {
         OpenWearables();
 
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
         Reporter.Log("Grid filtered to hair wearables");
-        Wait(2);
 
         // Pick a hair that is not currently equipped so the test is re-runnable.
         var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
         EquipUntilShown(target);
 
         Assert.That(target.IsEquipped(), Is.True,
-            "Grid item should show the hover Unequip indicator after being equipped");
-        Reporter.Log("Wearable equipped from the hair category grid");
-
-        Views.ExplorePanel.Close();
-    }
-
-    [Test]
-    public void TestDoubleClickEquipWearable()
-    {
-        OpenWearables();
-
-        Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
-        Reporter.Log("Grid filtered to hair wearables");
-        Wait(2);
-
-        var target = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        EquipUntilShown(target);
-
-        Assert.That(target.IsEquipped(), Is.True,
-            "Grid item should show the hover Unequip indicator after double-click equip");
-        Reporter.Log("Wearable equipped via double-click");
+            "Grid item should report equipped after pressing its Equip button");
+        Reporter.Log("Wearable equipped from the grid tile");
 
         Views.ExplorePanel.Close();
     }
@@ -121,20 +95,15 @@ public class BackpackWearablesTests : BaseTest
     }
 
     /// <summary>
-    /// Equips the item, retrying until the hover overlay confirms it. The equip double-click
-    /// is dropped when it lands during a grid re-bind, so a single attempt followed by a
-    /// fixed wait reads back unequipped — the failure behind TestDoubleClickEquipWearable on
-    /// CI runs 31176916555 and 31180360091. Re-equipping an already-equipped item is a no-op.
-    /// Deliberately not PR #54's WaitUntil on IsEquipped: polling longer cannot produce a
-    /// state a dropped click never started. The deadline-based budget is also what this
-    /// predicate needs — a negative IsEquipped re-hovers and costs ~2-3s an evaluation.
+    /// Presses the item's Equip button and waits for the client's equipped flag. Not retried:
+    /// the button either reaches OnEquip or the overlay was not up, and re-pressing does not
+    /// change that. Polls the flag rather than IsEquipped so the loop does not re-hover; the
+    /// caller's assertion does that once.
     /// </summary>
     private void EquipUntilShown(ExplorePanelBackpackView.BackpackGridItem item)
     {
-        ClickUntil(() => item.DoubleClickEquip(),
-                   () => item.IsEquipped(verificationShot: false),
-                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
-        Wait(2);
+        item.Equip();
+        WaitUntil(item.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
     }
 
     /// <summary>

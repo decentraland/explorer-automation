@@ -11,11 +11,8 @@ public class BackpackOutfitsTests : BaseTest
     // ButtonUnequip is never enabled because the equipped state (EquippedBackground)
     // never activates, even right after equipping an outfit and reopening the panel.
 
-    // Wall-clock budget per equip attempt. Matches BackpackWearablesTests, not
-    // BackpackEmotesTests: this fixture confirms with IsEquipped, which re-hovers on a
-    // negative and costs ~2-3s an evaluation, so the honest budget is an order of magnitude
-    // larger than a fixture confirming with a single slot lookup.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 60;
+    // Wall-clock budget for the equip to show up, matching BackpackWearablesTests.
+    private const double EQUIP_CONFIRM_TIMEOUT = 8;
 
     [Test, Order(1)]
     public void TestOpenSavedOutfitsTab()
@@ -63,14 +60,10 @@ public class BackpackOutfitsTests : BaseTest
     [Test, Order(3)]
     public void TestEquipFirstSavedOutfit()
     {
-        // Flaky, not broken: the precondition read of hair.IsEquipped() comes back false
-        // even with the equip retried until the hover overlay confirms it. Passed run
-        // 31180360091, failed runs 31168104702 and 31183128982. The hover-probe hardening in
-        // BackpackGridItem.IsEquipped may well settle this — it is gated rather than shipped
-        // on that hope, because one green run cannot demonstrate a flake is gone.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: hair.IsEquipped() precondition reads false intermittently after a confirmed equip (failed runs 31168104702, 31183128982; passed run 31180360091)");
-
+        // Was gated on the hair.IsEquipped() precondition reading false after an equip the
+        // test had already confirmed. Both halves of that are gone: the equip presses a button
+        // rather than hoping for a double-click, and IsEquipped reads the client's own flag
+        // instead of hover-probing an overlay whose PointerEnter could be swallowed.
         OpenBackpack();
         Views.ExplorePanel.Backpack.OpenSavedOutfits();
         Views.ExplorePanel.Backpack.SavedOutfits.EnsureFirstSlotSaved();
@@ -80,17 +73,13 @@ public class BackpackOutfitsTests : BaseTest
         Views.ExplorePanel.Backpack.Wearables.EnsureHairCategory();
         Wait(2);
         var hair = Views.ExplorePanel.Backpack.Wearables.FindUnequippedGridItem();
-        // The equip double-click is silently dropped when it lands during a grid re-bind,
-        // and the hover overlay is the only equip-state signal — retry the equip itself
-        // rather than only widening the read that follows it. Deliberately not PR #54's
-        // WaitUntil on IsEquipped: polling longer cannot produce a state a dropped click
-        // never started. The deadline-based budget is also what this predicate needs — a
-        // negative IsEquipped re-hovers and costs ~2-3s an evaluation.
-        ClickUntil(() => hair.DoubleClickEquip(),
-                   () => hair.IsEquipped(verificationShot: false),
-                   timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
+        // No retry — see BackpackWearablesTests.EquipUntilShown. Polls the flag rather than
+        // IsEquipped so the loop does not re-hover.
+        hair.Equip();
+        WaitUntil(hair.ReadEquippedFlag, EQUIP_CONFIRM_TIMEOUT);
         Wait(2);
-        // The double-click also selects the item, so the info panel shows its name.
+        // The Equip button only equips, so select the tile to make the info panel name it.
+        hair.Click();
         var hairName = Views.ExplorePanel.Backpack.Wearables.SelectedItemName.GetText();
         Assert.That(hair.IsEquipped(), Is.True, "Precondition: the alternative hair should be equipped");
         Reporter.Log($"Avatar diverged from saved outfit (equipped hair '{hairName}')");

@@ -15,28 +15,24 @@ public class BackpackEmotesTests : BaseTest
     //   Equip coverage goes through the double-click path; explicit-button unequip
     //   coverage goes through the slot's Unequip button, which does respond.
 
-    // Wall-clock budget per equip attempt. Sized for THIS fixture's confirm predicate — a
-    // single slot-occupancy lookup, ~0.2s. Deliberately not shared with
-    // BackpackWearablesTests, whose predicate re-hovers and costs an order of magnitude more;
-    // one constant for both would be honest for neither. 15s is what the previous
-    // iteration-counted loop actually spent here. A landed equip fills the slot within a
-    // second or two, so the observed failure is a dropped click and retrying sooner beats
-    // waiting longer. Re-equipping is idempotent (double-click maps to Equip, not to a
+    // Wall-clock budget per equip attempt. A landed equip fills the slot in a second or two
+    // and the measured confirm is ~3s, so this budget exists to retry a dropped click, not to
+    // outwait a slow client. Matches BackpackWearablesTests now that both fixtures confirm
+    // with a cheap read. Re-equipping is idempotent (double-click maps to Equip, not to a
     // toggle), so an extra attempt against an already-equipped item is harmless.
-    private const double EQUIP_SETTLE_PER_ATTEMPT = 15;
+    private const double EQUIP_SETTLE_PER_ATTEMPT = 8;
     private const int PAGE_FLIP_ATTEMPTS = 3;
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
     {
-        // Never passed on this chassis. After all ten equips one grid item — a different one
-        // each run (0, 5, 1, 3) — has no equipped-slot badge, so an earlier emote is being
-        // displaced as later slots are filled. Retrying the equip and then retrying on slot
-        // occupancy both left it failing, which points at grid/slot behaviour rather than at
-        // the test's waits. Runs 31164127596, 31176916555, 31180360091, 31183128982.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: one grid item loses its equipped-slot badge after all ten slots are filled, a different item each run (runs 31164127596, 31176916555, 31180360091, 31183128982)");
-
+        // Ten sequential equips — by far the heaviest thing this fixture does. It was gated on
+        // one grid item losing its badge, a different one each run, diagnosed as the grid
+        // displacing an earlier emote. That was measured when equipping was a double-click
+        // that landed about half the time, and ten in a row cannot all survive those odds, so
+        // the diagnosis never had a reliable equip under it. If a badge still goes missing now
+        // that equipping presses the Equip button, the cause is grid/slot behaviour and
+        // belongs in a client bug rather than in a wider wait here.
         OpenEmotes();
 
         var emotes = Views.ExplorePanel.Backpack.Emotes;
@@ -56,11 +52,17 @@ public class BackpackEmotesTests : BaseTest
                        timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
         }
 
+        // Only the final equip's badge can still be propagating; the earlier ones were
+        // confirmed slots ago, so assert those instead of paying a ceiling per item.
+        emotes.GridItems[ExplorePanelBackpackView.EmotesTab.SLOT_COUNT - 1]
+              .EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+
         for (var i = 0; i < ExplorePanelBackpackView.EmotesTab.SLOT_COUNT; i++)
         {
             // Every badge must still be lit after the last equip: filling a later slot
             // must not evict an emote already assigned to an earlier one.
-            emotes.GridItems[i].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+            Assert.That(emotes.GridItems[i].EquippedSlotBadge.IsPresent(verificationShot: false), Is.True,
+                $"Emote {i} should still be equipped after all ten slots are filled");
         }
 
         Reporter.Log("All emote slots equipped sequentially and badges verified");
@@ -91,6 +93,12 @@ public class BackpackEmotesTests : BaseTest
                    () => !emotes.Slots[0].EmptyNameLabel.IsPresent(verificationShot: false),
                    timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
 
+        // Assert the slot filled before reading its label. EmoteName only exists once an emote
+        // occupies the slot, so reading first reports a failed equip as a missing object and
+        // spends the label's own ceiling getting there.
+        Assert.That(emotes.Slots[0].EmptyNameLabel.IsPresent(), Is.False,
+            "Slot 0 should hold an emote after the equip, but it is still empty");
+
         // The slot label names the emote that landed, so it proves the searched item reached the
         // slot asked for — not merely that something is equipped.
         var slotName = emotes.Slots[0].NameLabel.WaitForText(
@@ -117,7 +125,11 @@ public class BackpackEmotesTests : BaseTest
         ClickUntil(() => emotes.SetEmote(4, gridIndex),
                    () => emotes.GridItems[gridIndex].EquippedSlotBadge.IsPresent(verificationShot: false),
                    timeoutPerAttempt: EQUIP_SETTLE_PER_ATTEMPT);
-        emotes.GridItems[gridIndex].EquippedSlotBadge.WaitFor(SlowChassis.SETTLE_TIMEOUT);
+
+        // Assert rather than wait again: ClickUntil just polled this exact condition for the
+        // whole retry budget, so a second wait only adds its own ceiling to a decided failure.
+        Assert.That(emotes.GridItems[gridIndex].EquippedSlotBadge.IsPresent(), Is.True,
+            $"Precondition: grid item {gridIndex} should be equipped before the unequip is exercised");
         Reporter.Log($"Precondition ready — grid item {gridIndex} equipped to slot 5");
 
         // The slot's own button — the grid item's hover Unequip ignores synthetic input.
@@ -164,15 +176,13 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Backpack.EmotesTabButton.Click();
         Views.ExplorePanel.Backpack.Emotes.WaitFor();
 
-        // A search term from an earlier test is still applied and shrinks the page, which index
-        // addressing cannot survive. Gate on the symptom, not the field's contents, so a run that
-        // never searched pays one lookup and no extra rebuild. After the tab click on purpose:
-        // clearing only reaches the active section's grid.
-        if (!Views.ExplorePanel.Backpack.Emotes.HasFullGridPage())
-        {
-            Views.ExplorePanel.Backpack.ClearSearch();
-            Views.ExplorePanel.Backpack.Emotes.WaitForFullGridPage();
-        }
+        // Order matters. A search term from an earlier test outlives the panel and shrinks the
+        // page, which index addressing cannot survive, so clear it first — after the tab click,
+        // because clearing only reaches the active section's grid. Then wait out the rebuild
+        // that the clear triggers. Both unconditional: gating the clear on a full page asked
+        // one tile whether sixteen were ready, and every caller here addresses tiles by index.
+        Views.ExplorePanel.Backpack.ClearSearch();
+        Views.ExplorePanel.Backpack.Emotes.WaitForGridPageLoaded();
     }
 
     /// <summary>
