@@ -138,9 +138,11 @@ public class PlacesTests : BaseTest
         for (var attempt = 0; attempt < 20 && firstAfter == firstBefore; attempt++)
         {
             Wait(0.5);
-            firstAfter = Views.ExplorePanel.Places.Cards[0].PlaceName.GetText();
+            // Shot-suppressed poll read: one shot below, on the value the assert compares.
+            firstAfter = Views.ExplorePanel.Places.Cards[0].PlaceName.GetText(20D, verificationShot: false);
         }
 
+        Reporter.TakeVerificationShot("text_PlaceName");
         Assert.That(firstAfter, Is.Not.EqualTo(firstBefore),
             $"Selecting the '{category}' category should reload the results grid with different leading places");
         Reporter.Log($"Filter applied: leading card changed from '{firstBefore}' to '{firstAfter}'");

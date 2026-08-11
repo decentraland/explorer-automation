@@ -94,13 +94,20 @@ public class CommunitiesTests : BaseTest
         for (var i = 0; i < 5 && communityName == null; i++)
         {
             var card = Views.ExplorePanel.Communities.Cards[i];
-            var cardTitle = card.Title.GetText();
+            // Shot-suppressed read: naming the candidate is card selection, retried per card.
+            // One shot below, on the card whose click actually opened the detail.
+            var cardTitle = card.Title.GetText(20D, verificationShot: false);
             card.Thumbnail.Click();
 
             if (WaitUntil(() => Views.ExplorePanel.Communities.CommunityDetail.IsPresent(verificationShot: false), 2))
+            {
                 communityName = cardTitle;
+                Reporter.TakeVerificationShot($"opened_CommunityCard_{i}");
+            }
             else
+            {
                 Reporter.Log($"Card {i} ('{cardTitle}') click did not open the detail — likely below the fold, trying next card");
+            }
         }
 
         Assert.That(communityName, Is.Not.Null,

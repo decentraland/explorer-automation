@@ -20,13 +20,15 @@ public class EventsTests : BaseTest
 
         // The counter first shows just the day ("Fri, Aug 07") and appends the event count
         // ("(9)") once the day's events finish loading — poll until the count arrives.
-        var counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText();
+        // Shot-suppressed reads: one shot below, on the value the assert runs against.
+        var counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText(20D, verificationShot: false);
         for (var attempt = 0; attempt < 10 && !counter.Contains('('); attempt++)
         {
             Wait(1);
-            counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText();
+            counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText(20D, verificationShot: false);
         }
 
+        Reporter.TakeVerificationShot("text_ResultsCounter");
         Assert.That(counter, Does.Match(@"\(\d+\)"),
             "Single-day view should show a '<day> (N)' results counter");
         Reporter.Log($"Switched to single-day view: {counter}");
@@ -57,15 +59,18 @@ public class EventsTests : BaseTest
         ClickUntil(() =>
         {
             var card = Views.ExplorePanel.Events.TodayBigCards[0];
-            if (!card.IsPresent())
+            // Shot-suppressed throughout: picking the column and reading the target's name are
+            // part of the click action, and ClickUntil re-runs both on every attempt. The one
+            // shot for the loop is the EventDetail wait below, on the frame it settled on.
+            if (!card.IsPresent(verificationShot: false))
             {
                 Reporter.Log("No live event card in the Today column — using tomorrow's first card");
                 card = Views.ExplorePanel.Events.TomorrowSmallCards[0];
             }
 
-            eventName = card.EventName.GetText();
+            eventName = card.EventName.GetText(20D, verificationShot: false);
             card.Click();
-        }, () => Views.ExplorePanel.Events.EventDetail.IsPresent());
+        }, () => Views.ExplorePanel.Events.EventDetail.IsPresent(verificationShot: false));
 
         Views.ExplorePanel.Events.EventDetail.WaitFor();
         Assert.That(Views.ExplorePanel.Events.EventDetail.EventName.GetText(), Is.EqualTo(eventName),

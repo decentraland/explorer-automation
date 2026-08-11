@@ -176,8 +176,14 @@ public class ChatTests : BaseTest
     {
         for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
         {
-            if (Views.Chat.ConversationsToolbar.IsPresent())
+            // Shot-suppressed poll: the one shot fires on the frame the state was confirmed.
+            // Nothing on the timeout path — the caller either clicks again or falls through to
+            // an authoritative wait, and both of those capture.
+            if (Views.Chat.ConversationsToolbar.IsPresent(verificationShot: false))
+            {
+                Reporter.TakeVerificationShot($"present_{Views.Chat.ConversationsToolbar.ShotName}");
                 return true;
+            }
             Wait(0.5);
         }
 
@@ -211,8 +217,12 @@ public class ChatTests : BaseTest
     {
         for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
         {
-            if (!Views.Chat.ConversationsToolbar.IsPresent())
+            // See TryWaitForToolbar: suppressed poll, one shot where the state is confirmed.
+            if (!Views.Chat.ConversationsToolbar.IsPresent(verificationShot: false))
+            {
+                Reporter.TakeVerificationShot($"absent_{Views.Chat.ConversationsToolbar.ShotName}");
                 return true;
+            }
             Wait(0.5);
         }
 

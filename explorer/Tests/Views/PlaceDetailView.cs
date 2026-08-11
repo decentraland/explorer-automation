@@ -59,12 +59,15 @@ public class PlaceDetailView() : BaseView(new(By.NAME, "PlaceDetailPanel(Clone)"
         var tags = new List<string>();
         foreach (var label in CategoryTagLabels)
         {
-            if (!label.IsPresent())
+            // Shot-suppressed per-chip probe and read — every chip shares the leaf name "Text",
+            // so one shot below covers the whole row rather than N near-identical frames.
+            if (!label.IsPresent(verificationShot: false))
                 break;
-            tags.Add(label.GetText());
+            tags.Add(label.GetText(20D, verificationShot: false));
         }
 
         Reporter.Log($"Place categories: [{string.Join(", ", tags)}]");
+        Reporter.TakeVerificationShot("text_CategoryTags");
         return tags;
     }
 
