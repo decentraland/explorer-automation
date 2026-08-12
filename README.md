@@ -58,7 +58,12 @@ Two GitHub Actions workflows for the web suite:
 
 **Additional secrets for `marketplace-onchain`**: `WALLET_A_PRIVATE_KEY`, `WALLET_B_PRIVATE_KEY` (testnet wallets funded with MANA on Polygon Amoy + ERC20 approval to OffChainMarketplaceV2 — one-time setup), and the test-item config: `MARKETPLACE_TEST_ITEM_CONTRACT`, `MARKETPLACE_TEST_ITEM_ID`, `MARKETPLACE_TEST_ITEM_TYPE`, optionally `MARKETPLACE_TEST_LISTING_PRICE_MANA`. Optional RPC overrides: `POLYGON_AMOY_RPC_URL`, `SEPOLIA_RPC_URL` (defaults are the public rate-limited endpoints).
 
-The desktop (C#) suite is not yet wired into CI — it needs a self-hosted Windows GPU runner with the instrumented Explorer client + AltTester Desktop on port 13000.
+Two workflows run the desktop (C#) InWorld suite on GitHub-hosted `macos-14`, both delegating to the reusable `run-inworld-suite.yml`:
+
+- **InWorld (PR)** (`.github/workflows/inworld-pr.yml`) — on every pull request touching `explorer/Tests/**` or `explorer/ci/**`. Picks which fixtures to run by Roslyn reachability, so the size of a run follows what the branch touches, and comments the result on the PR. Skips drafts and fork PRs.
+- **InWorld (main)** (`.github/workflows/inworld-main.yml`) — on every merge to `main` touching those same paths. Runs the whole `Category=InWorld` suite, so the wide run backs the scoped one the PR got. The result lands in the job summary.
+
+The visual regression suite has its own reusable (`run-visual-suite.yml`), driven by **Manual Visual Tests** from the Actions tab and by the `/generate-baselines` PR comment. A Windows counterpart for either suite still needs a self-hosted GPU runner with the instrumented Explorer client + AltTester Desktop on port 13000.
 
 ## Layout
 

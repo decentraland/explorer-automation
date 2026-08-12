@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 import { config as loadDotenv } from 'dotenv'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getBaseUrl, getCloudflareAccessHeaders } from './shared/helpers/env.js'
+import { getBaseUrl } from './shared/helpers/env.js'
 
 /**
  * Chrome launch args that enable WebGPU on the host's real GPU. Used by the
@@ -60,17 +60,27 @@ export default defineConfig({
   ],
   use: {
     baseURL: getBaseUrl(),
-    // CF Access service-token headers. `getCloudflareAccessHeaders()` returns
-    // them only when both env vars are set AND the dapp host (resolved from
-    // WEB_BASE_URL / BASE_URL) is one of the CF-gated dev/staging dapps
-    // (`decentraland.zone` / `decentraland.today`). `.org` runs receive no
-    // headers — sending them broke landing/auth specs in CI because the prod
-    // origin's Cloudflare reacted to the headers and changed response shape.
-    // See env.ts for the full rule.
-    extraHTTPHeaders: getCloudflareAccessHeaders(),
-    screenshot: 'only-on-failure',
-    trace: 'retain-on-failure',
-    video: 'retain-on-failure'
+    // CF Access service-token headers are deliberately NOT wired here as
+    // `extraHTTPHeaders` — Playwright attaches those to EVERY request,
+    // including cross-origin CORS-mode ones (module scripts / CSS from
+    // cdn.decentraland.org, fonts from fonts.gstatic.com). The non-safelisted
+    // headers force preflights those origins reject, blocking every dapp JS
+    // bundle on `.zone` / `.today` (blank pages, missing Sign In button).
+    // Instead the headers ride a host-scoped `context.route()` installed by
+    // every test fixture — see `installCfAccessRoute` in
+    // shared/fixtures/base-test.ts.
+    //
+    // No `trace` / `video` — they ballooned CI artifacts to 1GB+ per run, and
+    // traces record request headers verbatim, so gated-host runs embedded the
+    // CF Access service token in every trace.zip. Failure diagnosis is text
+    // now: the browser-log attachment (console errors/warnings, failed and
+    // >=400 requests, navigations, final URLs) captured by the fixtures in
+    // shared/fixtures/base-test.ts, plus Playwright's own error-context ARIA
+    // snapshot and the screenshot below (small, header-free — keep it; it's
+    // the fastest "was the page blank?" signal). For local debugging, opt in
+    // per-run with `npx playwright test --trace on` — and treat gated-host
+    // traces as secrets.
+    screenshot: 'only-on-failure'
   },
   projects: [
     {
@@ -85,6 +95,17 @@ export default defineConfig({
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,
+      // Auth specs self-bootstrap a fresh user against prod on every run. A
+      // clean single-phase web3 signup measures ~110s end-to-end: ~26s to
+      // reach quick-setup, up to ~20s for the ToS checkbox to settle while
+      // the avatar preview loads, and 5-45s+ of profile deployment before
+      // the "Start Exploring" interstitial appears (catalyst-side latency,
+      // high variance). Two-phase specs (recurrent login, redirectTo,
+      // switch-method, RequestPage) run the signup AND a second flow, so the
+      // default 120s budget made every slow-deploy run time out at whatever
+      // step happened to be in flight. 240s absorbs the variance; specs that
+      // need even more (OTP resend countdown) set test.setTimeout locally.
+      timeout: 240_000,
       // Exclude broadcast specs (`@on-chain`) — they share the funded wallet
       // pool with `marketplace-onchain` and need `--workers=1` to avoid nonce
       // races. Auth on-chain specs (`mana-donation`, `nft-gift`) run under

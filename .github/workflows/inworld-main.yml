@@ -1,0 +1,52 @@
+name: InWorld (main)
+
+# Runs the whole Category=InWorld suite after every merge to main.
+#
+# PR runs are scoped by Roslyn reachability (inworld-pr.yml), so a merge commit
+# is the first time the whole suite sees the merged state. It is also what makes
+# the "land incidental primitive changes on main first" practice in
+# explorer/CLAUDE.md safe: the narrow PR run is backed by a wide one here.
+#
+# All the mechanics live in run-inworld-suite.yml. There is no PR to comment on,
+# so results land in the job summary and the Allure report link it prints.
+
+on:
+  push:
+    branches: [main]
+    # Same inputs as inworld-pr.yml. Baselines feed the visual suite and
+    # explorer/scenes/ is visual-only, so neither can change a result here.
+    paths:
+      - 'explorer/Tests/**'
+      - '!explorer/Tests/Baselines/**'
+      - 'explorer/ci/**'
+      - '.github/workflows/inworld-main.yml'
+      - '.github/workflows/run-inworld-suite.yml'
+      - '.github/actions/setup-explorer-runner/**'
+
+# A newer main supersedes the run in flight: the question this suite answers is
+# whether main is good now, and the newest commit contains the older one.
+concurrency:
+  group: inworld-main
+  cancel-in-progress: true
+
+permissions:
+  # Must be a superset of run-inworld-suite.yml's, or the call dies at startup.
+  contents: read
+  pull-requests: write
+
+jobs:
+  run-suite:
+    name: InWorld suite
+    uses: ./.github/workflows/run-inworld-suite.yml
+    with:
+      # Empty build_url makes the reusable resolve the newest unity-explorer
+      # dev build. That must stay a branch build: release zips are compiled
+      # without the AltTester scripting define and hang at "Wait for
+      # connection: 0%".
+      build_url: ''
+      # Empty filter is the whole suite. Every other input is left empty on
+      # purpose — for a same-repo push the reusable resolves tests_ref,
+      # commit_sha and branch_label from github.sha / github.ref_name, and an
+      # empty pr_number keeps it summary-only.
+      filter: ''
+    secrets: inherit

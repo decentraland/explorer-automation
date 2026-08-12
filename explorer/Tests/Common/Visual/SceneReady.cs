@@ -31,7 +31,6 @@ public static class SceneReady
             var notReadyDeadline = startedAt.AddMilliseconds(notReadyWindowMs);
             var totalDeadline = startedAt.AddMilliseconds(timeoutMs);
 
-            // Make sure previous scene is unloaded first
             bool sawNotReady = false;
             while (DateTime.UtcNow < notReadyDeadline)
             {
@@ -48,7 +47,6 @@ public static class SceneReady
                     $"SceneReady: never observed not-ready within {notReadyWindowMs}ms; " +
                     "reload may have been a no-op, proceeding to ready-check.");
 
-            // Check new scene is finally loaded
             while (DateTime.UtcNow < totalDeadline)
             {
                 if (IsReady())

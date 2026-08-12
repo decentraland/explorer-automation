@@ -1,13 +1,16 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 [AllureSuite("Navmap Tests")]
+[Category("InWorld")]
 [Order(13)]
 public class NavmapTests : BaseTest
 {
     [Test]
     public void TestClickAllCategoryFilters()
     {
-        Views.MainMenu.MapButton.Click();
+        // This build's sidebar has no Map button (verified via UiDump `--all` dumps), so the
+        // M shortcut is the stable entry point to the navmap.
+        PressKey(AltKeyCode.M, delay: 0);
         Views.ExplorePanel.Navmap.WaitFor();
 
         Views.ExplorePanel.Navmap.AllCategoryButton.Click();

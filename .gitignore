@@ -48,3 +48,6 @@ web/.agents/skills/playwright-best-practices/
 /.agents
 /.claude
 skills-lock.json
+
+# Generated Allure report
+explorer/Tests/allure-report/

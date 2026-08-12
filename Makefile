@@ -3,12 +3,13 @@ SHELL := /bin/bash
 EXPLORER_DIR := explorer
 SCENES_DIR   := $(EXPLORER_DIR)/scenes
 TESTS_DIR    := $(EXPLORER_DIR)/Tests
+SCOPE_DIR    := $(EXPLORER_DIR)/ci/ScopeInWorldTests
 WEB_DIR      := web
 
 .PHONY: help \
         install install-scenes install-web \
         scenes-build scenes-new-scene scenes-format scenes-format-fix scenes-syncpack \
-        explorer-build \
+        explorer-build explorer-scope explorer-scope-test \
         web-test web-test-headed web-test-ui web-typecheck web-report \
         clean
 
@@ -67,6 +68,25 @@ scenes-syncpack:
 ## Build the C# Tests project.
 explorer-build:
 	dotnet build $(TESTS_DIR)
+
+## Run the explorer suite (needs AltTester Desktop + instrumented client), then build + open the Allure report. Usage: make explorer-test [FILTER="FullyQualifiedName~ExplorePanelTests"]
+explorer-test:
+	rm -rf $(TESTS_DIR)/bin/Debug/net10.0/allure-results
+	-dotnet test $(TESTS_DIR) $(if $(FILTER),--filter "$(FILTER)") --logger "console;verbosity=normal"
+	$(MAKE) explorer-report
+
+## Build the Allure HTML report from the last explorer run and open it in the browser.
+explorer-report:
+	allure generate --clean --single-file $(TESTS_DIR)/bin/Debug/net10.0/allure-results -o $(TESTS_DIR)/allure-report
+	open $(TESTS_DIR)/allure-report/index.html
+
+## Print the InWorld fixtures that can reach a changed file, plus the member path. Usage: make explorer-scope FILES="explorer/Tests/Views/MinimapView.cs"
+explorer-scope:
+	printf '%s\n' $(FILES) | dotnet run --project $(SCOPE_DIR) --nologo -v q
+
+## Check the InWorld scope resolver against its golden closures.
+explorer-scope-test:
+	dotnet run --project $(SCOPE_DIR) --nologo -v q -- --self-test
 
 # ─────────────── web (Playwright) ──────────────────────────────────────────────
 

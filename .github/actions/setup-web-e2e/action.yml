@@ -1,0 +1,80 @@
+name: Set up web E2E runner
+description: >-
+  Install what `npx playwright test` needs on an ubuntu-latest runner — Node,
+  the web/ npm dependencies, and Chromium with its system libraries.
+
+# Single definition of the setup web-e2e-pr.yml and web-e2e.yml both run —
+# everything between checkout and writing `.env`. ubuntu-only:
+# `playwright install-deps` shells out to apt.
+#
+# Not in here: `actions/checkout` (the repo must be on disk before `uses: ./…`
+# resolves), and writing `.env` — composite actions cannot read `secrets`, and
+# the two callers populate deliberately different key sets.
+#
+# Two properties don't survive the move and are compensated for rather than
+# dropped: `timeout-minutes` is not a valid composite-step key, so the 5m/5m/10m
+# caps are reimposed with `timeout(1)`; and `defaults.run.working-directory` is
+# not inherited, so every step names it explicitly.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: web/package-lock.json
+
+    - name: Install dependencies
+      # Browsers are installed by the dedicated cache-aware step below — there
+      # is no `postinstall` chromium download here, so `npm ci` is just the
+      # node deps. A tight timeout turns any registry/lifecycle-script stall
+      # into a fast, attributable failure instead of a 30-min job-level kill.
+      shell: bash
+      working-directory: web
+      run: timeout 300 npm ci
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: pw-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+        # Fall back to any prior `pw-<os>-…` cache if the lockfile-derived
+        # key is a miss (lockfile bumped without changing Playwright). The
+        # `playwright install` step still runs to bring in any missing
+        # browsers, but starting from a warm cache saves a few minutes.
+        restore-keys: |
+          pw-${{ runner.os }}-
+
+    - name: Install Playwright system deps
+      # apt-only (sudo); fast and doesn't touch cdn.playwright.dev, so it sits
+      # outside the retry wrapper below.
+      shell: bash
+      working-directory: web
+      run: timeout 300 npx playwright install-deps chromium
+
+    - name: Install Playwright browsers
+      # cdn.playwright.dev intermittently stalls right after the chrome zip
+      # reaches 100% — the next artifact's connection hangs with no data and
+      # no error, so a bare `install` sits idle until the step timeout. Wrap
+      # each attempt in `timeout` so a stalled download is killed and retried
+      # from a fresh connection; a healthy download finishes in seconds, only
+      # a stall burns the per-attempt cap. On a cache hit the browsers are
+      # already present and attempt 1 is a no-op.
+      #
+      # 4 attempts x 120s is the same 10-minute ceiling the workflows set with
+      # `timeout-minutes`, so no outer `timeout` is needed here.
+      shell: bash
+      working-directory: web
+      run: |
+        for attempt in 1 2 3 4; do
+          echo "::group::playwright install chromium (attempt $attempt)"
+          if timeout 120 npx playwright install chromium; then
+            echo "::endgroup::"
+            exit 0
+          fi
+          echo "attempt $attempt stalled or failed; retrying"
+          echo "::endgroup::"
+        done
+        echo "::error::playwright install chromium failed after 4 attempts"
+        exit 1

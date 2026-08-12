@@ -22,11 +22,11 @@ public static class Snapshot
     // Record-mode skip threshold: if the freshly captured frame differs from the existing baseline
     // by less than this percentage of pixels, the on-disk PNG is left untouched. Keeps `Record`
     // runs from churning visually-identical files (and the surrounding commit/PR diff).
-    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.5;
+    private const double RECORD_SKIP_TOLERANCE_PERCENT = 0.3;
 
     public static void AssertMatchesBaseline(
         string name = "default",
-        double tolerance = 0.5,
+        double tolerance = 0.3,
         SnapshotMode? mode = null,
         SKRect? clip = null,
         SnapshotOptions options = null)
@@ -54,7 +54,6 @@ public static class Snapshot
                 return;
             }
 
-            // Missing baseline.
             if (!BaselineStore.Exists(baselinePath))
             {
                 if (resolvedMode == SnapshotMode.MissingOnly)
@@ -72,28 +71,21 @@ public static class Snapshot
                 return;
             }
 
-            // Compare against existing baseline.
             var baselinePng = BaselineStore.Read(baselinePath);
             using var baselineBmp = SKBitmap.Decode(baselinePng)
                 ?? throw new InvalidOperationException(
                     $"Failed to decode baseline PNG at {baselinePath} ({baselinePng.Length} bytes).");
 
-            ImageDiffResult result;
-            try
-            {
-                result = ImageDiff.Compare(
-                    baseline: baselineBmp,
-                    actual: actualBmp,
-                    perChannelTolerance: options.PerChannelTolerance,
-                    maxDifferingPixelPercent: tolerance);
-            }
-            catch (ArgumentException ex)
-            {
-                Reporter.AttachPng($"{name}.actual", actualPng);
-                Reporter.AttachPng($"{name}.baseline", baselinePng);
-                Assert.Fail($"Snapshot size mismatch: {ex.Message}");
-                return;
-            }
+            // The modes that define a baseline have already returned above: Record always
+            // returns above, and MissingOnly writes only when the baseline was absent. Anything
+            // reaching here has an existing baseline to be held to — MissingOnly included.
+            AssertSizeMatchesBaseline(actualBmp, baselineBmp, name);
+
+            var result = ImageDiff.Compare(
+                baseline: baselineBmp,
+                actual: actualBmp,
+                perChannelTolerance: options.PerChannelTolerance,
+                maxDifferingPixelPercent: tolerance);
 
             if (result.Success)
             {
@@ -185,6 +177,21 @@ public static class Snapshot
                 return true;
             }
         }
+    }
+
+    private static void AssertSizeMatchesBaseline(SKBitmap actual, SKBitmap baseline, string name)
+    {
+        if (actual.Width == baseline.Width && actual.Height == baseline.Height) return;
+
+        // Attach the wrong-size frame so the failure report shows what was actually
+        // rendered instead of a garbage pixel-diff percentage.
+        Reporter.AttachPng($"{name}.wrong-size", ScreenshotCapture.EncodePng(actual));
+
+        Assert.Fail(
+            $"Captured frame is {actual.Width}x{actual.Height} but baseline '{name}' is " +
+            $"{baseline.Width}x{baseline.Height}. The chassis resolution drifted from the one " +
+            "the baselines were recorded at (desktop resolution change, display driver change, " +
+            "or runner SKU change) — re-record baselines only if the new size is intentional.");
     }
 
     private static SnapshotMode ResolveMode(SnapshotMode? perCallMode)

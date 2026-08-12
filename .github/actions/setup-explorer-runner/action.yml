@@ -1,0 +1,134 @@
+name: Set up Explorer test runner (macOS)
+description: >-
+  Install what `mf explorer test` needs on a GitHub-hosted macos-14 runner —
+  .NET, AltTester Desktop, the allure CLI, MetaForge — and activate the
+  AltTester license.
+
+# Single definition of the runner chassis, used by both macOS suites
+# (run-inworld-suite.yml, run-visual-suite.yml). A version bumped here — dotnet
+# channel, AltTester URL, MetaForge installer URL — moves both, including the
+# production visual path unity-explorer calls.
+#
+# macOS-only: AltTester installs via hdiutil/.dmg//Applications and MetaForge
+# writes under ~/Library/Application Support. The Windows chassis (PR #12) needs
+# different steps and is deliberately separate.
+#
+# Preconditions:
+#   - The caller has checked this repo out; `uses: ./…` resolves against
+#     $GITHUB_WORKSPACE. The two callers pick the ref differently on purpose:
+#     run-inworld-suite.yml checks out at `tests_ref` (it needs the tests and
+#     explorer/ci/* from that ref anyway, and runs in cwd-mode against it);
+#     run-visual-suite.yml checks out this action alone into a subdirectory at
+#     its own repo's ref, since it gets tests from MetaForge via `--tests-ref`.
+#   - Composite actions cannot read `secrets`, so credentials arrive as inputs.
+#
+# Appends to $GITHUB_PATH — ~/.dotnet and MetaForge's bin dir. Those are
+# visible to every later step of the caller, and to the steps of this action
+# that follow the write, but not to the step that performs it.
+
+inputs:
+  github-token:
+    description: 'PAT with read access to decentraland/MetaForge — REPOS_READ_ONLY_TOKEN.'
+    required: true
+  alttester-license:
+    description: 'AltTester Pro license key — ALTTESTER_LICENSE.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install runtime prerequisites
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+        chmod +x /tmp/dotnet-install.sh
+        /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"
+        echo "$HOME/.dotnet" >> "$GITHUB_PATH"
+        export PATH="$HOME/.dotnet:$PATH"
+        dotnet --version
+
+        # AltTester Desktop ships as a zip wrapping a .dmg + sample build
+        # Pipeline: download zip => extract dmg => mount => copy .app => eject
+        ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_1.zip"
+        curl -fsSL "$ALTTESTER_URL" -o /tmp/alttester.zip
+        unzip -q /tmp/alttester.zip -d /tmp/alttester
+        ALTTESTER_DMG=$(find /tmp/alttester -maxdepth 4 -name "AltTesterDesktop*.dmg" -type f | head -1)
+        [ -n "$ALTTESTER_DMG" ] || { echo "::error::AltTesterDesktop dmg not found in zip"; exit 1; }
+        hdiutil attach "$ALTTESTER_DMG" -nobrowse -quiet
+        ALTTESTER_APP=$(find /Volumes -maxdepth 3 -name "AltTesterDesktop.app" -type d 2>/dev/null | head -1)
+        [ -n "$ALTTESTER_APP" ] || { echo "::error::AltTesterDesktop.app not found under /Volumes after mount"; ls /Volumes; exit 1; }
+        cp -R "$ALTTESTER_APP" /Applications/
+        MOUNT_POINT=$(dirname "$ALTTESTER_APP")
+        hdiutil detach "$MOUNT_POINT" -quiet || true
+        xattr -dr com.apple.quarantine /Applications/AltTesterDesktop.app || true
+        ls /Applications/AltTesterDesktop.app/Contents/MacOS/AltTesterDesktop
+
+        # metaforge expects the "allure" npm package.
+        #
+        # Major pinned deliberately. Both suites now invoke `allure awesome
+        # <results> -o <dir>` themselves rather than letting metaforge do it, so
+        # that CLI contract is this repo's problem: an unpinned major bump would
+        # break report generation in both, including the production visual path
+        # unity-explorer calls, with no change on our side to point at. `3`
+        # resolves to the same version bare `allure` did (3.14.3), so this pin
+        # changes nothing today — it just stops tomorrow from changing it.
+        npm install -g allure@3 --no-fund --no-audit --loglevel=error
+        allure --version
+
+        gh --version
+
+    - name: Verify MetaForge access
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        if [ -z "${GH_TOKEN:-}" ]; then
+          echo "::error::Missing REPOS_READ_ONLY_TOKEN secret (PAT with read access to decentraland/MetaForge)"
+          exit 1
+        fi
+        gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
+
+    # install.sh installs the latest release. v2.15.0+ launches Explorer via
+    # direct exec of Contents/MacOS/<binary> instead of /usr/bin/open, which is
+    # what lets the InWorld suite's DYLD wrapper survive into the Explorer
+    # process (LaunchServices strips DYLD_* at the SIP boundary).
+    - name: Install MetaForge
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -eu
+        SCRIPT=$(curl -fsSL https://explorer-artifacts.decentraland.zone/tools/install.sh) \
+          || { echo "::error::Failed to download the MetaForge install.sh from explorer-artifacts.decentraland.zone"; exit 1; }
+        # Composite steps must declare `shell:`, and `shell: bash` means
+        # `bash --noprofile --norc -e -o pipefail` — pipefail is on whatever
+        # the script's own `set` line says. `yes` loses its reader the moment
+        # the installer exits, and pipefail then promotes that into the
+        # pipeline's status, failing a *successful* install: run 31177645973
+        # exited 1, with `yes` catching EPIPE and printing "yes: stdout:
+        # Broken pipe" rather than dying on SIGPIPE (which would give 141).
+        # Turn pipefail off across this one pipeline so its status is the
+        # installer's; the inherited `-e` still fails the step on a real
+        # install failure.
+        #
+        # This is why the inline copies never hit it: a bare `run:` in a
+        # workflow gets `/bin/bash -e {0}`, no pipefail, so `yes`'s exit is
+        # discarded there deterministically. Nothing to fix in those.
+        set +o pipefail
+        yes | /bin/bash -c "$SCRIPT"
+        set -o pipefail
+        echo "$HOME/Library/Application Support/Decentraland/MetaForge/bin" >> "$GITHUB_PATH"
+
+    - name: Configure AltTester license
+      shell: bash
+      env:
+        ALTTESTER_LICENSE: ${{ inputs.alttester-license }}
+      run: |
+        set -euo pipefail
+        if [ -z "${ALTTESTER_LICENSE:-}" ]; then
+          echo "::error::Missing ALTTESTER_LICENSE secret. Add it under repo Settings → Secrets → Actions."
+          exit 1
+        fi
+        mf alttester set-license "$ALTTESTER_LICENSE"

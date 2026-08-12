@@ -8,7 +8,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenEventsFromSidebar()
     {
-        Views.MainMenu.EventsButton.Click();
+        Views.MainMenu.EventsButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Events.WaitFor();
 
@@ -18,7 +18,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenPlacesFromSidebar()
     {
-        Views.MainMenu.PlacesButton.Click();
+        Views.MainMenu.PlacesButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Places.WaitFor();
 
@@ -28,44 +28,31 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenCommunitiesFromSidebar()
     {
-        Views.MainMenu.CommunitiesButton.Click();
+        Views.MainMenu.CommunitiesButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Communities.WaitFor();
 
         Views.ExplorePanel.Close();
     }
 
-    [Test]
-    public void TestOpenMapFromSidebar()
-    {
-        Views.MainMenu.MapButton.Click();
-
-        Views.ExplorePanel.Navmap.WaitFor();
-
-        Views.ExplorePanel.Close();
-    }
+    // NOTE: there is no TestOpenMapFromSidebar — this build's sidebar has no Map button
+    // (verified via UiDump `--all` dumps of the sidebar). Map coverage lives in
+    // ShortcutsTests.TestOpenMapWithShortcut and in TestSwitchBetweenAllTabs below (Map tab).
 
     [Test]
     public void TestOpenBackpackFromSidebar()
     {
-        Views.MainMenu.BackpackButton.Click();
+        Views.MainMenu.BackpackButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Backpack.WaitFor();
 
         Views.ExplorePanel.Close();
     }
 
-    // Opening the Gallery section makes the Explorer touch ~/Downloads (Camera Reel storage,
-    // see unity-explorer ReelCommonActions.cs), which on macOS triggers the system
-    // "wants to access your Downloads folder" TCC dialog. The dialog steals focus and
-    // breaks AltTester input. We use Assert.Ignore so the test shows up as "skipped" with
-    // a visible reason in the Allure report.
     [Test]
     public void TestOpenGalleryFromSidebar()
     {
-        Assert.Ignore("can't access user device");
-
-        Views.MainMenu.GalleryButton.Click();
+        Views.MainMenu.GalleryButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Gallery.WaitFor();
 
@@ -75,7 +62,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenSettingsFromSidebar()
     {
-        Views.MainMenu.SettingsButton.Click();
+        Views.MainMenu.SettingsButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Settings.WaitFor();
 
@@ -85,42 +72,34 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestSwitchBetweenAllTabs()
     {
-        // Open the panel via any sidebar button
-        Views.MainMenu.EventsButton.Click();
+        Views.MainMenu.EventsButton.Click(settleMs: 0);
         Views.ExplorePanel.WaitFor();
 
-        // Events tab
-        Views.ExplorePanel.EventsTabButton.Click();
+        Views.ExplorePanel.EventsTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Events.WaitFor();
         Reporter.Log("Events tab opened successfully");
 
-        // Places tab
-        Views.ExplorePanel.PlacesTabButton.Click();
+        Views.ExplorePanel.PlacesTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Places.WaitFor();
         Reporter.Log("Places tab opened successfully");
 
-        // Communities tab
-        Views.ExplorePanel.CommunitiesTabButton.Click();
+        Views.ExplorePanel.CommunitiesTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Communities.WaitFor();
         Reporter.Log("Communities tab opened successfully");
 
-        // Map tab
-        Views.ExplorePanel.MapTabButton.Click();
+        Views.ExplorePanel.MapTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Map tab opened successfully");
 
-        // Backpack tab
-        Views.ExplorePanel.BackpackTabButton.Click();
+        Views.ExplorePanel.BackpackTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Backpack.WaitFor();
         Reporter.Log("Backpack tab opened successfully");
 
-        // Gallery tab
-        Views.ExplorePanel.GalleryTabButton.Click();
+        Views.ExplorePanel.GalleryTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Gallery.WaitFor();
         Reporter.Log("Gallery tab opened successfully");
 
-        // Settings tab
-        Views.ExplorePanel.SettingsTabButton.Click();
+        Views.ExplorePanel.SettingsTabButton.Click(settleMs: 0);
         Views.ExplorePanel.Settings.WaitFor();
         Reporter.Log("Settings tab opened successfully");
 

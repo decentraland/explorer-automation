@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Playwright UI automation for the Decentraland web dapp and the cross-platform handoff into the desktop client.",
   "scripts": {
-    "test": "playwright test --grep @web",
-    "test:headed": "playwright test --grep @web --headed",
+    "test": "playwright test --project=web",
+    "test:headed": "playwright test --project=web --headed",
     "test:ui": "playwright test --ui",
     "test:webgpu": "playwright test --project webgpu",
     "test:marketplace": "npm run test:marketplace:offchain && npm run test:marketplace:onchain",

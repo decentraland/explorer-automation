@@ -15,15 +15,20 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// the panel becomes findable get eaten because the raycaster ignores them. Override
     /// WaitFor to also wait for the raycaster to be re-enabled.
     /// </summary>
-    public override AltObject WaitFor(double timeout = 20D)
+    internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
-        var altObj = base.WaitFor(timeout);
+        // Suppress the base "appeared" shot — the panel is only verified ready once the
+        // raycaster is re-enabled, so the single shot is taken after that wait completes
+        // (a mid-show-animation frame would misrepresent what was verified).
+        var altObj = base.WaitFor(timeout, verificationShot: false);
         altObj.WaitForComponentProperty(
             "UnityEngine.UI.GraphicRaycaster",
             "enabled",
             true,
             "UnityEngine.UI",
             timeout: 10);
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 
@@ -57,20 +62,22 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     #region Helper methods
 
     /// <summary>
-    /// Closes the panel. Tries the X button first; if that doesn't dismiss the panel within
-    /// 5s, falls back to pressing Escape (which Unity's IClosable input handler also catches).
-    /// Some sections (Map, Gallery) consume input themselves and absorb the X button click,
-    /// so the keyboard fallback is the reliable path.
+    /// Closes the panel. Presses Escape first — it's the most reliable path because Unity's
+    /// IClosable input handler catches it uniformly and every shortcut test (Map, Gallery,
+    /// Backpack, …) proves Escape dismisses any section. The X button is only used as a
+    /// fallback for the rare case where Escape is consumed elsewhere. Clicking the X first
+    /// is unsafe for sections that absorb pointer input (Navmap drags, Gallery), which puts
+    /// them in an interactive state that then swallows subsequent Escape.
     /// </summary>
     [AllureStep("Close the explore panel")]
     public void Close()
     {
-        CloseButton.Click();
+        CommonStuff.AltDriver.PressKey(AltKeyCode.Escape);
         if (TryWaitForGone(5))
             return;
 
-        Reporter.Log("CloseButton click did not dismiss the panel — falling back to Escape");
-        CommonStuff.AltDriver.PressKey(AltKeyCode.Escape);
+        Reporter.Log("Escape did not dismiss the panel — falling back to CloseButton click");
+        CloseButton.Click(settleMs: 0);
         WaitForGone(15);
     }
 
@@ -82,7 +89,9 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// </summary>
     private bool TryWaitForGone(double timeoutSec)
     {
-        try { WaitForGone(timeoutSec); return true; }
+        // Shot-suppressed: this only answers "did Escape work?", and the panel closing is
+        // every test's cleanup rather than anything one of them verifies.
+        try { WaitForGone(timeoutSec, verificationShot: false); return true; }
         catch { return false; }
     }
 

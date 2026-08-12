@@ -82,7 +82,11 @@ export async function setupBroadcastWallet(page: Page, options: BroadcastWalletO
       }
     }
     const hash = await wallet.sendTransaction(tx as Parameters<typeof wallet.sendTransaction>[0])
-    await pub.waitForTransactionReceipt({ hash })
+    // Bound the wait: viem's waitForTransactionReceipt has no default deadline,
+    // so a stuck tx would otherwise block eth_sendTransaction until the outer
+    // Playwright test timeout with no useful error. 180s matches the Amoy
+    // receipt budget in shared/helpers/ethereum.ts.
+    await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })
     return hash
   })
 
