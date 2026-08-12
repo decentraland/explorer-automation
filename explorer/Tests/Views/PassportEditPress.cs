@@ -11,6 +11,10 @@ internal static class PassportEditPress
     private const double AFFORDANCE_TIMEOUT = 5D;   // the pencil is either there or it is not
     private const int    POINTER_SETTLE_MS  = 500;
     private const int    POLL_MS            = 250;
+    private const double TOAST_TIMEOUT      = 10D;  // the toast hides itself after five
+    private const string TOAST_COMPONENT       = "DCL.UI.WarningNotificationView";
+    private const string TOAST_ASSEMBLY        = "UI";
+    private const string CANVAS_GROUP_ASSEMBLY = "UnityEngine.CoreModule";
 
     /// <summary>
     /// Presses <paramref name="affordance"/> once and waits for <paramref name="opened"/>, failing
@@ -26,6 +30,7 @@ internal static class PassportEditPress
         Thread.Sleep(POINTER_SETTLE_MS);
 
         Reporter.TakeVerificationShot($"beforepress_{what}");
+        ClearErrorNotification();
         DisableSoftMasks("//Passport(Clone)/BackgroundContainer",
             "//Passport(Clone)/BackgroundContainer/Scroll View/Viewport");
 
@@ -71,6 +76,59 @@ internal static class PassportEditPress
                   + "affordance."
                 : $"The passport closed {closedAfter:F1}s in, so the press reached its backdrop "
                   + "rather than the button — check whether a SoftMask is vetoing the raycast."));
+    }
+
+    /// <summary>
+    /// Stops the passport's error toast intercepting a press.
+    /// </summary>
+    /// <remarks>
+    /// Thumbnail loads fail on this chassis, so the passport raises its <c>WarningNotificationView</c>
+    /// on open. It renders over the header, covering the name pencil, and blocks raycasts for the
+    /// five seconds it is up — a press it swallows does nothing, since it is not a close affordance.
+    /// Whether it is still up when the test presses is a race the test would otherwise lose at
+    /// random, so the toast is dismissed through its own <c>Hide</c> rather than by reaching into
+    /// its CanvasGroup — that would reimplement the client and rot the moment <c>Hide</c> changes.
+    /// Falls back to waiting the toast out if the call cannot be made.
+    /// </remarks>
+    private static void ClearErrorNotification()
+    {
+        var toast = new Locatable(By.PATH, "//Passport(Clone)/ErrorNotification");
+        if (!toast.IsPresent(verificationShot: false))
+            return;
+
+        try
+        {
+            // Both arguments are passed even though both are optional: the SDK selects an overload
+            // by parameter count and does not fill defaults in. An empty type list makes it match
+            // on count alone, and an empty JSON object deserializes to a default CancellationToken.
+            toast.WaitFor(AFFORDANCE_TIMEOUT, verificationShot: false)
+                .CallComponentMethod<object>(TOAST_COMPONENT, "Hide", TOAST_ASSEMBLY,
+                    new object[] { true, new object() }, new string[0]);
+            Reporter.Log("Passport error toast dismissed via Hide(instant: true)");
+            return;
+        }
+        catch (Exception ex)
+        {
+            Reporter.Log($"Could not dismiss the passport error toast ({ex.Message}) — waiting it out");
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(TOAST_TIMEOUT);
+        while (DateTime.UtcNow < deadline && IsToastBlocking(toast))
+            Thread.Sleep(POLL_MS);
+    }
+
+    private static bool IsToastBlocking(Locatable toast)
+    {
+        try
+        {
+            return toast.WaitFor(AFFORDANCE_TIMEOUT, verificationShot: false)
+                .GetComponentProperty<bool>("UnityEngine.CanvasGroup", "blocksRaycasts",
+                    CANVAS_GROUP_ASSEMBLY);
+        }
+        catch (Exception)
+        {
+            return false;   // unreadable is not a reason to burn the ceiling
+        }
     }
 
     /// <summary>

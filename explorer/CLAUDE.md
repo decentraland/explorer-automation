@@ -85,6 +85,24 @@ uGUI control does nothing at all — reach for `Click`.
 (overlay buttons) needs the cursor parked with `AltDriver.MoveMouse` and the animation given
 time before the click, or the press raycasts past a zero-scaled element.
 
+**A control near the top of a panel gets covered by that panel's toast.** Panels raise a
+`WarningNotificationView` across their header — the passport does it on every open, because emote
+thumbnails fail to load on this chassis — and it blocks raycasts for the five seconds it is up.
+A press it swallows does nothing at all, because a toast is not a close affordance, so the symptom
+is a timeout with the panel still open rather than anything that names the toast. Whether the
+press lands inside that window depends on how fast the panel's content loads, so the test passes
+or fails at random. Dismiss it rather than waiting, and do it through the view's own
+`Hide` — reaching into its `CanvasGroup` reimplements the client and rots the moment `Hide`
+changes. See `PassportEditPress.ClearErrorNotification`. Suspect this for anything in the top strip
+of a panel; controls further down are unaffected, which is why one of a pair of tests can fail
+alone.
+
+Calling a client method takes some care: `AltCallComponentMethodForObjectCommand` selects an
+overload by **parameter count** and never fills in defaults, so a method whose arguments are all
+optional still needs every one supplied. Leaving `typeOfParameters` empty makes it match on count
+alone, and each argument is JSON-deserialized into the parameter's type — an empty JSON object is
+the way to hand over a `default` struct such as a `CancellationToken`.
+
 **`SoftMask` vetoes presses inside it.** `Coffee.UISoftMask.SoftMask` implements
 `ICanvasRaycastFilter`, and Unity consults the filters on a hit graphic's *ancestors*, so a
 SoftMask on a container rejects every press in its whole subtree — the press falls through to
