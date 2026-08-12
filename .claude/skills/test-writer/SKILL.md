@@ -154,6 +154,47 @@ Assert.That(Views.ExplorePanel.Events.IsPresent(), Is.True,
 
 Not every test needs explicit assertions. If `WaitFor()` succeeds, the element appeared — that's an implicit assertion (it throws on timeout). Use `Assert.That` when checking boolean conditions or comparing values.
 
+### Flag-gated features
+
+**Before writing a test, find out whether the Explorer gates the feature behind a flag.** If it
+does, the test must respect that flag — a feature that is off does not exist in the client, and a
+test that assumes otherwise fails on every run until someone turns the flag back on.
+
+Check by grepping the client for the feature's controller:
+
+```bash
+# in unity-explorer — either of these means the feature is gated
+grep -rn "FeaturesRegistry.Instance.IsEnabled(FeatureId.X)" Explorer/Assets
+grep -rn "FeatureFlagsConfiguration.Instance.IsEnabled(FeatureFlagsStrings.Y)" Explorer/Assets
+```
+
+Then write the test against `FeatureFlags` (`Tests/Common/`), which reads the running client's own
+resolved state. Two cases:
+
+**Presence assertions** — assert both directions, so the test also catches UI that outlives its flag:
+
+```csharp
+var expected = FeatureFlags.Feature("CameraReel");
+Assert.That(Views.MainMenu.InWorldCameraButton.IsPresent(),
+    Is.EqualTo(expected == FeatureFlags.Expected.Present),
+    $"Camera button should be {expected} for this build's flags");
+```
+
+**Flow tests** — when the gate is off the flow has no UI to drive, so report it rather than fail:
+
+```csharp
+if (!FeatureFlags.IsFeatureEnabled("CameraReel"))
+    Assert.Ignore("alfa-camera-reel is off in this environment");
+```
+
+That skip is re-derived every run, so unlike a hard-coded reason it cannot go stale — see
+`explorer/CLAUDE.md` → "Skips".
+
+`FeatureFlags.Feature(id)` is definitive in both directions. `FeatureFlags.UserGated(flag)` is only
+definitive when off, because the client also applies a per-wallet allowlist; when it returns
+`Unknown`, log and skip that assertion instead of guessing. Marketplace Credits and Communities are
+the two that work this way.
+
 ### Reporting
 
 Use `Reporter.Log()` to annotate significant steps. These show up in the Allure report and help debug failures:
@@ -266,6 +307,7 @@ After the view-writer creates the required views, write the test using the newly
 ## Rules
 
 - **No raw locators in tests.** Tests call view methods and view element fields only. If you need a new element, add it to the view first.
+- **Never hard-code the presence of flag-gated UI.** Check whether the client gates the feature before writing the test, and if it does, derive the expectation from `FeatureFlags` — see "Flag-gated features" above. A hard-coded expectation turns a flag flip into a permanent failure, which is what `alfa-marketplace-credits` did to the navbar test.
 - **No `Thread.Sleep`.** Use `Wait()` from BaseTest for brief animation pauses. Use `WaitFor()` / `WaitForGone()` for element-based waits.
 - **No double-clicks, and no `Tap` on uGUI controls.** The driver cannot deliver `clickCount == 2` dependably — it equipped roughly half the time before the backpack fixtures moved to the Equip button — and `Tap` reaches uGUI buttons not at all in this build. Drive the action through whatever button the client exposes for it. See `explorer/CLAUDE.md` → "Interaction Mechanics".
 - **Never spend wall-clock without a need behind it.** Adding a wait, widening a timeout and raising an attempt count are the same move, and each has to name the failure it prevents — "to be safe" is not one. Size a retry loop's per-attempt budget to what the retry fixes: when only a fresh click undoes a dropped one, a short budget and another click beats polling one dead selection for the default ceiling. See `explorer/CLAUDE.md` → "Waits and Retries".
