@@ -188,12 +188,37 @@ them away, and are already fenced by `LoadedIndicator` / `HasFullGridPage`.
 
 ## Environment Coupling
 
-A test that asserts flag-gated UI is asserting the environment. Read the document the client
-reads: `https://feature-flags.decentraland.{org|zone}/explorer.json` with a
-`referer: https://decentraland.{env}` header. The hostname strategy is evaluated from that header,
-so a bare request answers with a subset in which live features look off. Keys carry the
-`explorer-` prefix the client strips, and a disabled flag is *absent* rather than `false`. CI
-runs against `org`.
+A test that asserts flag-gated UI is asserting the environment. A flag flip then fails it on every
+run until the flag comes back — not flakiness, and not something waiting out or a rerun fixes.
+`alfa-marketplace-credits` going off did exactly this to the navbar test.
+
+**Ask the client, not the flag service.** `FeatureFlags` in `Tests/Common/` calls
+`AlttesterFeatureFlagsProbe` in the running Explorer, so a test reads the value the UI actually
+gated on. Deriving it here instead is not equivalent in either direction: the document's hostname
+strategy is evaluated from the request's `referer`, and the client folds app arguments and editor
+overrides on top of whatever the document says.
+
+**Gate both directions.** Present when the flag is on, *absent* when it is off. An assertion that
+only fires one way goes quiet on the inverse bug — UI that outlives its flag.
+
+Two shapes of gate, not interchangeable:
+
+- **Resolved feature** — `FeatureFlags.Feature("CameraReel")`, backed by `FeaturesRegistry`.
+  Definitive both ways.
+- **Flag plus a `wallets` allowlist** — `FeatureFlags.UserGated("alfa-communities")`. Off is
+  definitive; on is only definitive while the allowlist is empty, since the run's wallet is not
+  known here, so a non-empty one is reported rather than guessed. Marketplace Credits and
+  Communities both resolve this way, and `FeatureId.Communities` is deliberately never registered
+  — reading the registry for it answers false however the flag stands.
+
+Which shape a feature uses is decided in `SidebarController.OnViewInstantiated` and the client's
+`IsUserAllowedToUseTheFeatureAsync` helpers; read those before mapping a button to a gate.
+
+Fetching the document directly is still right when there is no client to ask — reading a CI failure
+after the fact. `https://feature-flags.decentraland.{org|zone}/explorer.json` with a
+`referer: https://decentraland.{env}` header; without it the response is a subset in which live
+features look off. Keys carry the `explorer-` prefix the client strips, and a disabled flag is
+*absent* rather than `false`. CI runs against `org`.
 
 The Nearby Voice Chat tip appears once loading completes and closes only on its own two buttons —
 Escape does not dismiss it. Its dismissal is a per-profile pref and CI creates a fresh account per
