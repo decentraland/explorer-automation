@@ -85,6 +85,17 @@ uGUI control does nothing at all — reach for `Click`.
 (overlay buttons) needs the cursor parked with `AltDriver.MoveMouse` and the animation given
 time before the click, or the press raycasts past a zero-scaled element.
 
+**A control near the top of a panel gets covered by that panel's toast.** Panels raise a
+`WarningNotificationView` across their header — the passport does it on every open, because emote
+thumbnails fail to load on this chassis — and it blocks raycasts for the five seconds it is up.
+A press it swallows does nothing at all, because a toast is not a close affordance, so the symptom
+is a timeout with the panel still open rather than anything that names the toast. Whether the
+press lands inside that window depends on how fast the panel's content loads, so the test passes
+or fails at random. Clear it rather than waiting: `Hide()` sets `blocksRaycasts = false`
+synchronously, so setting that flag on its `CanvasGroup` dismisses it for free — see
+`PassportEditPress.ClearErrorNotification`. Suspect this for anything in the top strip of a panel;
+controls further down are unaffected, which is why one of a pair of tests can fail alone.
+
 **`SoftMask` vetoes presses inside it.** `Coffee.UISoftMask.SoftMask` implements
 `ICanvasRaycastFilter`, and Unity consults the filters on a hit graphic's *ancestors*, so a
 SoftMask on a container rejects every press in its whole subtree — the press falls through to
