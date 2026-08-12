@@ -139,8 +139,11 @@ public abstract class BaseTest
         Reporter.Log($"Starting test: {TestContext.CurrentContext.Test.Name}");
 
         // Skip when sitting on the auth screen — Escape there can exit/transition.
+        // delay: 0 — every InWorld test now ends having proven its panel gone, so on a green run
+        // this press has nothing to settle for; 500ms never covered the post-failure path anyway,
+        // where the same Escape-close is budgeted 5s in ExplorePanelView.Close.
         if (!Views.AuthenticationMainScreen.IsPresent())
-            PressEscape();
+            PressEscape(delay: 0);
 
         // Arm verification screenshots LAST so the counter starts at the test body and the
         // setup plumbing above (auth-screen probe, Escape) stays shot-free. EnsureInWorld's
