@@ -12,6 +12,8 @@ internal static class PassportEditPress
     private const int    POINTER_SETTLE_MS  = 500;
     private const int    POLL_MS            = 250;
     private const double TOAST_TIMEOUT      = 10D;  // the toast hides itself after five
+    private const string TOAST_COMPONENT       = "DCL.UI.WarningNotificationView";
+    private const string TOAST_ASSEMBLY        = "UI";
     private const string CANVAS_GROUP_ASSEMBLY = "UnityEngine.CoreModule";
 
     /// <summary>
@@ -84,10 +86,9 @@ internal static class PassportEditPress
     /// on open. It renders over the header, covering the name pencil, and blocks raycasts for the
     /// five seconds it is up — a press it swallows does nothing, since it is not a close affordance.
     /// Whether it is still up when the test presses is a race the test would otherwise lose at
-    /// random. `Hide()` clears `blocksRaycasts` synchronously, so setting the same flag reproduces
-    /// it without waiting; the alpha follows so the report frame matches what the press saw. Falls
-    /// back to waiting the toast out if the flag cannot be set, which keeps the test correct even
-    /// if the CanvasGroup moves off this object.
+    /// random, so the toast is dismissed through its own <c>Hide</c> rather than by reaching into
+    /// its CanvasGroup — that would reimplement the client and rot the moment <c>Hide</c> changes.
+    /// Falls back to waiting the toast out if the call cannot be made.
     /// </remarks>
     private static void ClearErrorNotification()
     {
@@ -97,16 +98,18 @@ internal static class PassportEditPress
 
         try
         {
-            var obj = toast.WaitFor(AFFORDANCE_TIMEOUT, verificationShot: false);
-            obj.SetComponentProperty("UnityEngine.CanvasGroup", "blocksRaycasts", false,
-                CANVAS_GROUP_ASSEMBLY);
-            obj.SetComponentProperty("UnityEngine.CanvasGroup", "alpha", 0, CANVAS_GROUP_ASSEMBLY);
-            Reporter.Log("Passport error toast cleared before the press");
+            // Both arguments are passed even though both are optional: the SDK selects an overload
+            // by parameter count and does not fill defaults in. An empty type list makes it match
+            // on count alone, and an empty JSON object deserializes to a default CancellationToken.
+            toast.WaitFor(AFFORDANCE_TIMEOUT, verificationShot: false)
+                .CallComponentMethod<object>(TOAST_COMPONENT, "Hide", TOAST_ASSEMBLY,
+                    new object[] { true, new object() }, new string[0]);
+            Reporter.Log("Passport error toast dismissed via Hide(instant: true)");
             return;
         }
         catch (Exception ex)
         {
-            Reporter.Log($"Could not clear the passport error toast ({ex.Message}) — waiting it out");
+            Reporter.Log($"Could not dismiss the passport error toast ({ex.Message}) — waiting it out");
         }
 
         var deadline = DateTime.UtcNow.AddSeconds(TOAST_TIMEOUT);

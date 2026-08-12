@@ -91,10 +91,17 @@ thumbnails fail to load on this chassis — and it blocks raycasts for the five 
 A press it swallows does nothing at all, because a toast is not a close affordance, so the symptom
 is a timeout with the panel still open rather than anything that names the toast. Whether the
 press lands inside that window depends on how fast the panel's content loads, so the test passes
-or fails at random. Clear it rather than waiting: `Hide()` sets `blocksRaycasts = false`
-synchronously, so setting that flag on its `CanvasGroup` dismisses it for free — see
-`PassportEditPress.ClearErrorNotification`. Suspect this for anything in the top strip of a panel;
-controls further down are unaffected, which is why one of a pair of tests can fail alone.
+or fails at random. Dismiss it rather than waiting, and do it through the view's own
+`Hide` — reaching into its `CanvasGroup` reimplements the client and rots the moment `Hide`
+changes. See `PassportEditPress.ClearErrorNotification`. Suspect this for anything in the top strip
+of a panel; controls further down are unaffected, which is why one of a pair of tests can fail
+alone.
+
+Calling a client method takes some care: `AltCallComponentMethodForObjectCommand` selects an
+overload by **parameter count** and never fills in defaults, so a method whose arguments are all
+optional still needs every one supplied. Leaving `typeOfParameters` empty makes it match on count
+alone, and each argument is JSON-deserialized into the parameter's type — an empty JSON object is
+the way to hand over a `default` struct such as a `CancellationToken`.
 
 **`SoftMask` vetoes presses inside it.** `Coffee.UISoftMask.SoftMask` implements
 `ICanvasRaycastFilter`, and Unity consults the filters on a hit graphic's *ancestors*, so a
