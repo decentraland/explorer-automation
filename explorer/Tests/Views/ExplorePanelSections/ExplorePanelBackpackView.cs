@@ -321,6 +321,48 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         #region Helper methods
 
         /// <summary>
+        /// Returns the loaded tile sitting left-top-most on screen. Use instead of
+        /// <see cref="FirstLoadedGridItem"/> wherever the same position has to name the same
+        /// item twice: hierarchy order does not track display order here, so the leading match
+        /// is an arbitrary tile whose content differs after a re-bind.
+        /// </summary>
+        [AllureStep("Find the left-top-most loaded wearable tile")]
+        public BackpackGridItem FindTopLeftLoadedItem()
+        {
+            BackpackGridItem topLeft = null;
+            var topLeftY = int.MaxValue;
+            var topLeftX = int.MaxValue;
+
+            foreach (var item in GridItems)
+            {
+                // Shot-suppressed probes — target selection, not a test verification.
+                if (!item.LoadedIndicator.IsPresent(verificationShot: false))
+                    continue;
+
+                var tile = item.LoadedIndicator.WaitFor(UI_TIMEOUT, verificationShot: false);
+                // y is bottom-origin and mobileY top-origin, so both being positive puts the
+                // centre inside the viewport without asking for the screen size.
+                if (tile.y <= 0 || tile.mobileY <= 0)
+                    continue;
+
+                // A row shares mobileY exactly, so an equal row falls to the leftmost column.
+                if (tile.mobileY > topLeftY || (tile.mobileY == topLeftY && tile.x >= topLeftX))
+                    continue;
+
+                topLeft = item;
+                topLeftY = tile.mobileY;
+                topLeftX = tile.x;
+            }
+
+            if (topLeft is null)
+                throw new AssertionException(
+                    "No wearable tile has loaded content on screen — the grid is empty or never finished loading");
+
+            Reporter.Log($"Picked the wearable tile at x={topLeftX}, mobileY={topLeftY}");
+            return topLeft;
+        }
+
+        /// <summary>
         /// Applies the Hair category filter idempotently and leaves the grid loaded. The slot
         /// is a toggle, so clicking one that is already selected would clear the filter.
         /// </summary>
