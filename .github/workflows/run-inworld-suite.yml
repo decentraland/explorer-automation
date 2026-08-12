@@ -112,8 +112,11 @@ on:
 # macos-14 runners are ephemeral, but serializing keeps concurrent runs for
 # the same caller PR from racing on the S3 path. cancel-in-progress is safe:
 # there is no persistent runner state to unwind.
+#
+# github.workflow gives each caller its own lane. Without it a manual dispatch
+# and the main-branch run collide on ref+empty-pr_number and cancel each other.
 concurrency:
-  group: run-inworld-suite-${{ github.ref }}-${{ inputs.pr_number || 'local' }}
+  group: run-inworld-suite-${{ github.workflow }}-${{ github.ref }}-${{ inputs.pr_number || 'local' }}
   cancel-in-progress: true
 
 permissions:
@@ -249,12 +252,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           if [ -n "${PR_NUMBER_INPUT:-}" ]; then
             echo "number=${PR_NUMBER_INPUT}" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+          # A default-branch push has no PR of its own, and `--head` matches on
+          # branch name only — it would happily return a fork PR whose head is
+          # also named `main` and post this result there.
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${HEAD_REF}" != "${DEFAULT_BRANCH:-}" ]; then
             PR_NUMBER=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$HEAD_REF" --state open --json number --jq '.[0].number // ""' 2>/dev/null || echo "")
             echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"; exit 0
           fi
