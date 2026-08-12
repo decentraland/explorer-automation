@@ -4,7 +4,7 @@ namespace ExplorerAutomation.Tests.Common;
 
 /// <summary>
 /// Reads feature flag state out of the running Explorer through
-/// <c>DCL.FeatureFlags.AlttesterFeatureFlagsProbe</c>, so a test covering flag-gated UI asserts
+/// <c>DCL.FeatureFlags.AltTesterFeatureFlagsProbe</c>, so a test covering flag-gated UI asserts
 /// what the client resolved rather than a hard-coded expectation that a flag flip turns into a
 /// permanent failure.
 ///
@@ -15,7 +15,7 @@ namespace ExplorerAutomation.Tests.Common;
 /// </summary>
 public static class FeatureFlags
 {
-    private const string PROBE_TYPE = "DCL.FeatureFlags.AlttesterFeatureFlagsProbe";
+    private const string PROBE_TYPE = "DCL.FeatureFlags.AltTesterFeatureFlagsProbe";
     private const string PROBE_ASSEMBLY = "DCL.Network";
 
     /// <summary>What the client's gate says about a piece of UI.</summary>

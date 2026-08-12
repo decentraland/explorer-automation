@@ -193,7 +193,7 @@ run until the flag comes back — not flakiness, and not something waiting out o
 `alfa-marketplace-credits` going off did exactly this to the navbar test.
 
 **Ask the client, not the flag service.** `FeatureFlags` in `Tests/Common/` calls
-`AlttesterFeatureFlagsProbe` in the running Explorer, so a test reads the value the UI actually
+`AltTesterFeatureFlagsProbe` in the running Explorer, so a test reads the value the UI actually
 gated on. Deriving it here instead is not equivalent in either direction: the document's hostname
 strategy is evaluated from the request's `referer`, and the client folds app arguments and editor
 overrides on top of whatever the document says.
