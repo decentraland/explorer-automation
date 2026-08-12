@@ -11,48 +11,62 @@ public class NavbarTests : BaseTest
     //     explore panel's Map tab instead (covered by ShortcutsTests and NavmapTests).
     //   - Keyboard shortcuts (SidebarControlsScreenButton) — the controls panel is reachable
     //     via the help menu / H shortcut instead (covered by TestOpenControlsPanelFromHelpMenu).
+    //
+    // Seven of them are flag-gated, so their expected state is read from the client rather than
+    // assumed — see FeatureFlags. `SidebarController.OnViewInstantiated` deactivates each of these
+    // GameObjects when its gate is off, and an inactive object is not findable, so a hard-coded
+    // "always present" here fails on every run for as long as the flag stays off.
     [Test]
     public void TestSidebarShowsAllNavigationButtons()
     {
         Views.MainMenu.WaitFor();
 
-        var buttons = new (string Label, Locatable Element)[]
+        var buttons = new (string Label, Locatable Element, FeatureFlags.Expected Expected)[]
         {
-            ("My profile", Views.MainMenu.ProfileButton),
-            ("Notifications", Views.MainMenu.NotificationsButton),
-            ("Marketplace Credits", Views.MainMenu.MarketplaceCreditsButton),
-            ("Events", Views.MainMenu.EventsButton),
-            ("Places", Views.MainMenu.PlacesButton),
-            ("Communities", Views.MainMenu.CommunitiesButton),
-            ("Backpack", Views.MainMenu.BackpackButton),
-            ("Marketplace", Views.MainMenu.MarketplaceButton),
-            ("Gallery", Views.MainMenu.GalleryButton),
-            ("Settings", Views.MainMenu.SettingsButton),
-            ("Help", Views.MainMenu.HelpButton),
-            ("Sidebar config", Views.MainMenu.SidebarSettingsButton),
-            ("Nearby voice chat", Views.MainMenu.NearbyVoiceButton),
-            ("Portable Experiences (smart wearables)", Views.MainMenu.SmartWearablesButton),
-            ("Skybox", Views.MainMenu.SkyboxButton),
-            ("Camera", Views.MainMenu.InWorldCameraButton),
-            ("Emotes", Views.MainMenu.EmoteWheelButton),
-            ("Friends", Views.MainMenu.FriendsButton),
-            ("Chat", Views.MainMenu.ChatButton),
+            ("My profile", Views.MainMenu.ProfileButton, FeatureFlags.Expected.Present),
+            ("Notifications", Views.MainMenu.NotificationsButton, FeatureFlags.Expected.Present),
+            ("Marketplace Credits", Views.MainMenu.MarketplaceCreditsButton, FeatureFlags.UserGated("alfa-marketplace-credits")),
+            ("Events", Views.MainMenu.EventsButton, FeatureFlags.Feature("Discover")),
+            ("Places", Views.MainMenu.PlacesButton, FeatureFlags.Feature("Discover")),
+            ("Communities", Views.MainMenu.CommunitiesButton, FeatureFlags.UserGated("alfa-communities")),
+            ("Backpack", Views.MainMenu.BackpackButton, FeatureFlags.Expected.Present),
+            ("Marketplace", Views.MainMenu.MarketplaceButton, FeatureFlags.Expected.Present),
+            ("Gallery", Views.MainMenu.GalleryButton, FeatureFlags.Feature("CameraReel")),
+            ("Settings", Views.MainMenu.SettingsButton, FeatureFlags.Expected.Present),
+            ("Help", Views.MainMenu.HelpButton, FeatureFlags.Expected.Present),
+            ("Sidebar config", Views.MainMenu.SidebarSettingsButton, FeatureFlags.Expected.Present),
+            ("Nearby voice chat", Views.MainMenu.NearbyVoiceButton, FeatureFlags.Feature("NearbyVoiceChat")),
+            ("Portable Experiences (smart wearables)", Views.MainMenu.SmartWearablesButton, FeatureFlags.Expected.Present),
+            ("Skybox", Views.MainMenu.SkyboxButton, FeatureFlags.Expected.Present),
+            ("Camera", Views.MainMenu.InWorldCameraButton, FeatureFlags.Feature("CameraReel")),
+            ("Emotes", Views.MainMenu.EmoteWheelButton, FeatureFlags.Expected.Present),
+            ("Friends", Views.MainMenu.FriendsButton, FeatureFlags.Feature("Friends")),
+            ("Chat", Views.MainMenu.ChatButton, FeatureFlags.Expected.Present),
         };
 
-        var missing = new List<string>();
-        foreach (var (label, element) in buttons)
+        var wrong = new List<string>();
+        foreach (var (label, element, expected) in buttons)
         {
-            if (element.IsPresent())
-                Reporter.Log($"Sidebar button present: {label}");
+            if (expected == FeatureFlags.Expected.Unknown)
+            {
+                Reporter.Log($"Sidebar button not asserted: {label} — flag is on but carries a wallets allowlist");
+                continue;
+            }
+
+            bool shouldBePresent = expected == FeatureFlags.Expected.Present;
+            bool present = element.IsPresent();
+
+            if (present == shouldBePresent)
+                Reporter.Log($"Sidebar button {(present ? "present" : "absent, as its flag is off")}: {label}");
             else
-                missing.Add(label);
+                wrong.Add($"{label} (expected {(shouldBePresent ? "present, absent" : "absent, present")})");
         }
 
         Reporter.Log("Absent from this build's sidebar by design: Map (use M shortcut / Map tab), " +
                      "Keyboard shortcuts (use help menu / H shortcut)");
 
-        Assert.That(missing, Is.Empty,
-            $"Sidebar buttons missing from this build: {string.Join(", ", missing)}");
+        Assert.That(wrong, Is.Empty,
+            $"Sidebar buttons in a state the client's flags don't call for: {string.Join(", ", wrong)}");
     }
 
     [Test]
