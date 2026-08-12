@@ -28,6 +28,11 @@ on:
         required: false
         default: ''
         type: string
+      build_url:
+        description: 'Windows Explorer artifact to test. Empty resolves the newest reachable dev build.'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       shards:
@@ -45,6 +50,11 @@ on:
         required: false
         default: false
         type: boolean
+      build_url:
+        description: 'Windows Explorer artifact to test. Empty resolves the newest reachable dev build.'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 
@@ -68,7 +78,9 @@ jobs:
     timeout-minutes: 55
 
     env:
-      BUILD_URL: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev/pu-24728-9248698/Decentraland_windows64.zip
+      # Deliberately not BUILD_URL: a job-level env key wins over the value Resolve build URL
+      # writes to GITHUB_ENV.
+      BUILD_URL_INPUT: ${{ inputs.build_url }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       WINDOWS_SHARD: ${{ matrix.name }}
       SHARD_INDEX: ${{ matrix.index }}
@@ -92,6 +104,15 @@ jobs:
     steps:
       - name: Check out automation tests
         uses: actions/checkout@v6
+
+      - name: Resolve build URL
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerBuildUrl.ps1") `
+            -BuildUrl $env:BUILD_URL_INPUT
 
       - name: Record benchmark context
         shell: powershell
@@ -263,7 +284,7 @@ jobs:
           # receives a command before handing control to NUnit.
           $explorerRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
           $explorer = Get-ChildItem $explorerRoot -Recurse -Filter "Decentraland.exe" -File |
-            Where-Object { $_.FullName -like "*pu-24728-9248698*" } |
+            Where-Object { $_.FullName -like "*$env:BUILD_TAG*" } |
             Select-Object -First 1
           if (-not $explorer) { throw "Pre-installed Explorer executable was not found under $explorerRoot" }
 
