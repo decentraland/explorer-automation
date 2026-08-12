@@ -33,6 +33,9 @@ public abstract class BaseTest
     {
         try
         {
+            // Before the boot, not after: a viewport this can't clear fails every fixture anyway,
+            // and the check costs one round trip against ~4 minutes of booting into a doomed run.
+            Viewport.RequireUsable();
             EnsureInWorld();
         }
         catch (Exception ex)
