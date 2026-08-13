@@ -185,11 +185,11 @@ jobs:
     if: needs.resolve.outputs.should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
-      # Empty build_url makes the reusable resolve the newest unity-explorer
-      # dev build. That must stay a branch build: release zips are compiled
-      # without the AltTester scripting define and hang at "Wait for
-      # connection: 0%".
-      build_url: ''
+      # Pinned to the unity-explorer #9728 (gateway) branch build so this
+      # branch's runs exercise --base-domain; branch builds keep the AltTester
+      # scripting define. Revert both pins to '' (newest dev build) before merge.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/gateway/pr-24999-74f1b81/Decentraland_macos.zip'
+      windows_build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/gateway/pr-24999-74f1b81/Decentraland_windows64.zip'
       filter: ${{ needs.resolve.outputs.filter }}
       # What Windows splits. The filter says the same thing in vstest's vocabulary, but nothing
       # maps one back to the fixtures the packer weighs, so the scope travels as itself.
