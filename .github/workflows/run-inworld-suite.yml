@@ -1101,6 +1101,11 @@ jobs:
       shards: ${{ inputs.shards }}
       test_filter: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       verification_screenshots: false
+      # Same expression the macOS leg resolves COMMIT_SHA with, so both legs publish under
+      # one commit prefix. Inlined rather than taken from that job's outputs, which would
+      # serialize the two legs behind each other.
+      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || (github.repository == 'decentraland/explorer-automation' && github.sha || format('run-{0}', github.run_id)) }}
+      pr_number: ${{ inputs.pr_number }}
     secrets: inherit
 
   # One table for every leg. Each leg posts its own row as an artifact because a
