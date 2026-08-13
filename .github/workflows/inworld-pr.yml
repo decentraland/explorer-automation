@@ -209,6 +209,8 @@ jobs:
             echo "shards=${SHARD_PLAN}"
           } >> "$GITHUB_OUTPUT"
 
+  # One caller job on purpose: GitHub keys the run's fold on it, so both legs and
+  # the results table stay under a single "InWorld suite" heading.
   run-suite:
     name: InWorld suite
     needs: resolve
@@ -221,18 +223,7 @@ jobs:
       # connection: 0%".
       build_url: ''
       filter: ${{ needs.resolve.outputs.filter }}
+      shards: ${{ needs.resolve.outputs.shards }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
-    secrets: inherit
-
-  windows-suite:
-    name: InWorld suite (Windows)
-    needs: resolve
-    if: needs.resolve.outputs.should_run == 'true'
-    uses: ./.github/workflows/windows-inworld-custom-image.yml
-    with:
-      shards: ${{ needs.resolve.outputs.shards }}
-      # Reached only by the one-shard fallback, whose entry carries no filter of its own.
-      test_filter: ${{ needs.resolve.outputs.filter }}
-      verification_screenshots: false
     secrets: inherit
