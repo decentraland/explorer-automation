@@ -6,16 +6,20 @@ name: InWorld Suite
 # Mirrors run-visual-suite.yml, which runs the same chassis.
 #
 # Callers:
-#   - decentraland/explorer-automation → manual workflow_dispatch
-#   - decentraland/unity-explorer      → a `/in-world-tests` PR-comment
-#     dispatcher is planned but does not exist in that repo yet, so the
-#     cross-repo workflow_call path here has never run against a real caller.
+#   - decentraland/explorer-automation → inworld-pr.yml, inworld-main.yml, and
+#     manual workflow_dispatch
+#   - decentraland/unity-explorer      → in-world-tests.yml, gating release and
+#     hotfix PRs. A cross-repo caller supplies both artifacts and a tests_ref,
+#     and gets neither for free: `build_url` is the macOS zip, the Windows leg
+#     needs `windows_build_url`, and both legs check out this repo at
+#     `tests_ref` because a bare checkout there would fetch the caller.
 #
 # Runs both platforms and reports them together:
 #
 #   run     macOS, GitHub-hosted macos-14, the whole selection on one runner
-#   windows windows-inworld-custom-image.yml, the selection split across the
-#           shard plan's runners
+#   windows windows-inworld-custom-image.yml, the same selection split across
+#           runners — that leg plans its own split, from `scope` when a caller
+#           resolved one and from `filter` otherwise
 #   report  one table over every leg, to the job summary and one PR comment
 #
 # The Windows leg stays its own file — the install steps (bash/brew/dmg against
@@ -98,8 +102,8 @@ on:
         type: boolean
         required: false
         default: false
-      shards:
-        description: 'Shard plan for the Windows leg, as a JSON array from Resolve test scope. Empty runs `filter` on one Windows runner.'
+      scope:
+        description: 'What the Windows leg splits, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from `filter` — the whole category splits, anything narrower runs on one Windows runner.'
         type: string
         required: false
         default: ''
@@ -108,6 +112,15 @@ on:
         type: boolean
         required: false
         default: true
+      windows_build_url:
+        description: >-
+          Direct URL to a Decentraland_windows64.zip. Empty makes the Windows leg
+          resolve the newest dev build on its own, which is fine for a run asking
+          "is dev good" and wrong for one gating a specific commit — `build_url`
+          alone only points the macOS leg at that commit.
+        type: string
+        required: false
+        default: ''
 
   workflow_dispatch:
     inputs:
@@ -134,6 +147,11 @@ on:
         type: boolean
         required: false
         default: true
+      windows_build_url:
+        description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest unity-explorer dev build.'
+        type: string
+        required: false
+        default: ''
 
 # macos-14 runners are ephemeral, but serializing keeps concurrent runs for
 # the same caller PR from racing on the S3 path. cancel-in-progress is safe:
@@ -1098,7 +1116,7 @@ jobs:
     if: inputs.windows
     uses: ./.github/workflows/windows-inworld-custom-image.yml
     with:
-      shards: ${{ inputs.shards }}
+      scope: ${{ inputs.scope }}
       test_filter: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       verification_screenshots: false
       # Same expression the macOS leg resolves COMMIT_SHA with, so both legs publish under
@@ -1106,6 +1124,13 @@ jobs:
       # serialize the two legs behind each other.
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || (github.repository == 'decentraland/explorer-automation' && github.sha || format('run-{0}', github.run_id)) }}
       pr_number: ${{ inputs.pr_number }}
+      # Its own artifact: build_url points at the macOS zip. Left empty the leg
+      # resolves the newest dev build, so a caller gating one commit has to say
+      # which Windows build goes with it.
+      build_url: ${{ inputs.windows_build_url }}
+      # Both legs from one ref, and — as on macOS — a cross-repo caller has no
+      # explorer/ci to check out without it.
+      tests_ref: ${{ inputs.tests_ref }}
     secrets: inherit
 
   # One table for every leg. Each leg posts its own row as an artifact because a

@@ -3,8 +3,8 @@ name: Windows InWorld custom-image benchmark
 on:
   workflow_call:
     inputs:
-      shards:
-        description: 'Shard plan from Resolve test scope, as a JSON array. Empty runs test_filter on one runner.'
+      scope:
+        description: 'What to split, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
         default: ''
         type: string
@@ -33,10 +33,15 @@ on:
         required: false
         default: ''
         type: string
+      tests_ref:
+        description: 'explorer-automation ref for tests and the explorer/ci scripts. Empty falls back to main.'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
-      shards:
-        description: 'Shard plan as a JSON array. Leave empty to run test_filter on a single runner.'
+      scope:
+        description: 'What to split: ALL, or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
         default: ''
         type: string
@@ -65,16 +70,168 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The only place a shard matrix is built, for every origin of this leg — a PR run that
+  # resolved a scope, a push to main, a dispatch. Callers pass what to split, never how it
+  # splits: the tool owns the packing and the shard count, so no path can plan differently
+  # and no path can end up unsplit by omission.
+  plan:
+    name: Plan shards
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    env:
+      SCOPE_INPUT: ${{ inputs.scope }}
+      FILTER: ${{ inputs.test_filter }}
+    steps:
+      # A filter is a vstest expression and nothing maps one back to the fixtures the packer
+      # weighs, so only the two spellings of the whole category can be read as a scope. That
+      # inference is what keeps a caller that never resolved anything from running unsplit.
+      - name: Resolve what to split
+        id: want
+        run: |
+          set -euo pipefail
+          SCOPE="$SCOPE_INPUT"
+          if [ -z "$SCOPE" ] && { [ -z "$FILTER" ] || [ "$FILTER" = 'Category=InWorld' ]; }; then
+            SCOPE='ALL'
+          fi
+
+          if [ -z "$SCOPE" ]; then
+            echo "::notice::Filter '${FILTER}' names no scope to split, so it runs on one runner."
+          else
+            echo "::notice::Splitting ${SCOPE}."
+          fi
+          echo "scope=$SCOPE" >> "$GITHUB_OUTPUT"
+
+      # Same expression as the leg's own checkout below, and mandatory for the same reason:
+      # a bare checkout in a workflow_call run fetches the CALLER, which has no
+      # explorer/ci/ScopeInWorldTests to plan with. Getting this wrong costs the split
+      # rather than the run, so it would degrade quietly.
+      - name: Check out the scope resolver
+        if: steps.want.outputs.scope != ''
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      # No global.json in the repo, so the SDK the scope tool builds under is pinned here
+      # rather than inherited from the runner image.
+      - uses: actions/setup-dotnet@v5
+        if: steps.want.outputs.scope != ''
+        with:
+          dotnet-version: '10.0.x'
+
+      # Same key as inworld-pr.yml's resolve job, so both share one cache. A cold restore is
+      # most of this job's wall clock.
+      - uses: actions/cache@v6
+        if: steps.want.outputs.scope != ''
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('explorer/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # MSBuildWorkspace needs the NuGet references resolved on disk or every symbol lookup
+      # comes back null.
+      - name: Restore test project
+        if: steps.want.outputs.scope != ''
+        run: dotnet restore explorer/Tests/Tests.csproj
+
+      # Nothing in here may fail the leg: no plan means the whole selection on one runner,
+      # which is slow rather than wrong.
+      - name: Plan the split
+        id: split
+        if: steps.want.outputs.scope != ''
+        env:
+          SCOPE: ${{ steps.want.outputs.scope }}
+        run: |
+          set -uo pipefail
+          DLL=explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll
+          PLAN="$RUNNER_TEMP/shards.json"
+
+          if ! dotnet build explorer/ci/ScopeInWorldTests -c Release --nologo -v quiet; then
+            echo "::warning::Scope tool did not build — the suite runs on one runner."
+            exit 0
+          fi
+
+          # The packer's invariants — a disjoint cover, no token containing another, no empty
+          # shard — are checked before a split it produced is trusted with the run.
+          if ! dotnet "$DLL" --self-test; then
+            echo "::warning::Golden closure check did not pass — the suite runs on one runner."
+            exit 0
+          fi
+
+          # No --shards here: the count lives in the tool, so every origin splits the same way.
+          # The tool writes no plan on any doubt of its own, including a scope naming a fixture
+          # this ref does not have.
+          dotnet "$DLL" --scope "$SCOPE" --shard-plan "$PLAN" \
+            > /dev/null 2> "$RUNNER_TEMP/plan.log" || true
+
+          if [ -f "$RUNNER_TEMP/plan.log" ]; then
+            # Indented code block, not a fence: a fixture name holding a backtick run cannot
+            # break out of it and inject markdown into the summary.
+            {
+              echo '### InWorld shards'
+              echo
+              sed 's/^/    /' "$RUNNER_TEMP/plan.log"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ ! -f "$PLAN" ]; then
+            echo "::warning::No shard plan was written — the suite runs on one runner."
+            exit 0
+          fi
+
+          {
+            echo 'shards<<PLAN_EOF'
+            jq -c '.shards' "$PLAN"
+            echo 'PLAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # One step assembles the answer so the matrix below reads a single output, and a
+      # skipped or failed step above still leaves it a valid one.
+      - name: Publish the plan
+        id: plan
+        env:
+          COMPUTED_PLAN: ${{ steps.split.outputs.shards }}
+        run: |
+          set -euo pipefail
+
+          # The unsplit fallback is a one-shard matrix rather than a special case downstream:
+          # every step after this reads its work out of the matrix either way.
+          SHARD_PLAN="${COMPUTED_PLAN:-}"
+          if [ -z "$SHARD_PLAN" ]; then
+            SHARD_PLAN=$(jq -cn --arg f "$FILTER" '[{index:1,name:"1/1",filter:$f,fixtures:"",tests:0}]')
+          fi
+
+          # Never publish something the matrix cannot parse: an expression error there fails
+          # the leg before any step of it can say why. An empty output falls back instead.
+          if ! printf '%s' "$SHARD_PLAN" | jq -e 'type == "array" and length > 0' > /dev/null 2>&1; then
+            echo "::warning::Planned matrix is not a non-empty array — the suite runs on one runner."
+            exit 0
+          fi
+
+          printf '%s' "$SHARD_PLAN" \
+            | jq -r '.[] | "shard \(.name): \(.tests) test(s) in \(.fixtures // "" | if . == "" then "the whole selection" else . end)"'
+
+          {
+            echo 'shards<<PLAN_EOF'
+            printf '%s\n' "$SHARD_PLAN"
+            echo 'PLAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+
   benchmark:
     # Explicit, or the matrix appends every value it carries — including the whole filter.
     name: Windows InWorld tests ${{ matrix.name }}
+    needs: plan
+    # A plan job that died still leaves a runnable leg: the fallback below is the whole
+    # selection on one runner, which is the same answer it gives when there is nothing to split.
+    if: ${{ !cancelled() }}
     runs-on: win-gpu-t4-explorer
     strategy:
       fail-fast: false
-      # One entry per runner, planned by explorer/ci/ScopeInWorldTests from the fixtures the
-      # PR actually reaches. Never a literal fixture list: the suite outgrows one silently.
+      # One entry per runner, planned by explorer/ci/ScopeInWorldTests from the fixtures in
+      # scope. Never a literal fixture list: the suite outgrows one silently.
       matrix:
-        include: ${{ fromJSON(inputs.shards != '' && inputs.shards || '[{"index":1,"name":"1/1","filter":"","fixtures":"","tests":0}]') }}
+        include: ${{ fromJSON(needs.plan.outputs.shards != '' && needs.plan.outputs.shards || '[{"index":1,"name":"1/1","filter":"","fixtures":"","tests":0}]') }}
     timeout-minutes: 55
 
     env:
@@ -102,8 +259,15 @@ jobs:
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
 
     steps:
+      # `repository` is mandatory: a bare checkout inside a workflow_call run
+      # resolves to the CALLER's repo, and the explorer/ci scripts every step
+      # below runs only exist here. Same expression as the macOS leg in
+      # run-inworld-suite.yml, so both legs of a run test the same ref.
       - name: Check out automation tests
         uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       - name: Resolve build URL
         shell: powershell
