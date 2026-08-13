@@ -155,15 +155,22 @@ public class BackpackEmotesTests : BaseTest
         var emotes = Views.ExplorePanel.Backpack.Emotes;
         emotes.Pager.WaitFor();
 
+        // A shot per read, unconditionally — this test's failures are all about what the grid
+        // held at a given moment, and the teardown's final frame only ever shows the last one.
+        // Verification shots would not do: CI leaves them off by default, so the runs worth
+        // examining are exactly the ones that would carry none.
         var firstPageItem = ReadSettledFirstItemName(emotes);
         Reporter.Log($"Page 1 first emote: {firstPageItem}");
+        Reporter.TakeScreenshot("emotes_read_page1_baseline");
 
         var secondPageItem = FlipPageAndReadFirstItem(emotes, emotes.Pager.NextButton, firstPageItem);
         Reporter.Log($"Page 2 first emote: {secondPageItem}");
+        Reporter.TakeScreenshot("emotes_read_page2");
         Assert.That(secondPageItem, Is.Not.EqualTo(firstPageItem),
             "First emote on page 2 should differ from first emote on page 1");
 
         var backOnFirstPage = FlipPageAndReadFirstItem(emotes, emotes.Pager.PreviousButton, secondPageItem);
+        Reporter.TakeScreenshot("emotes_read_page1_again");
         Assert.That(backOnFirstPage, Is.EqualTo(firstPageItem),
             "Navigating back should show page 1's first emote again");
         Reporter.Log("Emote pagination forward and back verified");
