@@ -19,6 +19,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     // exceeding 20s, and a dev build was then measured taking 17.5s to fill a grid page
     // without finishing. Content load tracks asset streaming, not the panel.
     private const double CONTENT_TIMEOUT = 40D;  // waiting on content the client streams in
+    // A whole page is sixteen streams, not one, and it was sharing the single-element ceiling.
+    // Measured filling in 30.2s, 33.0s and 35.5s on runs that passed, so 40s left a handful of
+    // seconds of headroom and the emote page duly ran out of it twice — once with nothing loaded,
+    // once with thirteen of sixteen done. Only ever spent on a page that is still filling.
+    private const double GRID_PAGE_TIMEOUT = 90D;
     // Deliberately not lowered with the rest: equipping presses a button that only exists
     // while the overlay is up, so this is the one ceiling that can cost an equip.
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
@@ -401,7 +406,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             // One budget shared across the tiles, not one ceiling each — a grid that never
             // finishes would otherwise burn GRID_ITEM_COUNT x SETTLE_TIMEOUT.
-            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
             foreach (var item in GridItems)
                 item.LoadedIndicator.WaitFor(
                     Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
@@ -556,7 +561,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public void WaitForGridPageLoaded()
         {
             // One budget shared across the tiles, not one ceiling each.
-            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
             foreach (var item in GridItems)
                 item.LoadedIndicator.WaitFor(
                     Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
