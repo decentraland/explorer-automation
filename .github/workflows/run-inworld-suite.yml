@@ -1106,6 +1106,10 @@ jobs:
       # serialize the two legs behind each other.
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || (github.repository == 'decentraland/explorer-automation' && github.sha || format('run-{0}', github.run_id)) }}
       pr_number: ${{ inputs.pr_number }}
+      # Windows twin of the macOS pin in inworld-pr.yml — the unity-explorer
+      # #9728 (gateway) branch build. Remove with that pin before merge; empty
+      # falls back to the newest dev build this leg resolves on its own.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/gateway/pr-24999-74f1b81/Decentraland_windows64.zip'
     secrets: inherit
 
   # One table for every leg. Each leg posts its own row as an artifact because a

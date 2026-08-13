@@ -217,11 +217,10 @@ jobs:
     if: needs.resolve.outputs.should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
-      # Empty build_url makes the reusable resolve the newest unity-explorer
-      # dev build. That must stay a branch build: release zips are compiled
-      # without the AltTester scripting define and hang at "Wait for
-      # connection: 0%".
-      build_url: ''
+      # Pinned to the unity-explorer #9728 (gateway) branch build so this
+      # branch's runs exercise --base-domain; branch builds keep the AltTester
+      # scripting define. Revert to '' (newest dev build) before merge.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/gateway/pr-24999-74f1b81/Decentraland_macos.zip'
       filter: ${{ needs.resolve.outputs.filter }}
       shards: ${{ needs.resolve.outputs.shards }}
       pr_number: ${{ github.event.pull_request.number }}
