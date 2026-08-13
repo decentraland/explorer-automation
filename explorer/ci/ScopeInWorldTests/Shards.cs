@@ -12,6 +12,12 @@ namespace ExplorerAutomation.Ci.ScopeInWorldTests;
 internal static class Shards
 {
     /// <summary>
+    /// Runners a selection is split across. Here rather than in a workflow so no caller can
+    /// plan a different number, and so the golden cases below check the number CI uses.
+    /// </summary>
+    internal const int DefaultCount = 2;
+
+    /// <summary>
     /// Selections at or below this many tests run on one runner: a second shard has to acquire
     /// a runner, install the Explorer and provision an account before its first test, and a
     /// small scope pays that in full for a saving smaller than it.

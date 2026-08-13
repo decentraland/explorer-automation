@@ -14,8 +14,9 @@ name: InWorld Suite
 # Runs both platforms and reports them together:
 #
 #   run     macOS, GitHub-hosted macos-14, the whole selection on one runner
-#   windows windows-inworld-custom-image.yml, the selection split across the
-#           shard plan's runners
+#   windows windows-inworld-custom-image.yml, the same selection split across
+#           runners — that leg plans its own split, from `scope` when a caller
+#           resolved one and from `filter` otherwise
 #   report  one table over every leg, to the job summary and one PR comment
 #
 # The Windows leg stays its own file — the install steps (bash/brew/dmg against
@@ -98,8 +99,8 @@ on:
         type: boolean
         required: false
         default: false
-      shards:
-        description: 'Shard plan for the Windows leg, as a JSON array from Resolve test scope. Empty runs `filter` on one Windows runner.'
+      scope:
+        description: 'What the Windows leg splits, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from `filter` — the whole category splits, anything narrower runs on one Windows runner.'
         type: string
         required: false
         default: ''
@@ -1098,7 +1099,7 @@ jobs:
     if: inputs.windows
     uses: ./.github/workflows/windows-inworld-custom-image.yml
     with:
-      shards: ${{ inputs.shards }}
+      scope: ${{ inputs.scope }}
       test_filter: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       verification_screenshots: false
       # Same expression the macOS leg resolves COMMIT_SHA with, so both legs publish under

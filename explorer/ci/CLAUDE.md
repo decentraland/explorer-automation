@@ -24,6 +24,38 @@ A job-level `env:` key beats a value written to `$GITHUB_ENV`, silently. When a 
 something later steps consume, the resolved name must not also exist in the job's `env:` block —
 `BUILD_URL_INPUT` and `BUILD_URL` are split for exactly that reason.
 
+## The Windows leg is sharded on every path
+
+One job builds the shard matrix — `plan` in `windows-inworld-custom-image.yml` — and every origin of
+that leg goes through it. Callers say **what** to split (`scope`: `ALL` or `FIXTURES: A B C`), never
+how it splits; the count and the packing live in `explorer/ci/ScopeInWorldTests`. Only a PR run
+resolves a scope, so only a PR run has one to pass:
+
+| origin | passes | splits |
+| --- | --- | --- |
+| `inworld-pr.yml` | the scope its resolver printed | that scope |
+| `inworld-main.yml` | `scope: 'ALL'` | the whole category |
+| `run-inworld-suite.yml` dispatch | nothing; `filter` is empty or `Category=InWorld` | the whole category |
+| `windows-inworld-custom-image.yml` dispatch | a `scope`, or a narrower `test_filter` | that scope, else one runner |
+
+The rules that keep it that way, all of them load-bearing:
+
+- **A new caller that forgets `scope` still shards.** An empty scope is read back from `test_filter`:
+  empty or `Category=InWorld` means the whole category. Only a genuinely narrower filter runs unsplit,
+  because a vstest expression cannot be mapped back to the fixtures the packer weighs.
+- **Nothing outside the tool may choose a shard count.** `Shards.DefaultCount` is the only one, and
+  `--self-test` asserts the covers at exactly that number. A workflow passing `--shards` would be a
+  second answer to the same question.
+- **The unsplit case is still a one-shard matrix**, so no step downstream needs a special case, and
+  `1/1` in a job name is the visible sign that a run did not split.
+- **A plan is never passed between workflows as a matrix.** Handing a resolved *scope* to the planner
+  is what removed the "is this plan still valid for this scope" check that used to guard the seam.
+
+Every degradation is one runner, never fewer tests: the tool writes no plan on any doubt (an unknown
+fixture name, untrusted counts, a failed self-test), and a missing plan falls back to the caller's own
+filter on a single shard. When touching any of this, run `--self-test` and check that a `1/1` job name
+is a decision you can point at rather than a default nobody chose.
+
 ## Reading a leg's result
 
 Matrix jobs cannot carry per-instance outputs, so each shard writes its row as an artifact and a

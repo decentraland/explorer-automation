@@ -9,7 +9,8 @@ name: InWorld (main)
 #
 # All the mechanics live in run-inworld-suite.yml, which runs macOS and Windows and
 # tabulates both. There is no PR to comment on, so the table lands in the job summary
-# alongside the Allure report link.
+# alongside the Allure report link. The Windows leg splits the category across shards
+# here exactly as it does on a PR.
 
 on:
   push:
@@ -51,7 +52,8 @@ jobs:
       # commit_sha and branch_label from github.sha / github.ref_name, and an
       # empty pr_number keeps it summary-only.
       filter: ''
-      # No scope resolution on main, so no plan: the Windows leg runs the whole
-      # category on one runner rather than a split it cannot verify.
-      shards: ''
+      # Nothing resolves a scope on main, so it is stated: the whole category. The
+      # Windows leg splits it with the same tool, into the same number of shards,
+      # as it splits a PR's narrower scope.
+      scope: 'ALL'
     secrets: inherit
