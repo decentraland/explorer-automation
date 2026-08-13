@@ -298,21 +298,25 @@ jobs:
           # Unity arg placed after one silently overwrites it: -screen-fullscreen 0 landing after
           # --resolution is how resolution became 0. Single-dash args first, where there is no
           # key to clobber.
-          $explorerProcess = Start-Process -FilePath $explorer.FullName `
-            -ArgumentList @(
-              '-screen-width', $env:EXPLORER_RENDER_WIDTH,
-              '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
-              '-screen-fullscreen', '0',
-              '--skip-version-check', '--alttester', '--position', '100,100', '--dclenv', 'org',
-              '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
-              '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
-              # The one that decides the viewport: the client re-applies its own windowed size
-              # during startup and overwrites whatever -screen-* asked for.
-              '--resolution', "$($env:EXPLORER_RENDER_WIDTH)x$($env:EXPLORER_RENDER_HEIGHT)"
-            ) `
-            -PassThru
+          $explorerArgs = @(
+            '-screen-width', $env:EXPLORER_RENDER_WIDTH,
+            '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
+            '-screen-fullscreen', '0',
+            '--skip-version-check', '--alttester', '--position', '100,100', '--dclenv', 'org',
+            '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
+            '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
+            # The one that decides the viewport: the client re-applies its own windowed size
+            # during startup and overwrites whatever -screen-* asked for.
+            '--resolution', "$($env:EXPLORER_RENDER_WIDTH)x$($env:EXPLORER_RENDER_HEIGHT)"
+          )
+
+          # Echoed the way MetaForge echoes its own launch on the macOS leg. This leg launches
+          # the client itself, so without this the log shows only MetaForge's "No target
+          # specified" - which reads like a misconfiguration and says nothing about what ran.
+          Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
+          $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Explorer started with PID $($explorerProcess.Id): $($explorer.FullName)"
+          Write-Host "Explorer started with PID $($explorerProcess.Id)"
 
           $appLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"
           $connectDeadline = [DateTime]::UtcNow.AddSeconds(120)
