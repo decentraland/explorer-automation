@@ -1,0 +1,819 @@
+name: Windows InWorld custom-image benchmark
+
+on:
+  workflow_call:
+    inputs:
+      scope:
+        description: 'What to split, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from test_filter.'
+        required: false
+        default: ''
+        type: string
+      test_filter:
+        description: 'NUnit filter. Used only for a shard the plan left without one.'
+        required: false
+        default: ''
+        type: string
+      verification_screenshots:
+        description: 'Capture intermediate verification screenshots.'
+        required: false
+        default: false
+        type: boolean
+      commit_sha:
+        description: 'Commit under test. Feeds the S3 report path, exactly as on the macOS leg.'
+        required: false
+        default: ''
+        type: string
+      pr_number:
+        description: 'PR number on the caller repo, for the S3 path. Empty gives a manual segment.'
+        required: false
+        default: ''
+        type: string
+      build_url:
+        description: 'Windows Explorer artifact to test. Empty resolves the newest reachable dev build.'
+        required: false
+        default: ''
+        type: string
+      tests_ref:
+        description: 'explorer-automation ref for tests and the explorer/ci scripts. Empty falls back to main.'
+        required: false
+        default: ''
+        type: string
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'What to split: ALL, or `FIXTURES: A B C`. Empty is read from test_filter.'
+        required: false
+        default: ''
+        type: string
+      test_filter:
+        description: 'NUnit filter. Use Category=InWorld for the complete suite.'
+        required: false
+        default: 'Name=TestExplorerIsInWorldFromTokenBridge'
+        type: string
+      verification_screenshots:
+        description: 'Capture intermediate verification screenshots (slow; final test screenshots remain enabled).'
+        required: false
+        default: false
+        type: boolean
+      build_url:
+        description: 'Windows Explorer artifact to test. Empty resolves the newest reachable dev build.'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+
+concurrency:
+  # Keep duplicate pushes serialized, while allowing explicitly dispatched
+  # shards to use the larger runner's configured job concurrency.
+  group: windows-inworld-custom-image-benchmark-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The only place a shard matrix is built, for every origin of this leg — a PR run that
+  # resolved a scope, a push to main, a dispatch. Callers pass what to split, never how it
+  # splits: the tool owns the packing and the shard count, so no path can plan differently
+  # and no path can end up unsplit by omission.
+  plan:
+    name: Plan shards
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    env:
+      SCOPE_INPUT: ${{ inputs.scope }}
+      FILTER: ${{ inputs.test_filter }}
+    steps:
+      # A filter is a vstest expression and nothing maps one back to the fixtures the packer
+      # weighs, so only the two spellings of the whole category can be read as a scope. That
+      # inference is what keeps a caller that never resolved anything from running unsplit.
+      - name: Resolve what to split
+        id: want
+        run: |
+          set -euo pipefail
+          SCOPE="$SCOPE_INPUT"
+          if [ -z "$SCOPE" ] && { [ -z "$FILTER" ] || [ "$FILTER" = 'Category=InWorld' ]; }; then
+            SCOPE='ALL'
+          fi
+
+          if [ -z "$SCOPE" ]; then
+            echo "::notice::Filter '${FILTER}' names no scope to split, so it runs on one runner."
+          else
+            echo "::notice::Splitting ${SCOPE}."
+          fi
+          echo "scope=$SCOPE" >> "$GITHUB_OUTPUT"
+
+      # Same expression as the leg's own checkout below, and mandatory for the same reason:
+      # a bare checkout in a workflow_call run fetches the CALLER, which has no
+      # explorer/ci/ScopeInWorldTests to plan with. Getting this wrong costs the split
+      # rather than the run, so it would degrade quietly.
+      - name: Check out the scope resolver
+        if: steps.want.outputs.scope != ''
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      # No global.json in the repo, so the SDK the scope tool builds under is pinned here
+      # rather than inherited from the runner image.
+      - uses: actions/setup-dotnet@v5
+        if: steps.want.outputs.scope != ''
+        with:
+          dotnet-version: '10.0.x'
+
+      # Same key as inworld-pr.yml's resolve job, so both share one cache. A cold restore is
+      # most of this job's wall clock.
+      - uses: actions/cache@v6
+        if: steps.want.outputs.scope != ''
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('explorer/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # MSBuildWorkspace needs the NuGet references resolved on disk or every symbol lookup
+      # comes back null.
+      - name: Restore test project
+        if: steps.want.outputs.scope != ''
+        run: dotnet restore explorer/Tests/Tests.csproj
+
+      # Nothing in here may fail the leg: no plan means the whole selection on one runner,
+      # which is slow rather than wrong.
+      - name: Plan the split
+        id: split
+        if: steps.want.outputs.scope != ''
+        env:
+          SCOPE: ${{ steps.want.outputs.scope }}
+        run: |
+          set -uo pipefail
+          DLL=explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll
+          PLAN="$RUNNER_TEMP/shards.json"
+
+          if ! dotnet build explorer/ci/ScopeInWorldTests -c Release --nologo -v quiet; then
+            echo "::warning::Scope tool did not build — the suite runs on one runner."
+            exit 0
+          fi
+
+          # The packer's invariants — a disjoint cover, no token containing another, no empty
+          # shard — are checked before a split it produced is trusted with the run.
+          if ! dotnet "$DLL" --self-test; then
+            echo "::warning::Golden closure check did not pass — the suite runs on one runner."
+            exit 0
+          fi
+
+          # No --shards here: the count lives in the tool, so every origin splits the same way.
+          # The tool writes no plan on any doubt of its own, including a scope naming a fixture
+          # this ref does not have.
+          dotnet "$DLL" --scope "$SCOPE" --shard-plan "$PLAN" \
+            > /dev/null 2> "$RUNNER_TEMP/plan.log" || true
+
+          if [ -f "$RUNNER_TEMP/plan.log" ]; then
+            # Indented code block, not a fence: a fixture name holding a backtick run cannot
+            # break out of it and inject markdown into the summary.
+            {
+              echo '### InWorld shards'
+              echo
+              sed 's/^/    /' "$RUNNER_TEMP/plan.log"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ ! -f "$PLAN" ]; then
+            echo "::warning::No shard plan was written — the suite runs on one runner."
+            exit 0
+          fi
+
+          {
+            echo 'shards<<PLAN_EOF'
+            jq -c '.shards' "$PLAN"
+            echo 'PLAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # One step assembles the answer so the matrix below reads a single output, and a
+      # skipped or failed step above still leaves it a valid one.
+      - name: Publish the plan
+        id: plan
+        env:
+          COMPUTED_PLAN: ${{ steps.split.outputs.shards }}
+        run: |
+          set -euo pipefail
+
+          # The unsplit fallback is a one-shard matrix rather than a special case downstream:
+          # every step after this reads its work out of the matrix either way.
+          SHARD_PLAN="${COMPUTED_PLAN:-}"
+          if [ -z "$SHARD_PLAN" ]; then
+            SHARD_PLAN=$(jq -cn --arg f "$FILTER" '[{index:1,name:"1/1",filter:$f,fixtures:"",tests:0}]')
+          fi
+
+          # Never publish something the matrix cannot parse: an expression error there fails
+          # the leg before any step of it can say why. An empty output falls back instead.
+          if ! printf '%s' "$SHARD_PLAN" | jq -e 'type == "array" and length > 0' > /dev/null 2>&1; then
+            echo "::warning::Planned matrix is not a non-empty array — the suite runs on one runner."
+            exit 0
+          fi
+
+          printf '%s' "$SHARD_PLAN" \
+            | jq -r '.[] | "shard \(.name): \(.tests) test(s) in \(.fixtures // "" | if . == "" then "the whole selection" else . end)"'
+
+          {
+            echo 'shards<<PLAN_EOF'
+            printf '%s\n' "$SHARD_PLAN"
+            echo 'PLAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  benchmark:
+    # Explicit, or the matrix appends every value it carries — including the whole filter.
+    name: Windows InWorld tests ${{ matrix.name }}
+    needs: plan
+    # A plan job that died still leaves a runnable leg: the fallback below is the whole
+    # selection on one runner, which is the same answer it gives when there is nothing to split.
+    if: ${{ !cancelled() }}
+    runs-on: win-gpu-t4-explorer
+    strategy:
+      fail-fast: false
+      # One entry per runner, planned by explorer/ci/ScopeInWorldTests from the fixtures in
+      # scope. Never a literal fixture list: the suite outgrows one silently.
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.shards != '' && needs.plan.outputs.shards || '[{"index":1,"name":"1/1","filter":"","fixtures":"","tests":0}]') }}
+    timeout-minutes: 55
+
+    env:
+      # Deliberately not BUILD_URL: a job-level env key wins over the value Resolve build URL
+      # writes to GITHUB_ENV.
+      BUILD_URL_INPUT: ${{ inputs.build_url }}
+      TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
+      WINDOWS_SHARD: ${{ matrix.name }}
+      SHARD_INDEX: ${{ matrix.index }}
+      SHARD_FIXTURES: ${{ matrix.fixtures }}
+      # 0 when the plan could not weight the split; the loss check then only asserts
+      # that the shard ran something.
+      SHARD_EXPECTED_TESTS: ${{ matrix.tests }}
+      # The mode we ask the display for. Nothing guarantees the runner exposes it, so the
+      # render size is derived from whatever mode is actually active - see Resolve render size.
+      EXPLORER_TARGET_WIDTH: '1920'
+      EXPLORER_TARGET_HEIGHT: '1080'
+      COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      PR_NUMBER_INPUT: ${{ inputs.pr_number }}
+      # vars.* inside a workflow_call run reads the caller's repo vars. Kept in lockstep
+      # with the bucket secret selected below, same as the macOS leg.
+      PUBLIC_URL_PREFIX: ${{ github.repository == 'decentraland/explorer-automation' && vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL || vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+      ALT_VERBOSE_LOGS: 'false'
+      EXPLORER_PERF_RECORD: '0'
+      VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
+
+    steps:
+      # `repository` is mandatory: a bare checkout inside a workflow_call run
+      # resolves to the CALLER's repo, and the explorer/ci scripts every step
+      # below runs only exist here. Same expression as the macOS leg in
+      # run-inworld-suite.yml, so both legs of a run test the same ref.
+      - name: Check out automation tests
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      - name: Resolve build URL
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerBuildUrl.ps1") `
+            -BuildUrl $env:BUILD_URL_INPUT
+
+      - name: Record benchmark context
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Same field set and order as the macOS leg in run-inworld-suite.yml, so the run
+          # summary reads the same for every leg. Keep the two in step.
+          $fixtures = if ($env:SHARD_FIXTURES) { $env:SHARD_FIXTURES } else { "whole selection" }
+          $planned = if ([int]$env:SHARD_EXPECTED_TESTS -gt 0) { "$env:SHARD_EXPECTED_TESTS tests" } else { "whole selection" }
+          @(
+            "## InWorld suite (Windows $env:WINDOWS_SHARD)"
+            ""
+            "- Leg: ``Windows $env:WINDOWS_SHARD``"
+            "- Platform: ``win-gpu-t4-explorer`` (image ``unity-explorer-windows:1.0.0``)"
+            "- Runner: ``$env:RUNNER_NAME``"
+            "- Fixtures: ``$fixtures``"
+            "- Planned: ``$planned``"
+            "- Filter: ``$env:TEST_FILTER``"
+            "- Build: ``$env:BUILD_URL``"
+            "- Started: ``$([DateTime]::UtcNow.ToString('o'))``"
+          ) >> $env:GITHUB_STEP_SUMMARY
+          # Read back by Record shard result to report this shard's wall clock.
+          "SHARD_STARTED_AT=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "- Requested display mode: ``$env:EXPLORER_TARGET_WIDTH``x``$env:EXPLORER_TARGET_HEIGHT``" >> $env:GITHUB_STEP_SUMMARY
+
+          nvidia-smi
+          git --version
+          dotnet --version
+          node --version
+          mf --version
+          allure --version
+
+      # Mirrors the macOS leg's Compute identifiers, plus a per-shard segment: two shards
+      # publishing to one prefix would overwrite each other's report.
+      - name: Compute identifiers
+        id: ids
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repoSlug = $env:GITHUB_REPOSITORY -replace '/', '-'
+          $prSegment = if ($env:PR_NUMBER_INPUT) { $env:PR_NUMBER_INPUT } else { "manual-$env:GITHUB_RUN_ID" }
+          $shardSegment = "windows-$env:SHARD_INDEX"
+          $s3Path = "@dcl/$repoSlug/inworld/$prSegment/$env:COMMIT_SHA/$shardSegment"
+          "s3_path=$s3Path" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "report_url=$env:PUBLIC_URL_PREFIX/$s3Path/index.html" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Verify required secrets
+        shell: powershell
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          if (-not $env:ALTTESTER_LICENSE) { throw "ALTTESTER_LICENSE is not available" }
+          if (-not $env:GH_TOKEN) { throw "REPOS_READ_ONLY_TOKEN is not available" }
+          gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
+
+      - name: Apply CI log matrix
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\log-matrix.json"
+          $destination = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\log-matrix.json"
+          if (-not (Test-Path $source)) { throw "CI log matrix source missing: $source" }
+          New-Item (Split-Path $destination -Parent) -ItemType Directory -Force | Out-Null
+          Copy-Item $source $destination -Force
+
+      - name: Activate AltTester license
+        shell: powershell
+        env:
+          ALTTESTER_LICENSE: ${{ secrets.ALTTESTER_LICENSE }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          mf alttester set-license $env:ALTTESTER_LICENSE
+
+      - name: Pre-install Explorer build
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          mf explorer install $env:BUILD_URL --non-interactive
+
+      - name: Provision MetaForge test account
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
+          New-Item $userdata -ItemType Directory -Force | Out-Null
+          $account = "ci-inworld-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
+          # MetaForge prints the generated seed phrase and auth token. Capture
+          # its output so ephemeral test credentials never reach Actions logs.
+          $createOutput = & mf account create $account --env org 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "MetaForge account creation failed" }
+          $loginOutput = & mf account login $account --env org 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "MetaForge account login failed" }
+          Write-Host "Provisioned ephemeral MetaForge account $account for org"
+          "MF_ACCOUNT=$account" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Clear Explorer logs
+        shell: powershell
+        run: |
+          # Logs only. userdata_*.json in this directory is the client's prefs file, and the
+          # account MetaForge just provisioned lives there too - deleting it drops the session
+          # and the client comes up with nothing to log in as.
+          $logRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
+          @("Player.log", "AltTester-Server.log") | ForEach-Object {
+            $log = Join-Path $logRoot $_
+            if (Test-Path $log) { Remove-Item $log -Force }
+          }
+
+      - name: Resolve Explorer render size
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerRenderSize.ps1") `
+            -TargetWidth ([int]$env:EXPLORER_TARGET_WIDTH) `
+            -TargetHeight ([int]$env:EXPLORER_TARGET_HEIGHT)
+
+      - name: Run InWorld suite
+        id: test
+        # Sized for the whole category on one runner, so a shard has ample headroom.
+        timeout-minutes: 45
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+        run: |
+          # Keep the server and test command in the same Actions step. The
+          # runner terminates tracked child processes at step boundaries.
+          $ErrorActionPreference = "Stop"
+          $stdout = Join-Path $env:RUNNER_TEMP "alttester-stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "alttester-stderr.log"
+          $mf = (Get-Command mf -ErrorAction Stop).Source
+          $server = Start-Process -FilePath $mf `
+            -ArgumentList @('alttester', 'run', '--timeout', '120', '--verbose') `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr `
+            -PassThru
+          $env:ALTTESTER_MF_PID = $server.Id
+          "ALTTESTER_MF_PID=$($server.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          $deadline = [DateTime]::UtcNow.AddSeconds(120)
+          $listening = $false
+          do {
+            if ($server.HasExited) {
+              Get-Content $stdout -ErrorAction SilentlyContinue
+              Get-Content $stderr -ErrorAction SilentlyContinue
+              throw "MetaForge AltTester server exited before opening port 13000"
+            }
+            try {
+              $client = [System.Net.Sockets.TcpClient]::new()
+              $client.Connect('127.0.0.1', 13000)
+              $client.Dispose()
+              $listening = $true
+              Write-Host "AltTester server is listening on 127.0.0.1:13000"
+            } catch {
+              Start-Sleep -Seconds 2
+            }
+          } while (-not $listening -and [DateTime]::UtcNow -lt $deadline)
+
+          if (-not $listening) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "AltTester did not open port 13000 within 120 seconds"
+          }
+
+          # With AltTester already running, MetaForge assumes an app is also
+          # connected and intentionally skips Explorer launch. Launch the
+          # exact pre-installed build ourselves and verify its AltTester server
+          # receives a command before handing control to NUnit.
+          $explorerRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
+          $explorer = Get-ChildItem $explorerRoot -Recurse -Filter "Decentraland.exe" -File |
+            Where-Object { $_.FullName -like "*$env:BUILD_TAG*" } |
+            Select-Object -First 1
+          if (-not $explorer) { throw "Pre-installed Explorer executable was not found under $explorerRoot" }
+
+          $logMatrix = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\log-matrix.json"
+          # --position is the parcel to spawn at, not where the window goes: the client binds
+          # it to parcelToTeleportOverride. 0,0 is Genesis Plaza, whose crowd and scene load
+          # the UI tests should not have to sit in. The window/render size is --resolution.
+          #
+          # Order matters, and only in this direction. The client's parser treats every token
+          # that does not start with -- as the value of the last -- key it saw, so a single-dash
+          # Unity arg placed after one silently overwrites it: -screen-fullscreen 0 landing after
+          # --resolution is how resolution became 0. Single-dash args first, where there is no
+          # key to clobber.
+          $explorerArgs = @(
+            '-screen-width', $env:EXPLORER_RENDER_WIDTH,
+            '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
+            '-screen-fullscreen', '0',
+            '--skip-version-check', '--alttester', '--position', '100,100', '--dclenv', 'org',
+            '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
+            '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
+            # The one that decides the viewport: the client re-applies its own windowed size
+            # during startup and overwrites whatever -screen-* asked for.
+            '--resolution', "$($env:EXPLORER_RENDER_WIDTH)x$($env:EXPLORER_RENDER_HEIGHT)"
+          )
+
+          # Echoed the way MetaForge echoes its own launch on the macOS leg. This leg launches
+          # the client itself, so without this the log shows only MetaForge's "No target
+          # specified" - which reads like a misconfiguration and says nothing about what ran.
+          Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
+          $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru
+          "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Explorer started with PID $($explorerProcess.Id)"
+
+          $appLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"
+          $connectDeadline = [DateTime]::UtcNow.AddSeconds(120)
+          $appConnected = $false
+          do {
+            if ($explorerProcess.HasExited) { throw "Explorer exited before connecting to AltTester" }
+            if (Test-Path $appLog) {
+              $appConnected = Select-String -Path $appLog -Pattern 'command received' -Quiet
+            }
+            if (-not $appConnected) { Start-Sleep -Seconds 2 }
+          } while (-not $appConnected -and [DateTime]::UtcNow -lt $connectDeadline)
+          if (-not $appConnected) { throw "Explorer did not connect to AltTester within 120 seconds" }
+          Write-Host "Explorer exchanged commands with AltTester; starting NUnit suite"
+
+          # No target: run against the explicitly launched Explorer session.
+          $ErrorActionPreference = "Continue"
+          # Teed so the next step can read the count MetaForge reports. A pipe does not
+          # disturb $LASTEXITCODE, which still carries the native exit code.
+          # --report-type None for the same reason as the macOS leg: SingleFile inlines every
+          # attachment as base64 and overruns allure's size cap on a full run. Generation is
+          # ours, in the step below.
+          mf explorer test `
+            --non-interactive `
+            --filter "$env:TEST_FILTER" `
+            --report-type None | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "mf-test.log")
+          exit $LASTEXITCODE
+
+      # The macOS leg's Generate Allure report, in PowerShell. Same reasoning throughout:
+      # results land in the workspace build output because metaforge runs in cwd-mode; the
+      # gate is on *-result.json because a killed host still leaves containers and
+      # attachments that allure would turn into a valid {"total":0} report; and the tree is
+      # staged and swapped so index.html appears only once the whole report is there.
+      - name: Generate Allure report
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $reportDir = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\allure-report"
+
+          $results = Join-Path $env:GITHUB_WORKSPACE "explorer\Tests\bin\Debug\net10.0\allure-results"
+          if (-not (Test-Path $results)) {
+            $found = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE "explorer") -Recurse -Directory `
+              -Filter "allure-results" -ErrorAction SilentlyContinue | Select-Object -First 1
+            $results = if ($found) { $found.FullName } else { $null }
+          }
+
+          $hasResults = $false
+          if ($results) {
+            $hasResults = [bool](Get-ChildItem $results -Filter "*-result.json" -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1)
+          }
+          if (-not $hasResults) {
+            Write-Host "::warning::No Allure test results found, so nothing reported before the run stopped. Skipping report generation; logs still ship as an artifact."
+            exit 0
+          }
+
+          $stage = "$reportDir.staging"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          if (Test-Path $reportDir) { Remove-Item $reportDir -Recurse -Force }
+          Write-Host "Generating report from: $results"
+          allure awesome $results -o $stage
+          if ($LASTEXITCODE -ne 0) { throw "allure awesome failed with exit code $LASTEXITCODE" }
+          Move-Item $stage $reportDir
+
+      - name: Locate Allure report
+        id: report
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # An exact path check, not a search: the step above is the only thing writing a
+          # report under the data dir, and it swaps the tree in atomically.
+          $reportDir = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\allure-report"
+          if (-not (Test-Path (Join-Path $reportDir "index.html"))) {
+            Write-Host "::warning::Allure report not found; skipping upload."
+            "report_path=" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "report_dir=" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            Write-Host "Report at: $reportDir\index.html"
+            "report_path=$reportDir\index.html" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "report_dir=$reportDir" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      # An ungranted secret arrives as an empty string, so a family mismatch would otherwise
+      # surface as an opaque error from inside the AWS steps after a full test run. Fail here
+      # naming what is missing. The aws check is the one addition over the macOS leg: the CLI
+      # is preinstalled on GitHub's macOS image but is not guaranteed on this custom one.
+      - name: Verify S3 configuration
+        if: always() && steps.report.outputs.report_path != ''
+        shell: powershell
+        env:
+          CALLER_REPO: ${{ github.repository }}
+          BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
+          REGION: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION || secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          ACCESS_KEY_ID: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID || secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          SECRET_ACCESS_KEY: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY || secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $family = if ($env:CALLER_REPO -eq 'decentraland/explorer-automation') { 'DEV_EXPLORER_TEAM_' } else { 'EXPLORER_TEAM_' }
+
+          $missing = @()
+          foreach ($entry in @(
+            @{ Name = 'S3_BUCKET'; Value = $env:BUCKET },
+            @{ Name = 'AWS_DEFAULT_REGION'; Value = $env:REGION },
+            @{ Name = 'AWS_ACCESS_KEY_ID'; Value = $env:ACCESS_KEY_ID },
+            @{ Name = 'AWS_SECRET_ACCESS_KEY'; Value = $env:SECRET_ACCESS_KEY }
+          )) {
+            if (-not $entry.Value) { $missing += "secrets.$family$($entry.Name)" }
+          }
+          if (-not $env:PUBLIC_URL_PREFIX) { $missing += "vars.${family}S3_BUCKET_PUBLIC_URL" }
+
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::Caller $env:CALLER_REPO resolved an empty S3 config: $($missing -join ' '). Those entries must be granted to that repo at the org level and reach this workflow via ``secrets: inherit``."
+            exit 1
+          }
+
+          if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+            Write-Host "::error::The aws CLI is not on PATH on this runner image, so the report cannot be published to S3."
+            exit 1
+          }
+
+      - name: Configure AWS credentials
+        if: always() && steps.report.outputs.report_path != ''
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          aws-access-key-id: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID || secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY || secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION || secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+
+      - name: Upload Allure report to S3
+        id: s3
+        if: always() && steps.report.outputs.report_path != ''
+        shell: powershell
+        env:
+          BUCKET: ${{ github.repository == 'decentraland/explorer-automation' && secrets.DEV_EXPLORER_TEAM_S3_BUCKET || secrets.EXPLORER_TEAM_S3_BUCKET }}
+          S3_PATH: ${{ steps.ids.outputs.s3_path }}
+          REPORT_DIR: ${{ steps.report.outputs.report_dir }}
+          REPORT_URL: ${{ steps.ids.outputs.report_url }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          aws s3 sync $env:REPORT_DIR "s3://$env:BUCKET/$env:S3_PATH/" `
+            --acl public-read `
+            --cache-control "public, max-age=300"
+          if ($LASTEXITCODE -ne 0) { throw "aws s3 sync failed with exit code $LASTEXITCODE" }
+
+          # Bucket secret and public-URL var are configured independently, so a mismatched
+          # pair yields a green upload behind a dead link. Probe what we are about to
+          # advertise; warn rather than fail, since the report also ships as an artifact.
+          $http = '000'
+          foreach ($attempt in 1..3) {
+            try {
+              $response = Invoke-WebRequest -Uri $env:REPORT_URL -Method Head -UseBasicParsing -TimeoutSec 20
+              $http = [string][int]$response.StatusCode
+            } catch {
+              $http = '000'
+              if ($_.Exception.Response) { $http = [string][int]$_.Exception.Response.StatusCode }
+            }
+            if ($http -eq '200') { break }
+            Start-Sleep -Seconds 5
+          }
+          if ($http -eq '200') {
+            Write-Host "::notice::Report reachable at $env:REPORT_URL"
+          } else {
+            Write-Host "::warning::Uploaded to s3://$env:BUCKET/$env:S3_PATH/ but $env:REPORT_URL returned HTTP $http, so the public-URL var and the bucket secret likely name different buckets."
+          }
+
+      # Report discovery moved to Locate Allure report, which checks the one canonical path
+      # rather than searching. This keeps the log and diagnostic collection only.
+      - name: Locate benchmark outputs
+        id: outputs
+        if: always()
+        shell: powershell
+        run: |
+          $playerLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\Player.log"
+          if (Test-Path $playerLog) {
+            "player_log=$playerLog" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+          $diagnostics = Join-Path $env:GITHUB_WORKSPACE "benchmark-diagnostics"
+          New-Item $diagnostics -ItemType Directory -Force | Out-Null
+          $diagnosticFiles = @(
+            (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
+            (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
+            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
+          )
+          foreach ($file in $diagnosticFiles) {
+            if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
+          }
+
+      # Kept alongside the S3 publish, same as the macOS leg: artifact-url backs this leg's
+      # Allure cell when the upload did not land. Must stay ahead of Record shard result.
+      - name: Upload Allure report
+        id: allure
+        if: always() && steps.report.outputs.report_dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-custom-image-allure-shard${{ matrix.index }}-${{ github.run_id }}
+          path: ${{ steps.report.outputs.report_dir }}
+          retention-days: 7
+
+      - name: Upload Explorer log
+        if: always() && steps.outputs.outputs.player_log != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-custom-image-player-log-shard${{ matrix.index }}-${{ github.run_id }}
+          path: ${{ steps.outputs.outputs.player_log }}
+          retention-days: 7
+
+      - name: Upload benchmark diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-custom-image-diagnostics-shard${{ matrix.index }}-${{ github.run_id }}
+          path: benchmark-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Feeds the unified table in run-inworld-suite.yml's report job. A matrix job cannot
+      # carry per-instance outputs, so the row travels as an artifact.
+      #
+      # ASCII only in this body: powershell.exe reads the generated .ps1 as ANSI, so a UTF-8
+      # dash arrives as mojibake and fails to parse.
+      - name: Record shard result
+        if: always()
+        shell: powershell
+        env:
+          STEP_RESULT: ${{ steps.test.outcome }}
+          # S3 serves a rendered report, so prefer it; the artifact is a zip to download.
+          REPORT_URL: ${{ steps.s3.outcome == 'success' && steps.ids.outputs.report_url || steps.allure.outputs.artifact-url }}
+          REPORT_KIND: ${{ steps.s3.outcome == 'success' && 'Open' || 'Download' }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $log = Join-Path $env:RUNNER_TEMP "mf-test.log"
+
+          # Two summary forms to match: metaforge prints "All N tests passed." when nothing
+          # failed and "Tests finished: ..." otherwise. Matching only the latter reported no
+          # count exactly on a green shard, which also left the loss check below inert.
+          $passed = $null; $failed = 0; $skipped = 0
+          if (Test-Path $log) {
+            $text = Get-Content $log -Raw
+            $found = [regex]::Matches($text,
+              'Tests finished:\s*(\d+)\s*passed,\s*(\d+)\s*failed,\s*(\d+)\s*skipped')
+            $green = [regex]::Matches($text, 'All\s+(\d+)\s+tests?\s+passed')
+
+            if ($found.Count -gt 0) {
+              $g = $found[$found.Count - 1].Groups
+              $passed = [int]$g[1].Value; $failed = [int]$g[2].Value; $skipped = [int]$g[3].Value
+            }
+            elseif ($green.Count -gt 0) {
+              $passed = [int]$green[$green.Count - 1].Groups[1].Value; $failed = 0; $skipped = 0
+            }
+          }
+
+          $expected = 0
+          if ($env:SHARD_EXPECTED_TESTS) { $expected = [int]$env:SHARD_EXPECTED_TESTS }
+          $ran = if ($null -eq $passed) { $null } else { $passed + $failed + $skipped }
+
+          $row = [ordered]@{
+            label    = "Windows $env:WINDOWS_SHARD"
+            order    = 1 + [int]$env:SHARD_INDEX
+            result   = $env:STEP_RESULT
+            passed   = $passed
+            failed   = $failed
+            skipped  = $skipped
+            ran      = $ran
+            planned  = $expected
+            fixtures = $env:SHARD_FIXTURES
+            runner   = $env:RUNNER_NAME
+            seconds  = [int]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int]$env:SHARD_STARTED_AT)
+            report   = "$env:REPORT_URL"
+            report_kind = if ($env:REPORT_KIND) { "$env:REPORT_KIND" } else { 'Download' }
+          }
+          $dir = Join-Path $env:RUNNER_TEMP "inworld-result"
+          New-Item $dir -ItemType Directory -Force | Out-Null
+          # WriteAllText, not Out-File -Encoding utf8: the latter emits a BOM on 5.1, and the
+          # report job concatenates these rows, so a BOM lands mid-stream and jq refuses it.
+          [System.IO.File]::WriteAllText((Join-Path $dir "row.json"), ($row | ConvertTo-Json -Compress))
+          Get-Content (Join-Path $dir "row.json")
+
+          # Same three closing rows as the macOS leg. Keep the two in step.
+          $verdict = if ($env:STEP_RESULT -eq 'success') { 'passed' }
+                     elseif ($env:STEP_RESULT -eq 'skipped') { 'skipped' }
+                     elseif ($failed -gt 0) { "$failed failed" }
+                     else { 'failed' }
+          $ranText = if ($null -eq $ran) { 'not reported' } else { "$ran of $expected planned" }
+          $kind = if ($env:REPORT_KIND) { $env:REPORT_KIND } else { 'Download' }
+          $allure = if ($env:REPORT_URL) { "[$kind]($env:REPORT_URL)" } else { 'not generated' }
+          @(
+            "- Result: $verdict"
+            "- Ran: ``$ranText``"
+            "- Allure: $allure"
+          ) >> $env:GITHUB_STEP_SUMMARY
+
+          # A vstest filter matching nothing exits clean, so a shard running less than it was
+          # planned is the loss this catches. An absent count is not proof of loss: the step
+          # that would have printed it already failed and said so.
+          if ($null -eq $ran) {
+            Write-Host "::warning::MetaForge reported no test count for shard $env:WINDOWS_SHARD"
+            exit 0
+          }
+          if ($ran -eq 0) {
+            throw "Shard $env:WINDOWS_SHARD ran no tests, so its filter matched nothing"
+          }
+          if ($expected -gt 0 -and $ran -lt $expected) {
+            throw "Shard $env:WINDOWS_SHARD ran $ran of $expected planned tests"
+          }
+          Write-Host "Shard $env:WINDOWS_SHARD ran $ran test(s), planned $expected"
+
+      - name: Upload shard result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inworld-result-win-${{ matrix.index }}
+          path: ${{ runner.temp }}/inworld-result/row.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup MetaForge state
+        if: always()
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          try { mf explorer server stop --non-interactive } catch { Write-Host "server stop: $_" }
+
+          Get-Process | Where-Object { $_.ProcessName -match "Decentraland|Unity|AltTester" } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if ($env:ALTTESTER_MF_PID) {
+            Stop-Process -Id $env:ALTTESTER_MF_PID -Force -ErrorAction SilentlyContinue
+          }
+
+          try { mf alttester deactivate --non-interactive } catch { Write-Host "AltTester deactivate: $_" }
+          if ($env:MF_ACCOUNT) {
+            try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
+          }

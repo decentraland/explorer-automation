@@ -77,9 +77,20 @@ public record Readable(By by, string name) : Locatable(by, name)
         {
             return GetText(timeout, verificationShot: false);
         }
-        catch (AssertionException)
+        catch (Exception ex) when (IsMiss(ex))
         {
             return string.Empty;
         }
+    }
+
+    // The [AllureStep] aspect calls the wrapped method through reflection, so the miss arrives
+    // here inside one TargetInvocationException per decorated frame it crossed. Catching the
+    // bare type looks right and never fires.
+    private static bool IsMiss(Exception exception)
+    {
+        for (var e = exception; e != null; e = e.InnerException)
+            if (e is AssertionException) return true;
+
+        return false;
     }
 }

@@ -33,6 +33,7 @@ Keep both short. This applies to every file in the repo, both stacks.
 ## When to Read Which CLAUDE.md
 
 - Working on a `.cs` file, a Unity-side flow, or anything under `explorer/` → read [explorer/CLAUDE.md](explorer/CLAUDE.md).
+- Working on the InWorld workflows or the scripts they call → also read [explorer/ci/CLAUDE.md](explorer/ci/CLAUDE.md), which carries the runner and PowerShell constraints those encode.
 - Working on a `.ts`/`.spec.ts` file, a browser flow, or anything under `web/` → read [web/CLAUDE.md](web/CLAUDE.md).
 - Touching shared files (`.env`, `Makefile`, root `README.md`, this file) → no extra context needed beyond this file.
 

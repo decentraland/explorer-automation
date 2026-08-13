@@ -93,9 +93,114 @@ internal static class GoldenCases
             + $"{Environment.NewLine}        expected{Environment.NewLine}          "
             + string.Join(Environment.NewLine + "          ", Sorted(UnreachableViews)));
 
+        failed += CheckShards(graph);
+
         Console.WriteLine();
         Console.WriteLine(failed == 0 ? "all golden cases passed" : $"{failed} golden case(s) failed");
         return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The split is generated instead of hand-written precisely so it cannot drop a fixture, so
+    /// that is what gets asserted — no total is pinned, or every new test would fail this.
+    /// </summary>
+    private static int CheckShards(ReachabilityGraph graph)
+    {
+        var failed = 0;
+        var declared = graph.Fixtures.Sum(f => graph.TestCounts.GetValueOrDefault(f));
+
+        failed += Check("test counts are trusted",
+            graph.CountsUntrusted is null, graph.CountsUntrusted ?? string.Empty);
+
+        var uncounted = graph.Fixtures.Where(f => graph.TestCounts.GetValueOrDefault(f) == 0).ToList();
+        failed += Check("every fixture counts at least one test",
+            uncounted.Count == 0, $"[{string.Join(" ", uncounted)}] counted none");
+
+        // A token that is a substring of another puts one fixture's tests on both shards.
+        var tokens = graph.Fixtures.ConvertAll(f => graph.FilterTokens[f]);
+        var overlapping = tokens.Where(t => tokens.Count(o => o.Contains(t, StringComparison.Ordinal)) > 1).ToList();
+        failed += Check("no filter token contains another",
+            overlapping.Count == 0, $"[{string.Join(" ", overlapping)}]");
+
+        // Tied to the constant CI plans with, so that count is always one of the covers asserted.
+        foreach (var bins in new[] { 1, Shards.DefaultCount, Shards.DefaultCount + 1 })
+        {
+            var plan = Shards.Plan(graph, graph.Fixtures, bins);
+            var covered = Sorted(plan.SelectMany(s => s.Fixtures));
+
+            failed += Check($"{bins} shard(s) cover every fixture exactly once",
+                covered.SequenceEqual(graph.Fixtures, StringComparer.Ordinal)
+                && plan.TrueForAll(s => s.Fixtures.Count > 0),
+                $"got [{string.Join(" ", covered)}]");
+
+            var carried = plan.Sum(s => s.Tests);
+            failed += Check($"{bins} shard(s) carry every test",
+                carried == declared, $"shards carry {carried}, fixtures declare {declared}");
+
+            Console.WriteLine($"        {string.Join(" | ", plan.Select(s => $"{s.Name} {s.Tests}t/{s.Fixtures.Count}f"))}");
+        }
+
+        // Two bins over one fixture must not invent a second, empty shard — its filter would
+        // match nothing and vstest treats that as a failure, not as an empty pass.
+        var single = Shards.Plan(graph, [graph.Fixtures[0]], 2);
+        failed += Check("a one-fixture scope plans one shard", single.Count == 1, $"planned {single.Count}");
+
+        // A scope too small to earn a second runner. Accumulated from the lightest fixtures
+        // rather than named, so a rename or a changed count cannot quietly void the case.
+        var light = graph.Fixtures.OrderBy(f => graph.TestCounts.GetValueOrDefault(f))
+            .ThenBy(f => f, StringComparer.Ordinal).ToList();
+
+        var small = new List<string>();
+        foreach (var fixture in light)
+        {
+            if (Weight(graph, small) + graph.TestCounts.GetValueOrDefault(fixture) > Shards.MinTestsToSplit)
+                break;
+            small.Add(fixture);
+        }
+
+        var big = new List<string>(small);
+        foreach (var fixture in light.Where(f => !small.Contains(f, StringComparer.Ordinal)))
+        {
+            big.Add(fixture);
+            if (Weight(graph, big) > Shards.MinTestsToSplit)
+                break;
+        }
+
+        failed += Check($"{Weight(graph, small)} tests over {small.Count} fixtures plan one shard",
+            small.Count > 1 && Shards.Plan(graph, small, 2).Count == 1,
+            $"planned {Shards.Plan(graph, small, 2).Count} from [{string.Join(" ", small)}]");
+
+        failed += Check($"{Weight(graph, big)} tests over {big.Count} fixtures plan two",
+            Shards.Plan(graph, big, 2).Count == 2,
+            $"planned {Shards.Plan(graph, big, 2).Count} from [{string.Join(" ", big)}]");
+
+        return failed + CheckScopeRoundTrip(graph);
+    }
+
+    /// <summary>
+    /// The split is planned from the scope string a PR run resolved, so that string has to read
+    /// back as the same fixtures — and a name this project does not have must refuse rather than
+    /// plan a shard whose filter matches nothing.
+    /// </summary>
+    private static int CheckScopeRoundTrip(ReachabilityGraph graph)
+    {
+        var failed = 0;
+        var pair = Sorted([graph.Fixtures[0], graph.Fixtures[^1]]);
+
+        failed += Check("ALL reads back as every fixture",
+            Program.TrySelect(graph, "ALL", out var all, out _)
+            && all.SequenceEqual(graph.Fixtures, StringComparer.Ordinal),
+            $"got [{string.Join(" ", all)}]");
+
+        failed += Check("a resolved scope reads back as the fixtures it names",
+            Program.TrySelect(graph, $"FIXTURES: {string.Join(" ", pair)}", out var back, out _)
+            && back.SequenceEqual(pair, StringComparer.Ordinal),
+            $"got [{string.Join(" ", back)}] for [{string.Join(" ", pair)}]");
+
+        failed += Check("a fixture this project does not have is refused",
+            !Program.TrySelect(graph, "FIXTURES: NotAFixtureTests", out _, out _), "it was accepted");
+
+        return failed;
     }
 
     private static List<string> UnreachableViewsIn(ReachabilityGraph graph) =>
@@ -117,6 +222,9 @@ internal static class GoldenCases
     }
 
     private static List<string> Sorted(IEnumerable<string> values) => [..values.Order(StringComparer.Ordinal)];
+
+    private static int Weight(ReachabilityGraph graph, IEnumerable<string> fixtures) =>
+        fixtures.Sum(f => graph.TestCounts.GetValueOrDefault(f));
 
     private static string Fallback(ScopeResult result) =>
         result.FailSafeReason is { } reason ? $"  (fail-safe: {reason})" : string.Empty;

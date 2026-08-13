@@ -49,7 +49,12 @@ public class NavbarTests : BaseTest
         {
             if (expected == FeatureFlags.Expected.Unknown)
             {
-                Reporter.Log($"Sidebar button not asserted: {label} — flag is on but carries a wallets allowlist");
+                // Two ways to get here — an allowlist this side cannot read, or a build without
+                // the probe — and the log said the first even when it was the second.
+                var why = FeatureFlags.IsAvailable
+                    ? "flag is on but carries a wallets allowlist"
+                    : "this build does not expose its flag state";
+                Reporter.Log($"Sidebar button not asserted: {label} — {why}");
                 continue;
             }
 
