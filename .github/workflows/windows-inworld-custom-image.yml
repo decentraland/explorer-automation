@@ -33,6 +33,11 @@ on:
         required: false
         default: ''
         type: string
+      tests_ref:
+        description: 'explorer-automation ref for tests and the explorer/ci scripts. Empty falls back to main.'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       shards:
@@ -102,8 +107,15 @@ jobs:
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
 
     steps:
+      # `repository` is mandatory: a bare checkout inside a workflow_call run
+      # resolves to the CALLER's repo, and the explorer/ci scripts every step
+      # below runs only exist here. Same expression as the macOS leg in
+      # run-inworld-suite.yml, so both legs of a run test the same ref.
       - name: Check out automation tests
         uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       - name: Resolve build URL
         shell: powershell
