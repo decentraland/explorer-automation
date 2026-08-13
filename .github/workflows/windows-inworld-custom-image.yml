@@ -33,6 +33,11 @@ on:
         required: false
         default: ''
         type: string
+      tests_ref:
+        description: 'explorer-automation ref for tests and the explorer/ci scripts. Empty falls back to main.'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       scope:
@@ -97,8 +102,16 @@ jobs:
           fi
           echo "scope=$SCOPE" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v6
+      # Same expression as the leg's own checkout below, and mandatory for the same reason:
+      # a bare checkout in a workflow_call run fetches the CALLER, which has no
+      # explorer/ci/ScopeInWorldTests to plan with. Getting this wrong costs the split
+      # rather than the run, so it would degrade quietly.
+      - name: Check out the scope resolver
         if: steps.want.outputs.scope != ''
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       # No global.json in the repo, so the SDK the scope tool builds under is pinned here
       # rather than inherited from the runner image.
@@ -246,8 +259,15 @@ jobs:
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
 
     steps:
+      # `repository` is mandatory: a bare checkout inside a workflow_call run
+      # resolves to the CALLER's repo, and the explorer/ci scripts every step
+      # below runs only exist here. Same expression as the macOS leg in
+      # run-inworld-suite.yml, so both legs of a run test the same ref.
       - name: Check out automation tests
         uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       - name: Resolve build URL
         shell: powershell

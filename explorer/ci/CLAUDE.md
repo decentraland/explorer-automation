@@ -37,6 +37,7 @@ resolves a scope, so only a PR run has one to pass:
 | `inworld-main.yml` | `scope: 'ALL'` | the whole category |
 | `run-inworld-suite.yml` dispatch | nothing; `filter` is empty or `Category=InWorld` | the whole category |
 | `windows-inworld-custom-image.yml` dispatch | a `scope`, or a narrower `test_filter` | that scope, else one runner |
+| a cross-repo caller (unity-explorer) | nothing but a `tests_ref` | the whole category |
 
 The rules that keep it that way, all of them load-bearing:
 
@@ -50,6 +51,9 @@ The rules that keep it that way, all of them load-bearing:
   `1/1` in a job name is the visible sign that a run did not split.
 - **A plan is never passed between workflows as a matrix.** Handing a resolved *scope* to the planner
   is what removed the "is this plan still valid for this scope" check that used to guard the seam.
+- **The planner checks out this repo explicitly**, at `tests_ref`, exactly as the leg's own checkout
+  does. A bare checkout inside a `workflow_call` run fetches the *caller*, which has no
+  `explorer/ci` — and since a missing planner costs only the split, that would degrade in silence.
 
 Every degradation is one runner, never fewer tests: the tool writes no plan on any doubt (an unknown
 fixture name, untrusted counts, a failed self-test), and a missing plan falls back to the caller's own
