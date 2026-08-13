@@ -34,6 +34,21 @@ public static class FeatureFlags
     private static readonly Dictionary<string, bool> _flags = new();
     private static bool _loggedStatus;
 
+    // The suite runs against whatever build the run resolved, and the probe was only added to the
+    // client on 2026-08-12 — an older one answers componentNotFound. That is not a verdict about
+    // any flag, so it must not read as one.
+    private static bool _probeMissing;
+
+    /// <summary>Whether the running build ships the probe at all.</summary>
+    public static bool IsAvailable
+    {
+        get
+        {
+            LogStatusOnce();
+            return !_probeMissing;
+        }
+    }
+
     /// <summary>Resolved <c>FeatureId</c> state — the flag with app arguments and editor overrides folded in.</summary>
     public static bool IsFeatureEnabled(string featureId)
     {
@@ -63,7 +78,8 @@ public static class FeatureFlags
     /// so the test still catches the inverse bug — UI that lingers after its flag goes off.
     /// </summary>
     public static Expected Feature(string featureId) =>
-        IsFeatureEnabled(featureId) ? Expected.Present : Expected.Absent;
+        !IsAvailable ? Expected.Unknown
+            : IsFeatureEnabled(featureId) ? Expected.Present : Expected.Absent;
 
     /// <summary>
     /// Gate for UI behind a flag plus that flag's <c>wallets</c> allowlist — Marketplace Credits and
@@ -72,6 +88,7 @@ public static class FeatureFlags
     /// </summary>
     public static Expected UserGated(string flagId)
     {
+        if (!IsAvailable) return Expected.Unknown;
         if (!IsFlagEnabled(flagId)) return Expected.Absent;
         return string.IsNullOrEmpty(WalletsAllowlist(flagId)) ? Expected.Present : Expected.Unknown;
     }
@@ -95,11 +112,22 @@ public static class FeatureFlags
     }
 
     // One line per run recording what the client resolved, so a failure caused by a flag flip is
-    // readable from the report without a rerun.
+    // readable from the report without a rerun. Doubles as the probe's availability check: the
+    // first call is the one that finds out.
     private static void LogStatusOnce()
     {
         if (_loggedStatus) return;
         _loggedStatus = true;
-        Reporter.Log($"Feature flags: {StatusJson()}");
+
+        try
+        {
+            Reporter.Log($"Feature flags: {StatusJson()}");
+        }
+        catch (Exception ex)
+        {
+            _probeMissing = true;
+            Reporter.Log("Feature flags: this build does not carry AltTesterFeatureFlagsProbe, so "
+                         + $"flag-gated UI is not asserted this run — {ex.Message}");
+        }
     }
 }

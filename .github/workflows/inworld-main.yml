@@ -7,8 +7,10 @@ name: InWorld (main)
 # the "land incidental primitive changes on main first" practice in
 # explorer/CLAUDE.md safe: the narrow PR run is backed by a wide one here.
 #
-# All the mechanics live in run-inworld-suite.yml. There is no PR to comment on,
-# so results land in the job summary and the Allure report link it prints.
+# All the mechanics live in run-inworld-suite.yml, which runs macOS and Windows and
+# tabulates both. There is no PR to comment on, so the table lands in the job summary
+# alongside the Allure report link. The Windows leg splits the category across shards
+# here exactly as it does on a PR.
 
 on:
   push:
@@ -21,6 +23,7 @@ on:
       - 'explorer/ci/**'
       - '.github/workflows/inworld-main.yml'
       - '.github/workflows/run-inworld-suite.yml'
+      - '.github/workflows/windows-inworld-custom-image.yml'
       - '.github/actions/setup-explorer-runner/**'
 
 # A newer main supersedes the run in flight: the question this suite answers is
@@ -49,4 +52,8 @@ jobs:
       # commit_sha and branch_label from github.sha / github.ref_name, and an
       # empty pr_number keeps it summary-only.
       filter: ''
+      # Nothing resolves a scope on main, so it is stated: the whole category. The
+      # Windows leg splits it with the same tool, into the same number of shards,
+      # as it splits a PR's narrower scope.
+      scope: 'ALL'
     secrets: inherit

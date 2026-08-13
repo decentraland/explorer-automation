@@ -10,6 +10,10 @@ name: InWorld (PR)
 # from Roslyn symbols, so a page object only pulls in the fixtures that actually
 # drive it. Any doubt on its side answers ALL.
 #
+# macOS runs the whole selection on its one runner. Windows runs the same selection
+# split across shards — this job resolves the scope and the Windows leg plans the split
+# from it, with the same tool, the same way every other origin of that leg does.
+#
 # Baselines are excluded — they are visual-suite inputs and cannot change an
 # InWorld result.
 
@@ -22,6 +26,7 @@ on:
       - 'explorer/ci/**'
       - '.github/workflows/inworld-pr.yml'
       - '.github/workflows/run-inworld-suite.yml'
+      - '.github/workflows/windows-inworld-custom-image.yml'
       - '.github/actions/setup-explorer-runner/**'
 
 # Scoped to the PR branch: a new commit supersedes the run in flight. With one
@@ -46,6 +51,7 @@ jobs:
     outputs:
       should_run: ${{ steps.scope.outputs.should_run }}
       filter: ${{ steps.scope.outputs.filter }}
+      scope: ${{ steps.scope.outputs.scope }}
     steps:
       - uses: actions/checkout@v6
 
@@ -87,6 +93,8 @@ jobs:
           GOLDEN: ${{ steps.golden.outcome }}
         run: |
           set -euo pipefail
+          SCOPE_DLL=explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll
+
           CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
             --paginate --jq '.[].filename')
           echo "::group::Changed files"
@@ -98,27 +106,20 @@ jobs:
           # assembly-level [SetUpFixture] that no fixture references by symbol, so
           # letting the graph classify a change there would produce a false green.
           BROAD='^(\.github/workflows/|\.github/actions/|explorer/ci/|explorer/Tests/GlobalSetup\.cs$|explorer/Tests/GlobalUsings\.cs$|explorer/Tests/Tests\.csproj$)'
+
+          # The resolver prints ALL on any doubt of its own; `|| echo ALL` covers a crash
+          # that kills it before it can, and a failed golden check demotes the answer to
+          # ALL as well.
+          SCOPE=ALL
           if printf '%s\n' "$CHANGED" | grep -Eq "$BROAD"; then
             echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
-            {
-              echo "should_run=true"
-              echo "filter=Category=InWorld"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Everything else under explorer/Tests/ goes to the resolver. It prints ALL
-          # on any doubt of its own; `|| echo ALL` covers a crash that kills it before
-          # it can, and a failed golden check demotes the answer to ALL as well.
-          SCOPE=ALL
-          if [ "$GOLDEN" = 'success' ]; then
+          elif [ "$GOLDEN" != 'success' ]; then
+            echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
+          else
             SCOPE=$(printf '%s\n' "$CHANGED" \
-              | dotnet explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll \
-                2> "$RUNNER_TEMP/scope.log" \
+              | dotnet "$SCOPE_DLL" 2> "$RUNNER_TEMP/scope.log" \
               || echo ALL)
             SCOPE=$(printf '%s' "$SCOPE" | tail -n 1)
-          else
-            echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
           fi
 
           if [ -f "$RUNNER_TEMP/scope.log" ]; then
@@ -159,9 +160,13 @@ jobs:
               ;;
           esac
 
+          # Every branch above that widens FILTER past what the resolver selected has to widen
+          # the scope with it, or the Windows leg would split a narrower selection than the one
+          # macOS runs. Both are derived here, from the same answer, so they cannot disagree.
           if [ -z "$FILTER" ]; then
             echo "::notice::Running the whole InWorld suite."
             FILTER='Category=InWorld'
+            SCOPE='ALL'
           else
             echo "::notice::Affected InWorld fixtures:${SCOPE#FIXTURES:}"
           fi
@@ -169,8 +174,11 @@ jobs:
           {
             echo "should_run=true"
             echo "filter=${FILTER}"
+            echo "scope=${SCOPE}"
           } >> "$GITHUB_OUTPUT"
 
+  # One caller job on purpose: GitHub keys the run's fold on it, so both legs and
+  # the results table stay under a single "InWorld suite" heading.
   run-suite:
     name: InWorld suite
     needs: resolve
@@ -183,6 +191,9 @@ jobs:
       # connection: 0%".
       build_url: ''
       filter: ${{ needs.resolve.outputs.filter }}
+      # What Windows splits. The filter says the same thing in vstest's vocabulary, but nothing
+      # maps one back to the fixtures the packer weighs, so the scope travels as itself.
+      scope: ${{ needs.resolve.outputs.scope }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
     secrets: inherit

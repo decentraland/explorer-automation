@@ -19,6 +19,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
     // exceeding 20s, and a dev build was then measured taking 17.5s to fill a grid page
     // without finishing. Content load tracks asset streaming, not the panel.
     private const double CONTENT_TIMEOUT = 40D;  // waiting on content the client streams in
+    // A whole page is sixteen streams, not one, and it was sharing the single-element ceiling.
+    // Measured filling in 30.2s, 33.0s and 35.5s on runs that passed, so 40s left a handful of
+    // seconds of headroom and the emote page duly ran out of it twice — once with nothing loaded,
+    // once with thirteen of sixteen done. Only ever spent on a page that is still filling.
+    private const double GRID_PAGE_TIMEOUT = 90D;
     // Deliberately not lowered with the rest: equipping presses a button that only exists
     // while the overlay is up, so this is the one ceiling that can cost an equip.
     private const double OVERLAY_SETTLE  = 2D;   // hover overlay animating in
@@ -321,6 +326,48 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         #region Helper methods
 
         /// <summary>
+        /// Returns the loaded tile sitting left-top-most on screen. Use instead of
+        /// <see cref="FirstLoadedGridItem"/> wherever the same position has to name the same
+        /// item twice: hierarchy order does not track display order here, so the leading match
+        /// is an arbitrary tile whose content differs after a re-bind.
+        /// </summary>
+        [AllureStep("Find the left-top-most loaded wearable tile")]
+        public BackpackGridItem FindTopLeftLoadedItem()
+        {
+            BackpackGridItem topLeft = null;
+            var topLeftY = int.MaxValue;
+            var topLeftX = int.MaxValue;
+
+            foreach (var item in GridItems)
+            {
+                // Shot-suppressed probes — target selection, not a test verification.
+                if (!item.LoadedIndicator.IsPresent(verificationShot: false))
+                    continue;
+
+                var tile = item.LoadedIndicator.WaitFor(UI_TIMEOUT, verificationShot: false);
+                // y is bottom-origin and mobileY top-origin, so both being positive puts the
+                // centre inside the viewport without asking for the screen size.
+                if (tile.y <= 0 || tile.mobileY <= 0)
+                    continue;
+
+                // A row shares mobileY exactly, so an equal row falls to the leftmost column.
+                if (tile.mobileY > topLeftY || (tile.mobileY == topLeftY && tile.x >= topLeftX))
+                    continue;
+
+                topLeft = item;
+                topLeftY = tile.mobileY;
+                topLeftX = tile.x;
+            }
+
+            if (topLeft is null)
+                throw new AssertionException(
+                    "No wearable tile has loaded content on screen — the grid is empty or never finished loading");
+
+            Reporter.Log($"Picked the wearable tile at x={topLeftX}, mobileY={topLeftY}");
+            return topLeft;
+        }
+
+        /// <summary>
         /// Applies the Hair category filter idempotently and leaves the grid loaded. The slot
         /// is a toggle, so clicking one that is already selected would clear the filter.
         /// </summary>
@@ -359,7 +406,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         {
             // One budget shared across the tiles, not one ceiling each — a grid that never
             // finishes would otherwise burn GRID_ITEM_COUNT x SETTLE_TIMEOUT.
-            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
             foreach (var item in GridItems)
                 item.LoadedIndicator.WaitFor(
                     Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
@@ -514,7 +561,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public void WaitForGridPageLoaded()
         {
             // One budget shared across the tiles, not one ceiling each.
-            var deadline = DateTime.UtcNow.AddSeconds(CONTENT_TIMEOUT);
+            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
             foreach (var item in GridItems)
                 item.LoadedIndicator.WaitFor(
                     Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);

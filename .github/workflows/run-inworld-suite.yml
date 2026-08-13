@@ -6,15 +6,30 @@ name: InWorld Suite
 # Mirrors run-visual-suite.yml, which runs the same chassis.
 #
 # Callers:
-#   - decentraland/explorer-automation → manual workflow_dispatch
-#   - decentraland/unity-explorer      → a `/in-world-tests` PR-comment
-#     dispatcher is planned but does not exist in that repo yet, so the
-#     cross-repo workflow_call path here has never run against a real caller.
+#   - decentraland/explorer-automation → inworld-pr.yml, inworld-main.yml, and
+#     manual workflow_dispatch
+#   - decentraland/unity-explorer      → in-world-tests.yml, gating release and
+#     hotfix PRs. A cross-repo caller supplies both artifacts and a tests_ref,
+#     and gets neither for free: `build_url` is the macOS zip, the Windows leg
+#     needs `windows_build_url`, and both legs check out this repo at
+#     `tests_ref` because a bare checkout there would fetch the caller.
 #
-# macOS-only. A Windows counterpart is planned in PR #12 and stays a separate
-# workflow: the install steps (bash/brew/dmg vs PowerShell/Inno Setup/MSI) and
-# the runner lifecycle (ephemeral GitHub-hosted vs persistent self-hosted with
-# manual driver pinning) diverge too widely to share usefully.
+# Runs both platforms and reports them together:
+#
+#   run     macOS, GitHub-hosted macos-14, the whole selection on one runner
+#   windows windows-inworld-custom-image.yml, the same selection split across
+#           runners — that leg plans its own split, from `scope` when a caller
+#           resolved one and from `filter` otherwise
+#   report  one table over every leg, to the job summary and one PR comment
+#
+# The Windows leg stays its own file — the install steps (bash/brew/dmg against
+# PowerShell/zip) and runner lifecycle (ephemeral GitHub-hosted against an
+# autoscaled GPU pool) diverge too widely to share usefully — but it is called
+# from here so a caller needs only one job, and the run shows only one fold.
+#
+# That nested `uses: ./…` resolves against this repo, so the Windows leg only
+# reaches a same-repo caller. A cross-repo caller would need it passed by full
+# ref — moot while the cross-repo path below stays unexercised.
 #
 # Required secrets (caller passes via `secrets: inherit`):
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
@@ -87,6 +102,25 @@ on:
         type: boolean
         required: false
         default: false
+      scope:
+        description: 'What the Windows leg splits, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from `filter` — the whole category splits, anything narrower runs on one Windows runner.'
+        type: string
+        required: false
+        default: ''
+      windows:
+        description: 'Run the Windows leg alongside macOS.'
+        type: boolean
+        required: false
+        default: true
+      windows_build_url:
+        description: >-
+          Direct URL to a Decentraland_windows64.zip. Empty makes the Windows leg
+          resolve the newest dev build on its own, which is fine for a run asking
+          "is dev good" and wrong for one gating a specific commit — `build_url`
+          alone only points the macOS leg at that commit.
+        type: string
+        required: false
+        default: ''
 
   workflow_dispatch:
     inputs:
@@ -108,6 +142,16 @@ on:
         type: boolean
         required: false
         default: false
+      windows:
+        description: 'Run the Windows leg alongside macOS.'
+        type: boolean
+        required: false
+        default: true
+      windows_build_url:
+        description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest unity-explorer dev build.'
+        type: string
+        required: false
+        default: ''
 
 # macos-14 runners are ephemeral, but serializing keeps concurrent runs for
 # the same caller PR from racing on the S3 path. cancel-in-progress is safe:
@@ -127,6 +171,13 @@ jobs:
   run:
     name: InWorld suite (macOS)
     runs-on: macos-14
+    # Shared context for the report job. Per-column results cannot travel this way
+    # (the Windows matrix would overwrite them), so those come back as artifacts.
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      commit_sha: ${{ env.COMMIT_SHA }}
+      branch_label: ${{ env.BRANCH_LABEL }}
+      test_filter: ${{ env.TEST_FILTER }}
     # Budgeted from the step cap below: 30m test + ~1m40s setup + the
     # on-failure tail (log dump, artifact upload, 2m-capped cleanup) ≈ 35m.
     # Measured green run 31177978453: 19m38s wall over 49 tests.
@@ -295,6 +346,28 @@ jobs:
             echo "s3_path=${S3_PATH}"
             echo "report_url=${PUBLIC_URL_PREFIX}/${S3_PATH}/index.html"
           } >> "$GITHUB_OUTPUT"
+          # Read back by Record suite result to report this job's wall clock.
+          echo "MACOS_STARTED_AT=$(date -u +%s)" >> "$GITHUB_ENV"
+
+      # Same field set and order as the Windows leg's "Record benchmark context", so the
+      # run summary reads the same for every leg. Keep the two in step.
+      - name: Record suite context
+        env:
+          BUILD_URL: ${{ steps.build.outputs.build_url }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## InWorld suite (macOS)"
+            echo
+            echo "- Leg: \`macOS\`"
+            echo "- Platform: \`macos-14\` (GitHub-hosted)"
+            echo "- Runner: \`${RUNNER_NAME:-?}\`"
+            echo "- Fixtures: \`whole selection\`"
+            echo "- Planned: \`whole selection\`"
+            echo "- Filter: \`${TEST_FILTER}\`"
+            echo "- Build: \`${BUILD_URL}\`"
+            echo "- Started: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # dotnet + AltTester + allure + MetaForge + license — the same chassis
       # run-visual-suite.yml runs, from the same definition. Must come after
@@ -524,6 +597,7 @@ jobs:
           if [ -f "$LOG" ]; then rm -f "$LOG" && echo "Cleared $LOG"; fi
 
       - name: Run InWorld suite
+        id: test
         if: env.DRY_RUN != 'true'
         # 17m59s measured over 49 tests; PR #47's 8 more put it near 21m, and
         # paravirt variance near 25m. Must stay below the job cap: a step
@@ -594,12 +668,15 @@ jobs:
           # taking the whole publish chain down with it. None also subsumes
           # --skip-allure-open: nothing is generated, so there is nothing to
           # open.
+          # Teed so the result step can read the count metaforge reports, the same way
+          # the Windows shards do, and both rows of the unified table come from one source.
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
             --report-type None \
             --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen" \
+            2>&1 | tee "$RUNNER_TEMP/mf-test.log" \
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
@@ -854,7 +931,10 @@ jobs:
           fi
           echo "::endgroup::"
 
+      # artifact-url backs the Allure cell when the S3 upload did not land, so a failed
+      # publish still leaves somewhere to click. Must stay ahead of Record suite result.
       - name: Upload logs and report (artifact fallback)
+        id: artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
@@ -896,41 +976,89 @@ jobs:
         env:
           URL: ${{ steps.ids.outputs.report_url }}
         run: |
+          # Summary line lives in Record suite result, so both legs print one Allure row.
           echo "::notice::Allure report: $URL"
-          echo "**Allure report:** [$URL]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Find existing PR comment
-        if: always() && steps.pr.outputs.number != ''
-        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
-        id: find-comment
+      # One column of the unified table. The PR comment that used to live here is now
+      # posted once by the report job, so macOS and both Windows shards land together.
+      - name: Record suite result
+        if: always()
+        env:
+          STEP_RESULT: ${{ steps.test.outcome }}
+          # S3 serves a rendered report, so prefer it; the artifact is a zip to download.
+          REPORT_URL: ${{ steps.s3.outcome == 'success' && steps.ids.outputs.report_url || steps.artifact.outputs.artifact-url }}
+          REPORT_KIND: ${{ steps.s3.outcome == 'success' && 'Open' || 'Download' }}
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/mf-test.log"
+          PASSED=null; FAILED=0; SKIPPED=0; RAN=null
+
+          # Two summary forms to match: metaforge prints "All N tests passed." when nothing
+          # failed and "Tests finished: ..." otherwise. Matching only the latter reported no
+          # count exactly on a green run, which is also when a loss check has to work.
+          if [ -f "$LOG" ]; then
+            PLAIN=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG")
+            COUNTS=$(printf '%s\n' "$PLAIN" \
+              | grep -oE 'Tests finished: [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped' \
+              | tail -n 1 | grep -oE '[0-9]+' | paste -sd' ' - || true)
+            GREEN=$(printf '%s\n' "$PLAIN" \
+              | grep -oE 'All [0-9]+ tests? passed' \
+              | tail -n 1 | grep -oE '[0-9]+' || true)
+
+            if [ -n "$COUNTS" ]; then
+              PASSED=$(echo "$COUNTS" | cut -d' ' -f1)
+              FAILED=$(echo "$COUNTS" | cut -d' ' -f2)
+              SKIPPED=$(echo "$COUNTS" | cut -d' ' -f3)
+              RAN=$((PASSED + FAILED + SKIPPED))
+            elif [ -n "$GREEN" ]; then
+              PASSED=$GREEN; FAILED=0; SKIPPED=0; RAN=$GREEN
+            fi
+          fi
+
+          mkdir -p "$RUNNER_TEMP/inworld-result"
+          jq -n \
+            --arg label   'macOS' \
+            --arg result  "${STEP_RESULT:-skipped}" \
+            --arg runner  "macos-14" \
+            --arg report  "${REPORT_URL}" \
+            --arg kind    "${REPORT_KIND:-Open}" \
+            --argjson passed "$PASSED" --argjson failed "$FAILED" \
+            --argjson skipped "$SKIPPED" --argjson ran "$RAN" \
+            --argjson seconds "$(( $(date -u +%s) - ${MACOS_STARTED_AT:-$(date -u +%s)} ))" \
+            '{label:$label, order:0, result:$result, passed:$passed, failed:$failed,
+              skipped:$skipped, ran:$ran, planned:0, fixtures:"", runner:$runner,
+              seconds:$seconds, report:$report, report_kind:$kind}' \
+            > "$RUNNER_TEMP/inworld-result/row.json"
+          cat "$RUNNER_TEMP/inworld-result/row.json"
+
+          # Same three closing rows as the Windows leg, in the same plain wording. The
+          # emoji verdicts live only in the report job's table, whose shell can carry them:
+          # a PowerShell body has to stay ASCII, so a per-leg block cannot.
+          case "${STEP_RESULT:-skipped}" in
+            success) VERDICT='passed' ;;
+            skipped) VERDICT='skipped' ;;
+            *) if [ "$FAILED" != 0 ]; then VERDICT="$FAILED failed"; else VERDICT='failed'; fi ;;
+          esac
+          if [ "$RAN" = null ]; then RAN_TEXT='not reported'; else RAN_TEXT="$RAN"; fi
+          if [ -n "${REPORT_URL:-}" ]; then
+            ALLURE="[${REPORT_KIND:-Open}](${REPORT_URL})"
+          else
+            ALLURE='not generated'
+          fi
+          {
+            echo "- Result: ${VERDICT}"
+            echo "- Ran: \`${RAN_TEXT}\`"
+            echo "- Allure: ${ALLURE}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload suite result
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          repository: ${{ github.repository }}
-          issue-number: ${{ steps.pr.outputs.number }}
-          comment-author: 'github-actions[bot]'
-          body-includes: '## InWorld smoke (macOS)'
-
-      - name: Comment results on PR
-        if: always() && steps.pr.outputs.number != ''
-        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
-        with:
-          repository: ${{ github.repository }}
-          issue-number: ${{ steps.pr.outputs.number }}
-          comment-id: ${{ steps.find-comment.outputs.comment-id }}
-          edit-mode: replace
-          body: |
-            ## InWorld smoke (macOS)
-
-            ${{ job.status == 'success' && '✅ **InWorld suite passed.**' || '❌ **InWorld suite failed.**' }}
-
-            | | |
-            |---|---|
-            | Commit | `${{ env.COMMIT_SHA }}` |
-            | Branch | `${{ env.BRANCH_LABEL }}` |
-            | Filter | `${{ env.TEST_FILTER }}` |
-            | Allure report | ${{ steps.s3.outcome == 'success' && format('[Open]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && '_generated but S3 upload failed — see workflow artifact_' || '_not generated_') }} |
-            | Workflow run | [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
-
-            <sub>GitHub-hosted `macos-14` · this comment is updated on every run.</sub>
+          name: inworld-result-macos
+          path: ${{ runner.temp }}/inworld-result/row.json
+          if-no-files-found: warn
+          retention-days: 7
 
       # macos-14 is ephemeral so cleanup is best-effort; we still release the
       # AltTester license slot and remove the metaforge test account so the
@@ -978,3 +1106,149 @@ jobs:
           if [ -n "${MF_ACCOUNT:-}" ]; then
             run_with_timeout 30 mf account remove "$MF_ACCOUNT" --yes --non-interactive || true
           fi
+
+  # Nested rather than inlined: the two install chains (bash/brew/dmg against
+  # PowerShell/zip, ephemeral GitHub-hosted against an autoscaled GPU pool) share
+  # almost nothing. Calling it from here is what puts both legs under one caller
+  # job, and so under one fold, instead of the two the callers used to show.
+  windows:
+    name: Windows
+    if: inputs.windows
+    uses: ./.github/workflows/windows-inworld-custom-image.yml
+    with:
+      scope: ${{ inputs.scope }}
+      test_filter: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
+      verification_screenshots: false
+      # Same expression the macOS leg resolves COMMIT_SHA with, so both legs publish under
+      # one commit prefix. Inlined rather than taken from that job's outputs, which would
+      # serialize the two legs behind each other.
+      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || (github.repository == 'decentraland/explorer-automation' && github.sha || format('run-{0}', github.run_id)) }}
+      pr_number: ${{ inputs.pr_number }}
+      # Its own artifact: build_url points at the macOS zip. Left empty the leg
+      # resolves the newest dev build, so a caller gating one commit has to say
+      # which Windows build goes with it.
+      build_url: ${{ inputs.windows_build_url }}
+      # Both legs from one ref, and — as on macOS — a cross-repo caller has no
+      # explorer/ci to check out without it.
+      tests_ref: ${{ inputs.tests_ref }}
+    secrets: inherit
+
+  # One table for every leg. Each leg posts its own row as an artifact because a
+  # matrix job cannot carry per-instance outputs, and shared context (commit, PR,
+  # report URL) rides the macOS job's outputs.
+  report:
+    name: Results
+    needs: [run, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect result rows
+        uses: actions/download-artifact@v4
+        with:
+          pattern: inworld-result-*
+          path: rows
+
+      - name: Build the results table
+        id: table
+        env:
+          COMMIT_SHA: ${{ needs.run.outputs.commit_sha }}
+          BRANCH_LABEL: ${{ needs.run.outputs.branch_label }}
+          TEST_FILTER: ${{ needs.run.outputs.test_filter }}
+        run: |
+          set -euo pipefail
+
+          # A leg that died before writing its row leaves none, so an absent file has to
+          # read as "no result" rather than silently shrinking the table.
+          #
+          # The BOM strip is belt and braces: a Windows leg writing its row through anything
+          # BOM-emitting would put one mid-stream, where jq -s reads it as a stray literal
+          # rather than as leading whitespace.
+          ROWS=$(find rows -name row.json -exec cat {} + 2>/dev/null \
+            | sed '1s/^\xEF\xBB\xBF//; s/\xEF\xBB\xBF//g' \
+            | jq -s 'sort_by(.order)')
+          echo "::group::Collected rows"
+          echo "$ROWS" | jq .
+          echo "::endgroup::"
+
+          if [ "$(echo "$ROWS" | jq 'length')" -eq 0 ]; then
+            echo "::warning::No leg reported a result; nothing to tabulate."
+            echo "posted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$ROWS" | jq -r '
+            def dur: if . == null then "-"
+                     else ((./60)|floor|tostring) + "m" + ((.%60)|tostring) + "s" end;
+            def verdict:
+              if .result == "success" then "✅ passed"
+              elif .result == "skipped" or .result == "" or .result == null then "⏭ skipped"
+              elif (.failed // 0) > 0 then "❌ " + (.failed|tostring) + " failed"
+              else "❌ failed" end;
+            def tests:
+              if .ran == null then "not reported"
+              elif (.planned // 0) > 0 then (.ran|tostring) + " / " + (.planned|tostring)
+              else (.ran|tostring) end;
+            # macOS publishes a rendered report to S3, the Windows shards an artifact zip, so
+            # the link text names which one it is rather than pretending they are the same.
+            def allure:
+              if (.report // "") == "" then "not generated"
+              else "[" + (.report_kind // "Open") + "](" + .report + ")" end;
+            "| | " + ([.[].label] | join(" | ")) + " |",
+            "|---|" + ([.[] | "---"] | join("|")) + "|",
+            "| Result | " + ([.[] | verdict] | join(" | ")) + " |",
+            "| Tests | " + ([.[] | tests] | join(" | ")) + " |",
+            "| Duration | " + ([.[] | .seconds | dur] | join(" | ")) + " |",
+            "| Allure | " + ([.[] | allure] | join(" | ")) + " |"
+          ' > table.md
+
+          FAILED=$(echo "$ROWS" | jq '[.[] | select(.result != "success" and .result != "skipped")] | length')
+          TOTAL=$(echo "$ROWS" | jq 'length')
+          if [ "$FAILED" -eq 0 ]; then
+            STATUS="✅ **InWorld suite passed** on all $TOTAL legs."
+          else
+            STATUS="❌ **InWorld suite failed** on $FAILED of $TOTAL legs."
+          fi
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          {
+            echo "## InWorld suite"
+            echo
+            echo "$STATUS"
+            echo
+            cat table.md
+            echo
+            echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
+            echo
+            echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+          } > comment.md
+
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          echo "posted=true" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing PR comment
+        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != ''
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
+        id: find-comment
+        with:
+          repository: ${{ github.repository }}
+          issue-number: ${{ needs.run.outputs.pr_number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '## InWorld suite'
+
+      - name: Comment results on PR
+        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != ''
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
+        with:
+          repository: ${{ github.repository }}
+          issue-number: ${{ needs.run.outputs.pr_number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body-path: comment.md
+
+      # The legs' own conclusions do not gate this workflow's, so a red leg has to
+      # be re-raised here or a failing suite would report green to the caller.
+      - name: Fail if a leg failed
+        if: needs.run.result == 'failure' || needs.windows.result == 'failure'
+        run: |
+          echo "::error::macOS=${{ needs.run.result }} windows=${{ needs.windows.result }}"
+          exit 1

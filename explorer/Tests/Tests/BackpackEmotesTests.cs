@@ -155,15 +155,22 @@ public class BackpackEmotesTests : BaseTest
         var emotes = Views.ExplorePanel.Backpack.Emotes;
         emotes.Pager.WaitFor();
 
+        // A shot per read, unconditionally — this test's failures are all about what the grid
+        // held at a given moment, and the teardown's final frame only ever shows the last one.
+        // Verification shots would not do: CI leaves them off by default, so the runs worth
+        // examining are exactly the ones that would carry none.
         var firstPageItem = ReadSettledFirstItemName(emotes);
         Reporter.Log($"Page 1 first emote: {firstPageItem}");
+        Reporter.TakeScreenshot("emotes_read_page1_baseline");
 
         var secondPageItem = FlipPageAndReadFirstItem(emotes, emotes.Pager.NextButton, firstPageItem);
         Reporter.Log($"Page 2 first emote: {secondPageItem}");
+        Reporter.TakeScreenshot("emotes_read_page2");
         Assert.That(secondPageItem, Is.Not.EqualTo(firstPageItem),
             "First emote on page 2 should differ from first emote on page 1");
 
         var backOnFirstPage = FlipPageAndReadFirstItem(emotes, emotes.Pager.PreviousButton, secondPageItem);
+        Reporter.TakeScreenshot("emotes_read_page1_again");
         Assert.That(backOnFirstPage, Is.EqualTo(firstPageItem),
             "Navigating back should show page 1's first emote again");
         Reporter.Log("Emote pagination forward and back verified");
@@ -205,10 +212,14 @@ public class BackpackEmotesTests : BaseTest
         string previousName = null,
         double timeoutSeconds = 10)
     {
-        // Paravirt ceiling, not the 20s default: on CI run 31183128982 no tile in the grid
-        // had an enabled FullBackpack inside 20s, so the read failed before it could start.
-        emotes.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
-        emotes.FirstLoadedGridItem.Click();
+        // One lookup on the paravirt ceiling, not two on different ones. Waiting and then
+        // clicking resolved this path twice, and Click's own wait is fixed at the 20s default —
+        // so the second lookup had half the budget of the first, on a grid that re-binds between
+        // them. Clicking the object the wait returned leaves nothing to re-resolve. No settle
+        // after it: the read below waits on the selection the click produces.
+        emotes.FirstLoadedGridItem.LoadedIndicator
+              .WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false)
+              .Click();
         return emotes.SelectedItemName.WaitForText(
             text => !string.IsNullOrEmpty(text) && text != previousName, timeoutSeconds);
     }
