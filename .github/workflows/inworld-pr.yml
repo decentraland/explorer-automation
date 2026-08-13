@@ -11,9 +11,8 @@ name: InWorld (PR)
 # drive it. Any doubt on its side answers ALL.
 #
 # macOS runs the whole selection on its one runner. Windows runs the same selection
-# split across SHARDS runners, planned by the same tool from the same fixture list —
-# so a fixture cannot be in the category and in no shard. No plan means no split, so
-# every fallback path still runs everything on one runner.
+# split across shards — this job resolves the scope and the Windows leg plans the split
+# from it, with the same tool, the same way every other origin of that leg does.
 #
 # Baselines are excluded — they are visual-suite inputs and cannot change an
 # InWorld result.
@@ -52,7 +51,7 @@ jobs:
     outputs:
       should_run: ${{ steps.scope.outputs.should_run }}
       filter: ${{ steps.scope.outputs.filter }}
-      shards: ${{ steps.scope.outputs.shards }}
+      scope: ${{ steps.scope.outputs.scope }}
     steps:
       - uses: actions/checkout@v6
 
@@ -92,13 +91,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GOLDEN: ${{ steps.golden.outcome }}
-          # Windows runners the selection is split across. The macOS suite is
-          # unaffected and always runs the whole selection on one machine.
-          SHARDS: '2'
         run: |
           set -euo pipefail
           SCOPE_DLL=explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll
-          PLAN="$RUNNER_TEMP/shards.json"
 
           CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
             --paginate --jq '.[].filename')
@@ -114,21 +109,15 @@ jobs:
 
           # The resolver prints ALL on any doubt of its own; `|| echo ALL` covers a crash
           # that kills it before it can, and a failed golden check demotes the answer to
-          # ALL as well. --shard-plan is a side channel: stdout keeps the same contract,
-          # and no plan means the Windows suite runs the selection unsharded.
+          # ALL as well.
           SCOPE=ALL
           if printf '%s\n' "$CHANGED" | grep -Eq "$BROAD"; then
             echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
-            if [ "$GOLDEN" = 'success' ]; then
-              dotnet "$SCOPE_DLL" --all --shards "$SHARDS" --shard-plan "$PLAN" \
-                > /dev/null 2> "$RUNNER_TEMP/scope.log" || true
-            fi
           elif [ "$GOLDEN" != 'success' ]; then
             echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
           else
             SCOPE=$(printf '%s\n' "$CHANGED" \
-              | dotnet "$SCOPE_DLL" --shards "$SHARDS" --shard-plan "$PLAN" \
-                2> "$RUNNER_TEMP/scope.log" \
+              | dotnet "$SCOPE_DLL" 2> "$RUNNER_TEMP/scope.log" \
               || echo ALL)
             SCOPE=$(printf '%s' "$SCOPE" | tail -n 1)
           fi
@@ -171,42 +160,21 @@ jobs:
               ;;
           esac
 
+          # Every branch above that widens FILTER past what the resolver selected has to widen
+          # the scope with it, or the Windows leg would split a narrower selection than the one
+          # macOS runs. Both are derived here, from the same answer, so they cannot disagree.
           if [ -z "$FILTER" ]; then
             echo "::notice::Running the whole InWorld suite."
             FILTER='Category=InWorld'
+            SCOPE='ALL'
           else
             echo "::notice::Affected InWorld fixtures:${SCOPE#FIXTURES:}"
           fi
 
-          # The plan is only usable for the scope it was built for. Every branch above that
-          # widens FILTER past what the resolver selected also drops the plan, so a widened
-          # scope can never be served by a narrower split.
-          PLANNED_SCOPE=$(jq -r '.scope' "$PLAN" 2>/dev/null || true)
-          if [ "$FILTER" = 'Category=InWorld' ] && [ "$PLANNED_SCOPE" != 'ALL' ]; then
-            PLANNED_SCOPE=''
-          fi
-
-          SHARD_PLAN=''
-          if [ -n "$PLANNED_SCOPE" ] && [ "$PLANNED_SCOPE" = "$SCOPE" ]; then
-            SHARD_PLAN=$(jq -c '.shards' "$PLAN")
-          else
-            echo "::warning::No shard plan for this scope — the Windows suite runs it on one runner."
-            SHARD_PLAN=$(jq -cn --arg f "$FILTER" '[{index:1,name:"1/1",filter:$f,fixtures:"",tests:0}]')
-          fi
-
-          {
-            echo "### InWorld shards"
-            echo
-            echo '| shard | tests | fixtures |'
-            echo '| --- | --- | --- |'
-            printf '%s' "$SHARD_PLAN" \
-              | jq -r '.[] | "| \(.name) | \(.tests) | \(.fixtures // "" | if . == "" then "(whole selection)" else . end) |"'
-          } >> "$GITHUB_STEP_SUMMARY"
-
           {
             echo "should_run=true"
             echo "filter=${FILTER}"
-            echo "shards=${SHARD_PLAN}"
+            echo "scope=${SCOPE}"
           } >> "$GITHUB_OUTPUT"
 
   # One caller job on purpose: GitHub keys the run's fold on it, so both legs and
@@ -223,7 +191,9 @@ jobs:
       # connection: 0%".
       build_url: ''
       filter: ${{ needs.resolve.outputs.filter }}
-      shards: ${{ needs.resolve.outputs.shards }}
+      # What Windows splits. The filter says the same thing in vstest's vocabulary, but nothing
+      # maps one back to the fixtures the packer weighs, so the scope travels as itself.
+      scope: ${{ needs.resolve.outputs.scope }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
     secrets: inherit

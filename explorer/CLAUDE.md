@@ -51,6 +51,10 @@ Camera/Minimap tests ran nowhere — run 31591893759 discovered 66 tests on macO
 Windows. A test filter that matches nothing exits clean, which is why each shard reconciles the
 count MetaForge reports against its plan.
 
+Callers say what to split, never how: the Windows leg plans every split itself, so a merge to main
+and a dispatch shard the same way a PR does. The invariant and the paths that hold it up are in
+[explorer/ci/CLAUDE.md](ci/CLAUDE.md).
+
 ## Architecture
 
 **Page Object Model (POM)** pattern with NUnit test fixtures. Two main areas:
