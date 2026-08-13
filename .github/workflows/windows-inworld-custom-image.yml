@@ -76,6 +76,10 @@ jobs:
       # 0 when the plan could not weight the split; the loss check then only asserts
       # that the shard ran something.
       SHARD_EXPECTED_TESTS: ${{ matrix.tests }}
+      # The mode we ask the display for. Nothing guarantees the runner exposes it, so the
+      # render size is derived from whatever mode is actually active - see Resolve render size.
+      EXPLORER_TARGET_WIDTH: '1920'
+      EXPLORER_TARGET_HEIGHT: '1080'
       COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
       PR_NUMBER_INPUT: ${{ inputs.pr_number }}
       # vars.* inside a workflow_call run reads the caller's repo vars. Kept in lockstep
@@ -111,6 +115,7 @@ jobs:
           ) >> $env:GITHUB_STEP_SUMMARY
           # Read back by Record shard result to report this shard's wall clock.
           "SHARD_STARTED_AT=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "- Requested display mode: ``$env:EXPLORER_TARGET_WIDTH``x``$env:EXPLORER_TARGET_HEIGHT``" >> $env:GITHUB_STEP_SUMMARY
 
           nvidia-smi
           git --version
@@ -188,11 +193,22 @@ jobs:
       - name: Clear Explorer logs
         shell: powershell
         run: |
+          # Logs only. userdata_*.json in this directory is the client's prefs file, and the
+          # account MetaForge just provisioned lives there too - deleting it drops the session
+          # and the client comes up with nothing to log in as.
           $logRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
           @("Player.log", "AltTester-Server.log") | ForEach-Object {
             $log = Join-Path $logRoot $_
             if (Test-Path $log) { Remove-Item $log -Force }
           }
+
+      - name: Resolve Explorer render size
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerRenderSize.ps1") `
+            -TargetWidth ([int]$env:EXPLORER_TARGET_WIDTH) `
+            -TargetHeight ([int]$env:EXPLORER_TARGET_HEIGHT)
 
       - name: Run InWorld suite
         id: test
@@ -252,11 +268,26 @@ jobs:
           if (-not $explorer) { throw "Pre-installed Explorer executable was not found under $explorerRoot" }
 
           $logMatrix = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\log-matrix.json"
+          # --position is the parcel to spawn at, not where the window goes: the client binds
+          # it to parcelToTeleportOverride. 0,0 is Genesis Plaza, whose crowd and scene load
+          # the UI tests should not have to sit in. The window/render size is --resolution.
+          #
+          # Order matters, and only in this direction. The client's parser treats every token
+          # that does not start with -- as the value of the last -- key it saw, so a single-dash
+          # Unity arg placed after one silently overwrites it: -screen-fullscreen 0 landing after
+          # --resolution is how resolution became 0. Single-dash args first, where there is no
+          # key to clobber.
           $explorerProcess = Start-Process -FilePath $explorer.FullName `
             -ArgumentList @(
+              '-screen-width', $env:EXPLORER_RENDER_WIDTH,
+              '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
+              '-screen-fullscreen', '0',
               '--skip-version-check', '--alttester', '--position', '100,100', '--dclenv', 'org',
               '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
-              '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix
+              '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
+              # The one that decides the viewport: the client re-applies its own windowed size
+              # during startup and overwrites whatever -screen-* asked for.
+              '--resolution', "$($env:EXPLORER_RENDER_WIDTH)x$($env:EXPLORER_RENDER_HEIGHT)"
             ) `
             -PassThru
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
