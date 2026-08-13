@@ -149,32 +149,26 @@ public class BackpackWearablesTests : BaseTest
         !string.IsNullOrEmpty(text) && text.Contains(term, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Reads the leading item's name until two consecutive reads agree, so a baseline is
-    /// pinned to a grid that has stopped moving. FirstLoadedGridItem is an unindexed path,
-    /// and the grid pool keeps stale tiles enabled while results stream in, so a single read
-    /// can land on a tile the page is about to replace — the defect that failed the emotes
-    /// pagination round-trip on CI run 31164127596 and is latent here.
-    /// Selection stays on FirstLoadedGridItem because that is the variant with a green run
-    /// behind it. What CI actually disproved was clicking the tile ROOT (<c>GridItems[i]</c>),
-    /// which left the info panel unpopulated on run 31176916555. An indexed FullBackpack path
-    /// would be both deterministic and selectable and is the obvious next thing to try, but it
-    /// has never been run — do not assume it is ruled out.
+    /// Reads the top-left item's name until two consecutive reads agree, so a baseline is
+    /// pinned to a grid that has stopped moving. Picked by screen position, not by
+    /// FirstLoadedGridItem: that path names whichever tile the hierarchy answers with first,
+    /// which is not the one displayed first and not the same one after a re-bind — the round
+    /// trip read "Blue Star Earring" leaving page 1 and "Blue T-Shirt" returning to it on CI
+    /// run 31615533808, with both tiles visibly in the last row.
     /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
     /// PR #54's "text differs from the previous name" predicate would invert the very
     /// condition being established.
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.WearablesTab wearables)
     {
-        wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
-        var name = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+        var name = SelectSettledTopLeftName(wearables);
 
         for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
             // The one deliberate pause left in this fixture: it is the interval between two
             // samples, so it is the measurement, not padding around one.
             Wait(1);
-            wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
-            var reread = SelectItemAndReadName(wearables.FirstLoadedGridItem, wearables.SelectedItemName);
+            var reread = SelectSettledTopLeftName(wearables);
             if (reread == name)
                 return name;
 
@@ -182,6 +176,14 @@ public class BackpackWearablesTests : BaseTest
         }
 
         return name;
+    }
+
+    // FirstLoadedGridItem still gates on content — it is the cheapest "the grid has finished
+    // streaming" probe, and the position pick needs loaded tiles to choose between.
+    private string SelectSettledTopLeftName(ExplorePanelBackpackView.WearablesTab wearables)
+    {
+        wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
+        return SelectItemAndReadName(wearables.FindTopLeftLoadedItem(), wearables.SelectedItemName);
     }
 
     /// <summary>
@@ -203,7 +205,7 @@ public class BackpackWearablesTests : BaseTest
             // this read only has to notice the flip, so polling for a differing name is right.
             wearables.FirstLoadedGridItem.WaitUntilLoaded(SlowChassis.SETTLE_TIMEOUT);
             var name = SelectItemAndReadName(
-                wearables.FirstLoadedGridItem, wearables.SelectedItemName, previousName, RETRY_READ_TIMEOUT);
+                wearables.FindTopLeftLoadedItem(), wearables.SelectedItemName, previousName, RETRY_READ_TIMEOUT);
             if (name != previousName)
                 // Settle before returning, do not trust the first differing read. This is the
                 // value the round-trip assertion compares, so it is the read that has to be

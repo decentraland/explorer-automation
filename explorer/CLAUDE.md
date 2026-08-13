@@ -42,6 +42,15 @@ diff, the scope drops back to the fixtures actually under test, and the primitiv
 ships. Keep it in the PR when the primitive *is* the thing under test — then the wide run is
 the point.
 
+Sharding follows the same rule. The Windows leg splits the resolved scope with
+`explorer/ci/ScopeInWorldTests`, which bin-packs whole fixtures by counted tests — intra-fixture
+`[Order]` is load-bearing — and plans a single shard on any doubt, or at 15 tests and under, where
+a second runner's startup costs more than it saves. Never a literal fixture list: the two
+hardcoded filters kept running the same 14 fixtures while the category grew, and the eight
+Camera/Minimap tests ran nowhere — run 31591893759 discovered 66 tests on macOS against 31 + 27 on
+Windows. A test filter that matches nothing exits clean, which is why each shard reconciles the
+count MetaForge reports against its plan.
+
 ## Architecture
 
 **Page Object Model (POM)** pattern with NUnit test fixtures. Two main areas:
@@ -75,6 +84,19 @@ resolve against different hierarchies and Unity restarts the count. Press count,
 parking the cursor first and settling before the press each moved the rate; none fixed it.
 Switching to the button took the suite from one-or-both equip tests failing every run to
 green.
+
+**A press outside the viewport is dropped, and AltTester calls it a success.** `GraphicRaycaster`
+returns before hit-testing anything once the pointer leaves the camera's 0..1 viewport, so nothing
+is pressed and no backdrop swallows it either — the symptom is a timeout on whatever the press was
+meant to produce, with the panel still open. Check the target's `y` against the screen height
+before reaching for SoftMask or a pooled rebuild.
+
+What decides this is the **aspect ratio, not the pixel size**. Every full-screen panel's canvas is
+`ScaleWithScreenSize` against a 1920x1080 reference matched on width, so the layout gets
+`1920 * height / width` units of vertical room: 1024x768 leaves it 1440 and works, 1920x800 leaves
+it 800 and puts the passport and community-detail close buttons past the top edge. Keep the
+viewport at or under 16:9. `Viewport.RequireUsable` logs the size every run and fails the fixture
+below 900 units; `explorer/ci/Resolve-ExplorerRenderSize.ps1` is what keeps CI inside that.
 
 **Tap is dead weight in this build.** AltTester's tap path compiles out its
 pointerDown/Up/Click dispatch when the EventSystem runs `InputSystemUIInputModule`, which
@@ -152,6 +174,16 @@ converting it trades a real guarantee for a weaker one, because **findable is no
 panel-open helper whose test then reads a grid or a search result keeps its settle; the
 presence-only shortcut tests do not need one.
 
+A ceiling that is routinely 75-90% spent is a scheduled failure. `EmotesTab.WaitForGridPageLoaded`
+measured 30.2s, 33.0s and 35.5s on runs that passed, against `CONTENT_TIMEOUT`'s 40s — and duly ran
+out of it twice, once with nothing loaded and once with thirteen of sixteen tiles done. Nothing
+about those runs differed except that the grid was slower, which is why it read as flaky for months.
+Before believing that of a wait, read the step's duration on the runs that passed. Whole-page waits
+now take `GRID_PAGE_TIMEOUT` instead: sixteen sequential streams do not belong on a single-element
+ceiling. A wait shared across several elements also overshoots its own deadline, since the page
+floors each tile at `Math.Max(remaining, 1D)` — blowing the budget costs it plus a second per
+remaining tile, which is why the empty-grid failure reported 55s against a 40s ceiling.
+
 Timeouts are floors, not ceilings. `WaitForObject` polls with a round trip per iteration, so a
 15s probe spends about 20s. A probe you *expect* to fail therefore costs more than its number
 says — poll `IsPresent` against a deadline instead of catching a `WaitFor`.
@@ -179,6 +211,17 @@ left to right and stops at the first that answers, the places view scans the who
 smallest `mobileY` and breaks ties on `x`. Probe the element that will be clicked, not its parent.
 The places grid also gates presses behind its skeleton — `WaitForResultsInteractive` waits for
 `LoadedState`'s `CanvasGroup` to start blocking raycasts, which only happens once the fade ends.
+
+The two backpack grids do not behave alike, and the same fix is right for one and wrong for the
+other. In the **wearables** grid the unindexed `FirstLoadedGridItem` path answers with a tile that
+is neither the one displayed first nor the same one after a re-bind — the pagination round trip
+read "Blue Star Earring" leaving page 1 and "Blue T-Shirt" returning to it, and the final frame
+showed the selection bottom-right while the visual first item was top-left. Picking the
+left-top-most loaded tile by screen position fixes it. In the **emotes** grid the same path is
+stable (two runs a day apart both read "Ho Ho Ho"), and picking by position instead *destabilises*
+it: the leading tile intermittently reports not-loaded, so the pick alternates between two tiles in
+one row (x=873 and x=1010, both mobileY=331) and the round trip fails. Measure before porting a
+grid fix sideways.
 
 Still index-addressed and carrying the same latent bug: `PlacesTests`'s search and filter
 assertions, which assume index 0 is the leading result, and `CommunitiesTests` (`Cards[0].Title`).
@@ -214,6 +257,15 @@ Two shapes of gate, not interchangeable:
 Which shape a feature uses is decided in `SidebarController.OnViewInstantiated` and the client's
 `IsUserAllowedToUseTheFeatureAsync` helpers; read those before mapping a button to a gate.
 
+A gate can also be unanswerable. The probe is client code, and each CI leg resolves its own newest
+*reachable* dev build (`explorer/ci/Resolve-ExplorerBuildUrl.ps1` — dev because branch builds keep
+the AltTester define that release artifacts strip). Builds publish per platform at different
+times, so a leg's build can predate a probe that just landed, and the probe then answers
+`componentNotFound` — an unanswerable question, not a verdict. `FeatureFlags` reads it as
+`Expected.Unknown` and the run leaves flag-gated UI unasserted instead of failing it, with
+`FeatureFlags.IsAvailable` separating that Unknown from the allowlist one in the log. Do not
+hard-depend a test on a client capability newer than the builds the legs may resolve.
+
 Fetching the document directly is still right when there is no client to ask — reading a CI failure
 after the fact. `https://feature-flags.decentraland.{org|zone}/explorer.json` with a
 `referer: https://decentraland.{env}` header; without it the response is a subset in which live
@@ -223,6 +275,14 @@ features look off. Keys carry the `explorer-` prefix the client strips, and a di
 The Nearby Voice Chat tip appears once loading completes and closes only on its own two buttons —
 Escape does not dismiss it. Its dismissal is a per-profile pref and CI creates a fresh account per
 run, so it is up for the whole run and swallows clicks in the bottom-left.
+
+That account lives in the client's state directory — on Windows
+`%USERPROFILE%\AppData\LocalLow\Decentraland\Explorer` — where `userdata_*.json` is both the
+client's prefs file and where `mf account login` parks the session it provisioned. Clear the two
+logs there by name, never the directory: deleting userdata after login boots the client with
+nothing to log in as, which failed all 33 tests of both Windows shards on run 31611147158 —
+`EnsureInWorld` reported a cached-account screen and then no Jump Into Decentraland button to press. `mf account create` prints the seed phrase and auth token, so CI captures
+its output rather than letting credentials reach the Actions log.
 
 ## Diagnosing a Failed Run
 
@@ -237,6 +297,31 @@ is how a swallowed click is told apart from one dispatched outside the viewport.
 An `[AllureStep]` method's arguments are JSON-serialized into the result file, and a delegate
 argument drags its whole reflection graph in at ~14MB per call. Register a type formatter in
 `GlobalSetup` for any new delegate-taking step.
+
+**The same aspect breaks `catch`.** It invokes the wrapped method through `MethodBase.Invoke`, so
+whatever the method throws arrives at the caller inside a `TargetInvocationException` — one per
+decorated frame crossed, which is why stacks show the chain repeated. `catch (AssertionException)`
+around anything decorated reads correctly and never fires; walk `InnerException` instead. PR #70
+shipped exactly that mistake, compiled clean and changed nothing, and only the CI stack showed it.
+A fix whose whole job is to swallow an exception cannot be verified by a build.
+
+The client's launcher parses its own arguments, and any token without a `--` prefix is taken as the
+value of the last `--` key it saw. A single-dash Unity argument placed after one therefore
+overwrites it: `-screen-fullscreen 0` trailing `--resolution 1749x984` left the client with
+`resolution = 0`. Put single-dash arguments first, and read the client's own `Arg N: key = value`
+dump near the top of Player.log to see what it actually parsed. Note also that `--resolution` is the
+only lever that sets the viewport — `NativeWindowManager.Initialize` re-applies its own windowed
+size at startup and overwrites whatever `-screen-width`/`-screen-height` asked for. Without
+`--resolution` that size is the saved pref or `ResolutionUtils.GetDefaultResolution`, which keeps
+only 16:9 and 16:10 modes whose smaller dimension exceeds 1024 and falls back to 1920x1080 when
+nothing survives — how a 1024x768 desktop got asked for a window larger than itself. And
+`--position` is the parcel to spawn at, not a window coordinate: 0,0 is Genesis Plaza, whose crowd
+and scene load no UI test should sit in.
+
+When checking what display a Windows host actually has, do not read
+`[System.Windows.Forms.Screen]::Bounds`: PowerShell is not DPI-aware, so Bounds answers in scaled
+pixels — a 2560x1600 display at 150% reads 1707x1067. `EnumDisplaySettings` reports the real mode,
+which is what `explorer/ci/Resolve-ExplorerRenderSize.ps1` sizes the render from.
 
 ## Skips
 
