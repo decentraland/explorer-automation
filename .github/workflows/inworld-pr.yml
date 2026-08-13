@@ -10,6 +10,11 @@ name: InWorld (PR)
 # from Roslyn symbols, so a page object only pulls in the fixtures that actually
 # drive it. Any doubt on its side answers ALL.
 #
+# macOS runs the whole selection on its one runner. Windows runs the same selection
+# split across SHARDS runners, planned by the same tool from the same fixture list —
+# so a fixture cannot be in the category and in no shard. No plan means no split, so
+# every fallback path still runs everything on one runner.
+#
 # Baselines are excluded — they are visual-suite inputs and cannot change an
 # InWorld result.
 
@@ -22,6 +27,7 @@ on:
       - 'explorer/ci/**'
       - '.github/workflows/inworld-pr.yml'
       - '.github/workflows/run-inworld-suite.yml'
+      - '.github/workflows/windows-inworld-custom-image.yml'
       - '.github/actions/setup-explorer-runner/**'
 
 # Scoped to the PR branch: a new commit supersedes the run in flight. With one
@@ -46,6 +52,7 @@ jobs:
     outputs:
       should_run: ${{ steps.scope.outputs.should_run }}
       filter: ${{ steps.scope.outputs.filter }}
+      shards: ${{ steps.scope.outputs.shards }}
     steps:
       - uses: actions/checkout@v6
 
@@ -85,8 +92,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GOLDEN: ${{ steps.golden.outcome }}
+          # Windows runners the selection is split across. The macOS suite is
+          # unaffected and always runs the whole selection on one machine.
+          SHARDS: '2'
         run: |
           set -euo pipefail
+          SCOPE_DLL=explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll
+          PLAN="$RUNNER_TEMP/shards.json"
+
           CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
             --paginate --jq '.[].filename')
           echo "::group::Changed files"
@@ -98,27 +111,26 @@ jobs:
           # assembly-level [SetUpFixture] that no fixture references by symbol, so
           # letting the graph classify a change there would produce a false green.
           BROAD='^(\.github/workflows/|\.github/actions/|explorer/ci/|explorer/Tests/GlobalSetup\.cs$|explorer/Tests/GlobalUsings\.cs$|explorer/Tests/Tests\.csproj$)'
+
+          # The resolver prints ALL on any doubt of its own; `|| echo ALL` covers a crash
+          # that kills it before it can, and a failed golden check demotes the answer to
+          # ALL as well. --shard-plan is a side channel: stdout keeps the same contract,
+          # and no plan means the Windows suite runs the selection unsharded.
+          SCOPE=ALL
           if printf '%s\n' "$CHANGED" | grep -Eq "$BROAD"; then
             echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
-            {
-              echo "should_run=true"
-              echo "filter=Category=InWorld"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Everything else under explorer/Tests/ goes to the resolver. It prints ALL
-          # on any doubt of its own; `|| echo ALL` covers a crash that kills it before
-          # it can, and a failed golden check demotes the answer to ALL as well.
-          SCOPE=ALL
-          if [ "$GOLDEN" = 'success' ]; then
+            if [ "$GOLDEN" = 'success' ]; then
+              dotnet "$SCOPE_DLL" --all --shards "$SHARDS" --shard-plan "$PLAN" \
+                > /dev/null 2> "$RUNNER_TEMP/scope.log" || true
+            fi
+          elif [ "$GOLDEN" != 'success' ]; then
+            echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
+          else
             SCOPE=$(printf '%s\n' "$CHANGED" \
-              | dotnet explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll \
+              | dotnet "$SCOPE_DLL" --shards "$SHARDS" --shard-plan "$PLAN" \
                 2> "$RUNNER_TEMP/scope.log" \
               || echo ALL)
             SCOPE=$(printf '%s' "$SCOPE" | tail -n 1)
-          else
-            echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
           fi
 
           if [ -f "$RUNNER_TEMP/scope.log" ]; then
@@ -166,11 +178,39 @@ jobs:
             echo "::notice::Affected InWorld fixtures:${SCOPE#FIXTURES:}"
           fi
 
+          # The plan is only usable for the scope it was built for. Every branch above that
+          # widens FILTER past what the resolver selected also drops the plan, so a widened
+          # scope can never be served by a narrower split.
+          PLANNED_SCOPE=$(jq -r '.scope' "$PLAN" 2>/dev/null || true)
+          if [ "$FILTER" = 'Category=InWorld' ] && [ "$PLANNED_SCOPE" != 'ALL' ]; then
+            PLANNED_SCOPE=''
+          fi
+
+          SHARD_PLAN=''
+          if [ -n "$PLANNED_SCOPE" ] && [ "$PLANNED_SCOPE" = "$SCOPE" ]; then
+            SHARD_PLAN=$(jq -c '.shards' "$PLAN")
+          else
+            echo "::warning::No shard plan for this scope — the Windows suite runs it on one runner."
+            SHARD_PLAN=$(jq -cn --arg f "$FILTER" '[{index:1,name:"1/1",filter:$f,fixtures:"",tests:0}]')
+          fi
+
+          {
+            echo "### InWorld shards"
+            echo
+            echo '| shard | tests | fixtures |'
+            echo '| --- | --- | --- |'
+            printf '%s' "$SHARD_PLAN" \
+              | jq -r '.[] | "| \(.name) | \(.tests) | \(.fixtures // "" | if . == "" then "(whole selection)" else . end) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           {
             echo "should_run=true"
             echo "filter=${FILTER}"
+            echo "shards=${SHARD_PLAN}"
           } >> "$GITHUB_OUTPUT"
 
+  # One caller job on purpose: GitHub keys the run's fold on it, so both legs and
+  # the results table stay under a single "InWorld suite" heading.
   run-suite:
     name: InWorld suite
     needs: resolve
@@ -183,6 +223,7 @@ jobs:
       # connection: 0%".
       build_url: ''
       filter: ${{ needs.resolve.outputs.filter }}
+      shards: ${{ needs.resolve.outputs.shards }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
     secrets: inherit

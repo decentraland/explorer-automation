@@ -78,31 +78,65 @@ internal static class Program
         if (selfTest)
             return GoldenCases.Run(graph);
 
-        var changed = ReadChangedFiles();
-        var result = Resolve(graph, changed);
+        var planPath = Option(args, "--shard-plan");
 
-        foreach (var line in result.Trail)
-            Console.Error.WriteLine(line);
+        // Every exit path but a written plan must leave none behind: the caller reads a missing
+        // plan as "run the whole selection on one runner".
+        if (planPath is not null)
+            File.Delete(planPath);
 
-        if (result.FailSafeReason is { } reason)
-            return FailSafe(reason);
+        List<string> selected;
 
-        if (result.Fixtures.Count == 0)
+        if (args.Contains("--all"))
         {
-            Console.Error.WriteLine("=> NONE: no InWorld fixture reaches any changed file.");
-            Console.WriteLine("NONE");
-            return 0;
-        }
-
-        if (result.Fixtures.Count == graph.Fixtures.Count)
-        {
-            Console.Error.WriteLine($"=> ALL: the closure covers every InWorld fixture ({string.Join(" ", graph.Fixtures)}).");
+            selected = graph.Fixtures;
+            Console.Error.WriteLine($"=> ALL: requested explicitly ({string.Join(" ", selected)}).");
             Console.WriteLine("ALL");
-            return 0;
+        }
+        else
+        {
+            var result = Resolve(graph, ReadChangedFiles());
+
+            foreach (var line in result.Trail)
+                Console.Error.WriteLine(line);
+
+            if (result.FailSafeReason is { } reason)
+                return FailSafe(reason);
+
+            if (result.Fixtures.Count == 0)
+            {
+                Console.Error.WriteLine("=> NONE: no InWorld fixture reaches any changed file.");
+                Console.WriteLine("NONE");
+                return 0;
+            }
+
+            selected = result.Fixtures;
+
+            if (selected.Count == graph.Fixtures.Count)
+            {
+                Console.Error.WriteLine($"=> ALL: the closure covers every InWorld fixture ({string.Join(" ", graph.Fixtures)}).");
+                Console.WriteLine("ALL");
+            }
+            else
+            {
+                Console.Error.WriteLine($"=> FIXTURES: {string.Join(" ", selected)}");
+                Console.WriteLine($"FIXTURES: {string.Join(" ", selected)}");
+            }
         }
 
-        Console.Error.WriteLine($"=> FIXTURES: {string.Join(" ", result.Fixtures)}");
-        Console.WriteLine($"FIXTURES: {string.Join(" ", result.Fixtures)}");
+        if (planPath is not null && int.TryParse(Option(args, "--shards"), out var shardCount))
+        {
+            if (graph.CountsUntrusted is { } why)
+                Console.Error.WriteLine($"note: test counts are untrusted ({why}), planning one shard");
+
+            // Echoes stdout so the caller can reject a plan that outlived the scope it was built for.
+            var scope = selected.Count == graph.Fixtures.Count
+                ? "ALL"
+                : $"FIXTURES: {string.Join(" ", selected)}";
+
+            Shards.Write(planPath, scope, Shards.Plan(graph, selected, shardCount));
+        }
+
         return 0;
     }
 
