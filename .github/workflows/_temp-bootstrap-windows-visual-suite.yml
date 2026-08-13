@@ -1,0 +1,181 @@
+name: TEMP — Bootstrap visual suite (Windows)
+
+# ════════════════════════════════════════════════════════════════════════
+# DELETE THIS FILE once `run-visual-suite-windows.yml` and the platform
+# fan-out in `manual-visual-tests.yml` / `generate-baselines.yml` have been
+# merged to main AND the /visual-tests + /generate-baselines slash commands
+# fire end-to-end on Windows.
+#
+# Purpose:
+#   GitHub's `issue_comment` trigger only fires for workflow files that
+#   exist on the *default branch* of the repo. Until our workflows land
+#   on main, /generate-baselines and /visual-tests do nothing — leaving
+#   the Windows pipeline un-smoke-tested. This temporary workflow runs
+#   the full record-then-validate sequence on every push to the Windows
+#   integration branch, against a pinned unity-explorer build, so we can
+#   prove the plumbing works end-to-end before merging.
+#
+# What it does on every push to feat/snapshots-comparison-win:
+#   1. Calls run-visual-suite-windows.yml with mode=record. Renders new
+#      *.windows.png baselines against the pinned build, auto-commits
+#      them back to this branch via github-actions[bot].
+#   2. After (1) lands, calls run-visual-suite-windows.yml with mode=test.
+#      Pulls the just-committed baselines and validates against them
+#      using the same build, exercising the whole diff codepath. The
+#      result is guaranteed-pass by construction (record + validate on
+#      the same render); the point is to validate the *system*, not
+#      visual drift.
+# ════════════════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/snapshots-comparison-win]
+    paths:
+      # Re-trigger only on changes that could affect the pipeline output.
+      # Skip docs-only / unrelated commits to save runner minutes. The
+      # auto-commits from record-job touch Baselines/ and are explicitly
+      # excluded so they don't re-loop the bootstrap.
+      - '.github/workflows/_temp-bootstrap-windows-visual-suite.yml'
+      - '.github/workflows/run-visual-suite-windows.yml'
+      - 'explorer/scenes/**'
+      - 'explorer/Tests/**'
+      - '!explorer/Tests/Baselines/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# One bootstrap run at a time. Cancel earlier in-flight runs so a quick
+# follow-up push doesn't queue behind a stale render.
+concurrency:
+  group: temp-bootstrap-windows-visual-suite
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: 1. Record baselines (windows)
+    uses: ./.github/workflows/run-visual-suite-windows.yml
+    with:
+      mode: record
+      pr_number: '13'
+      # Filter stays at the workflow default (Category=Visual): `mf explorer test`
+      # only spins up the host server + honors --record-baselines when it sees that
+      # exact filter — narrower selectors (FullyQualifiedName~…) skip those branches
+      # and VisualSuiteSetup.RequireHost throws in OneTimeSetUp.
+      # unity-explorer PR #8628 (head: chore/visual-test-app-args, build commit 4490a2a).
+      # Carries:
+      #   - SceneRunner.Scene.AlttesterSceneReadinessProbe (Visual fixtures poll it via
+      #     SceneReady.WaitUntilReady — this is what the PR was originally cut for),
+      #   - NativeWindowManager fullscreen-mode fix cherry-picked as commit 8c407e8: when
+      #     --resolution is provided, Initialize() switches to FullScreenMode.ExclusiveFullScreen
+      #     so the OS does a real DXGI mode-switch instead of clamping the borderless window to
+      #     the runner's 1024x768 desktop (see attached AssertFrameSize captures in earlier runs).
+      # Previous pins:
+      #   - test/visual-tests PR #22281 (pr-22281-578d763): had the readiness probe but not the
+      #     fullscreen fix, hence 1024x768 baselines.
+      #   - PR #8814 (pr-22390-5d024a6): had the fullscreen fix but not the readiness probe,
+      #     hence ComponentNotFoundException in OneTimeSetUp on every fixture.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22497-2d2d841/Decentraland_windows64.zip'
+      tests_ref: feat/snapshots-comparison-win
+    secrets: inherit
+
+  print-record-log:
+    name: 1a. Print Explorer log (record)
+    needs: record
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Player.log artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: player-log-windows-record-run-${{ github.run_id }}
+          path: ./logs
+      - name: Print Player.log
+        run: |
+          echo "::group::Explorer Player.log (windows record)"
+          if [ -f ./logs/Player.log ]; then
+            cat ./logs/Player.log
+          else
+            echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
+          fi
+          echo "::endgroup::"
+
+  validate:
+    name: 2. Validate against just-recorded baselines (windows)
+    needs: record
+    uses: ./.github/workflows/run-visual-suite-windows.yml
+    with:
+      mode: test
+      pr_number: '13'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/visual-test-app-args/pr-22497-2d2d841/Decentraland_windows64.zip'
+      tests_ref: feat/snapshots-comparison-win
+    secrets: inherit
+
+  print-validate-log:
+    name: 2a. Print Explorer log (validate)
+    needs: validate
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Player.log artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: player-log-windows-test-run-${{ github.run_id }}
+          path: ./logs
+      - name: Print Player.log
+        run: |
+          echo "::group::Explorer Player.log (windows validate)"
+          if [ -f ./logs/Player.log ]; then
+            cat ./logs/Player.log
+          else
+            echo "(Player.log artifact missing — upload step may have failed or no log was produced)"
+          fi
+          echo "::endgroup::"
+
+  # When record fails, validate is skipped (needs: record). The validate-mode
+  # PR comment then keeps its ✅ result from the *previous* successful run,
+  # which is misleading at a glance — the PR appears to say "tests passed"
+  # even though the current pipeline is red. Rewrite that comment in place
+  # so it reflects the current pipeline state.
+  mark-validate-stale:
+    name: 2b. Mark stale validate comment (record failed)
+    needs: record
+    if: failure() && needs.record.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Find stale validate-mode comment
+        id: find
+        uses: peter-evans/find-comment@v3
+        with:
+          repository: ${{ github.repository }}
+          issue-number: '13'
+          comment-author: 'github-actions[bot]'
+          body-includes: '## Visual regression tests (windows)'
+
+      - name: Rewrite stale validate-mode comment
+        if: steps.find.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          repository: ${{ github.repository }}
+          issue-number: '13'
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            ## Visual regression tests (windows)
+
+            ⚠️ **Stale — pipeline did not reach the validate step.**
+
+            The baseline-regeneration step (mode `record`) failed in workflow run
+            [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}),
+            so the validate-mode job (`needs: record`) was skipped and the previous
+            ✅ result here is from an older run. See the
+            **Baseline regeneration (windows)** comment above for the current failure.
+
+            <sub>Auto-marked stale by `_temp-bootstrap-windows-visual-suite.yml`.</sub>
