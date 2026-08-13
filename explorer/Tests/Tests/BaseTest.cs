@@ -22,6 +22,19 @@ public abstract class BaseTest
     private static readonly object SidebarSettleLock = new();
     private static bool _sidebarSettled;
 
+    // A CommandResponseTimeoutException means the driver stopped hearing back from the client.
+    // Nothing recovers from that mid-run, and every later command pays the full response ceiling
+    // — 300s in GlobalSetup — before failing the same way. Left alone that is 300s per remaining
+    // fixture, which times the whole step out and buries the one real event under a run's worth
+    // of identical failures. Latch it and stop talking to the driver instead.
+    private static volatile bool _driverLost;
+
+    private const string DRIVER_LOST_MESSAGE =
+        "AltTester stopped responding earlier in this run, so this test never ran. "
+        + "Look at the first failure in the run, not this one.";
+
+    protected static bool DriverLost => _driverLost;
+
     protected ViewContainer Views => ViewContainer.Instance;
     protected AltDriver AltDriver => CommonStuff.AltDriver;
 
@@ -31,6 +44,13 @@ public abstract class BaseTest
     [AllureBefore("Ensure the player is in world")]
     public void OneTimeSetUp()
     {
+        // Nothing left to talk to, so do not spend a command finding that out again.
+        if (DriverLost)
+        {
+            ExceptionFromOneTimeSetUp = new AssertionException(DRIVER_LOST_MESSAGE);
+            return;
+        }
+
         try
         {
             // Before the boot, not after: a viewport this can't clear fails every fixture anyway,
@@ -40,6 +60,7 @@ public abstract class BaseTest
         }
         catch (Exception ex)
         {
+            NoteIfDriverLost(ex);
             // Capture and re-fail per-test in [SetUp]. NUnit reports OneTimeSetUp failures
             // at the fixture level, which Allure doesn't render as test entries — so all
             // tests in this fixture would be invisible in the report. Do NOT rethrow here:
@@ -97,7 +118,9 @@ public abstract class BaseTest
     [AllureAfter("Attach perf capture")]
     public void AttachPerf()
     {
-        if (!_perfStarted) return;
+        // PerfSampler.End is a driver call, and a lost driver would make it cost the response
+        // ceiling to learn what the run already knows.
+        if (!_perfStarted || _driverLost) return;
 
         try
         {
@@ -168,6 +191,20 @@ public abstract class BaseTest
 
         var testResult = TestContext.CurrentContext.Result.Outcome.Status;
         Reporter.Log($"Test {TestContext.CurrentContext.Test.Name} completed with status: {testResult}");
+
+        // The first loss usually happens inside a test body, not in a fixture's setup, so this is
+        // the earliest place the run can notice. NUnit has already reduced it to text by now.
+        if (!_driverLost && testResult == NUnit.Framework.Interfaces.TestStatus.Failed
+            && TestContext.CurrentContext.Result.Message?.Contains(nameof(CommandResponseTimeoutException)) == true)
+            MarkDriverLost();
+
+        // A screenshot is a command too, so once the driver is gone it buys nothing and costs
+        // the response ceiling per test.
+        if (_driverLost)
+        {
+            Reporter.Log("Skipping the final-frame screenshot: AltTester is not responding");
+            return;
+        }
 
         // Screenshot every outcome (not just failures) so the Allure report carries the
         // final frame of each test for visual pass/skip/fail validation.
@@ -267,6 +304,29 @@ public abstract class BaseTest
         }
         _bootedInWorld = true;
         Reporter.Log("Player is in-world and main menu is ready");
+    }
+
+    /// <summary>
+    /// Latches the lost-driver flag when <paramref name="exception"/> is a response timeout.
+    /// Walks the inner chain: the [AllureStep] aspect invokes through reflection, so the real
+    /// exception arrives wrapped in a TargetInvocationException per decorated frame it crossed.
+    /// </summary>
+    private static void NoteIfDriverLost(Exception exception)
+    {
+        for (var e = exception; e != null; e = e.InnerException)
+        {
+            if (e is not CommandResponseTimeoutException) continue;
+
+            MarkDriverLost();
+            return;
+        }
+    }
+
+    private static void MarkDriverLost()
+    {
+        _driverLost = true;
+        Reporter.Log("AltTester stopped responding — abandoning the rest of the run rather than "
+                     + "spending the command ceiling per remaining test. The first failure is the real one.");
     }
 
     [AllureStep("Dismiss the MinimumSpecs warning modal if present")]
