@@ -155,16 +155,11 @@ public class BackpackEmotesTests : BaseTest
         var emotes = Views.ExplorePanel.Backpack.Emotes;
         emotes.Pager.WaitFor();
 
-        // Prime the pager with one throwaway round trip before anything is measured. A page
-        // flip is not a pure view change: it re-fetches the emote list from the lambdas
-        // (GetTrimmedEmotesByParamIntention), and when that response carries an emote the
-        // initial load missed, the merged collection shifts every tile after the insertion
-        // point by one — invalidating any baseline read taken before the flip, no matter how
-        // settled the read itself was. One forward-and-back flip lets that merge land, so the
-        // measured round trip below runs against a collection further flips no longer mutate.
+        // A page flip re-fetches the emote list, and the merge can shift page 1's contents —
+        // one unmeasured round trip lets the collection converge before anything is measured.
         var primedName = FlipPageAndReadFirstItem(emotes, emotes.Pager.NextButton, ReadFirstItemName(emotes));
         FlipPageAndReadFirstItem(emotes, emotes.Pager.PreviousButton, primedName);
-        Reporter.Log("Pager primed — one unmeasured round trip absorbed the flip-triggered emote list re-fetch");
+        Reporter.Log("Pager primed — unmeasured round trip let the emote list converge");
 
         // A shot per read, unconditionally — this test's failures are all about what the grid
         // held at a given moment, and the teardown's final frame only ever shows the last one.
