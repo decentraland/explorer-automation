@@ -20,7 +20,7 @@ public class SkyboxTests : BaseTest
             "Skybox widget should show a HH:mm time of day");
         Reporter.Log("Skybox widget shows title, auto toggle, slider and time label");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.MainMenu.Skybox.WaitForGone();
     }
 
@@ -56,13 +56,13 @@ public class SkyboxTests : BaseTest
         }
 
         Views.MainMenu.Skybox.SetAutoProgression(autoProgressionWasOn);
-        PressEscape();
+        PressEscape(delay: 0);
         Views.MainMenu.Skybox.WaitForGone();
     }
 
     private void OpenSkyboxMenu()
     {
-        Views.MainMenu.SkyboxButton.Click();
+        Views.MainMenu.SkyboxButton.Click(settleMs: 0);
         Views.MainMenu.Skybox.WaitFor();
         // The widget's show animation eats clicks right after it becomes findable (same
         // pattern as the help menu); there is no raycaster signal here, so fixed wait.

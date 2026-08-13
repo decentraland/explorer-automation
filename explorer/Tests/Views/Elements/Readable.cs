@@ -31,10 +31,17 @@ public record Readable(By by, string name) : Locatable(by, name)
     /// Polls the element's text until it satisfies <paramref name="predicate"/> or the timeout
     /// elapses, returning whatever text was last read. Use for labels/counters that populate
     /// or update asynchronously after an action (search results, tab counters, info panels)
-    /// instead of guessing a fixed settle time.
+    /// instead of guessing a fixed settle time. A label that is not in the scene yet reads as
+    /// empty, so waiting for one to appear is the same call as waiting for one to change.
     /// </summary>
+    public string WaitForText(Func<string, bool> predicate, double timeoutSeconds = 10, double pollIntervalSeconds = 0.5) =>
+        WaitForText(predicate, timeoutSeconds, pollIntervalSeconds, verificationShot: true);
+
+    // Shot-suppressed overload for settle loops that call this several times for one logical
+    // read (re-reading a streaming grid's label until two reads agree): only the read the
+    // caller keeps is a verification, so the caller takes the single shot.
     [AllureStep("Wait for text to match")]
-    public string WaitForText(Func<string, bool> predicate, double timeoutSeconds = 10, double pollIntervalSeconds = 0.5)
+    internal string WaitForText(Func<string, bool> predicate, double timeoutSeconds, double pollIntervalSeconds, bool verificationShot)
     {
         // Shot-suppressed reads inside the poll loop (see PassportView.WaitForUserName): a
         // capture per iteration would both spam the report and eat the wall-clock deadline.
@@ -43,7 +50,10 @@ public record Readable(By by, string name) : Locatable(by, name)
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         while (DateTime.UtcNow < deadline)
         {
-            text = GetText(20D, verificationShot: false);
+            // Bound the element wait by what is left of the caller's budget. Hardcoding it
+            // meant a caller asking for 40s failed at 20s, and one asking for 10s blocked for
+            // 20s on a single read.
+            text = TryGetText(Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D));
             if (predicate(text))
             {
                 matched = true;
@@ -52,7 +62,24 @@ public record Readable(By by, string name) : Locatable(by, name)
             Thread.Sleep(TimeSpan.FromSeconds(pollIntervalSeconds));
         }
 
-        Reporter.TakeVerificationShot($"{(matched ? "text" : "timeout")}_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"{(matched ? "text" : "timeout")}_{ShotName}");
         return text;
+    }
+
+    // A label the action was supposed to populate is absent until it does, so absence is a
+    // not-yet, not a lookup failure. Throwing it out of the poll takes the caller's retry loop
+    // with it — and re-driving the interaction is the only thing that fixes one that was
+    // swallowed. Costs no wall-clock: the read already spends the whole remaining budget.
+    private string TryGetText(double timeout)
+    {
+        try
+        {
+            return GetText(timeout, verificationShot: false);
+        }
+        catch (AssertionException)
+        {
+            return string.Empty;
+        }
     }
 }

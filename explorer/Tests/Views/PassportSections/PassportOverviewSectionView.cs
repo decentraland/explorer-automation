@@ -47,9 +47,9 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
         #region Elements
 
         public readonly Readable  AboutMeTitle            = new(By.PATH, "//UserDetailInfo_PassportSubView/InfoTitle");
-        // Bare name deliberately: the pencil is NOT a descendant of
-        // UserDetailInfo_PassportSubView in this build — scoping it there stopped resolving
-        // entirely (CI run 31180360091).
+        // Bare name, though the pencil does sit at InfoTitle/Info_Button_Edit: the module leaves it
+        // inactive until the own-profile check resolves, and AltTester skips inactive objects, so a
+        // scoped lookup races that and finds nothing.
         public readonly Clickable EditAboutMeButton       = new(By.NAME, "Info_Button_Edit");
         public readonly Readable  BioText                 = new(By.PATH, "//UserDetailInfo_PassportSubView/InfoField");
         public readonly Writable  BioInput                = new(By.PATH, "//UserDetailInfo_PassportSubView//InfoField_EDITION_MODE");
@@ -73,13 +73,12 @@ public class PassportOverviewSectionView() : BaseView(new(By.NAME, "OverviewSect
         [AllureStep("Set the About Me bio")]
         public void SetBio(string bio)
         {
-            EditAboutMeButton.ClickOrTap(() => BioInput.IsPresent(verificationShot: false));
-            // Edit mode swaps the read-only InfoField for the input asynchronously. Wait for
-            // the input explicitly instead of leaning on SetText's own (shorter) wait, so a
-            // slow swap reports the missing input rather than a nested invocation exception.
-            BioInput.WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
+            // No WaitFor on the input after this: Open polls for it and only returns once the
+            // edit-mode swap has produced it, so SetText cannot race the swap.
+            PassportEditPress.Open(EditAboutMeButton,
+                () => BioInput.IsPresent(verificationShot: false), "About Me edit mode");
             BioInput.SetText(bio, submit: false);
-            SaveBioButton.Click();
+            SaveBioButton.Click(settleMs: 0);
             // The read-only field comes back before the profile update round-trip lands, so
             // its presence alone is not the signal — poll until it carries the saved text.
             // Deliberately does not throw on timeout: the caller asserts the bio itself and

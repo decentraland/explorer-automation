@@ -13,8 +13,10 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
     /// re-enabled. The MVC ViewBase disables the raycaster while the show animation plays;
     /// without this guard, clicks on inner controls (CloseButton, tab buttons) right after
     /// the section becomes findable get eaten because the raycaster ignores them.
+    /// Pass <c>verificationShot: false</c> when the section is a precondition the test acts
+    /// in rather than the thing under test.
     /// </summary>
-    public override AltObject WaitFor(double timeout = 20D)
+    internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
         // Suppress the intermediate shots (section root, panel root) — the section is only
         // verified ready after the raycaster wait + settle, so the single "appeared" shot is
@@ -35,7 +37,8 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
             Thread.Sleep(750);
         }
         catch (AssertionException) { /* panel root may not be present in some sub-section flows */ }
-        Reporter.TakeVerificationShot($"appeared_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 }

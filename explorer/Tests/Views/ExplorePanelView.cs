@@ -15,7 +15,7 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// the panel becomes findable get eaten because the raycaster ignores them. Override
     /// WaitFor to also wait for the raycaster to be re-enabled.
     /// </summary>
-    public override AltObject WaitFor(double timeout = 20D)
+    internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
         // Suppress the base "appeared" shot — the panel is only verified ready once the
         // raycaster is re-enabled, so the single shot is taken after that wait completes
@@ -27,7 +27,8 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
             true,
             "UnityEngine.UI",
             timeout: 10);
-        Reporter.TakeVerificationShot($"appeared_{ShotName}");
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 
@@ -76,7 +77,7 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
             return;
 
         Reporter.Log("Escape did not dismiss the panel — falling back to CloseButton click");
-        CloseButton.Click();
+        CloseButton.Click(settleMs: 0);
         WaitForGone(15);
     }
 
@@ -88,7 +89,9 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
     /// </summary>
     private bool TryWaitForGone(double timeoutSec)
     {
-        try { WaitForGone(timeoutSec); return true; }
+        // Shot-suppressed: this only answers "did Escape work?", and the panel closing is
+        // every test's cleanup rather than anything one of them verifies.
+        try { WaitForGone(timeoutSec, verificationShot: false); return true; }
         catch { return false; }
     }
 

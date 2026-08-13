@@ -43,6 +43,12 @@ Each element needs a strategy (`By`) and a value.
   4. **Use the returned locators** to write the view, preferring `By.ID` when available.
 - If locator discovery fails or infrastructure isn't available, use `"TODO"` as the value and note which locators need filling in.
 
+**An element the dump can't find may be flag-gated, not mislocated.** The client deactivates the
+GameObject when a feature's flag is off, and an inactive object is not findable — so a missing
+element is as likely to mean "off in this environment" as "wrong locator". Check the feature's gate
+in the client before rewriting a locator that was already correct, and tell the test author, since
+the test will need to respect that flag (see the `test-writer` skill → "Flag-gated features").
+
 ## Choosing the Right Base Class
 
 | Scenario | Base class | File location |

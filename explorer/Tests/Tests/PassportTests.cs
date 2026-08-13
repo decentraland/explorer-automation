@@ -7,6 +7,10 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(15)]
 public class PassportTests : BaseTest
 {
+    // NameInputFieldView.maxNameLength — the editor's own validity rule, which gates whether its
+    // Save button is interactable at all.
+    private const int MAX_NAME_LENGTH = 15;
+
     // Name color edit is NOT covered here: on build dev_b97439fc the NameColorPicker
     // container (parent of ChangeColorButton) stays disabled for the test account because
     // its name is unclaimed — the header shows the Claim Name CTA instead. Verified live
@@ -19,7 +23,7 @@ public class PassportTests : BaseTest
         OpenOwnPassport();
         Reporter.Log("Own passport opened from the sidebar profile menu");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
         Reporter.Log("Passport closed via its close button");
     }
@@ -49,31 +53,35 @@ public class PassportTests : BaseTest
             "Overview should contain the Equipped Items module");
         Reporter.Log("Overview shows avatar preview, About Me, and Equipped Items modules");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
     [Test]
     public void TestEditUserNameAndRevert()
     {
-        // The name editor never opens on this chassis. EditNameButton resolves and both
-        // Click and Tap land on it, but ProfileNameEditor(Clone) stays absent past 40s.
-        // Scoping the locator under //Passport(Clone) was tried and is wrong — the pencil is
-        // not a descendant of it, so the button stopped resolving entirely. Run 31180360091
-        // is therefore NOT evidence of this symptom: it failed on that self-inflicted locator
-        // change, and is cited only so nobody re-attempts the scoping.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: ProfileNameEditor never opens — EditNameButton resolves but neither Click nor Tap opens the modal within 40s (runs 31164127596, 31176916555, 31183128982; run 31180360091 failed separately, on a since-reverted locator scoping)");
-
         OpenOwnPassport();
 
-        // The account's name is unclaimed, so renaming is a plain profile update with no
-        // cooldown — verified live (dev → devauto → dev). Read the current name instead of
-        // hardcoding it so an earlier aborted run can't strand the account under a temp name.
+        // The account's name is unclaimed, so renaming is a plain profile update with no cooldown.
+        // Read the current name rather than hardcoding it, so an earlier aborted run can't strand
+        // the account under a temp name — but it is not necessarily restorable: the editor keeps
+        // Save non-interactable unless the name is at most MAX_NAME_LENGTH, and CI provisions
+        // accounts as ciinworld<runId>, which is longer. Establish a valid baseline first, or the
+        // revert silently cannot be saved and the modal never closes.
         var originalName = Views.Passport.UserNameText.GetText();
         var originalHashtag = Views.Passport.UserNameHashtagText.GetText();
-        var tempName = originalName == "devauto" ? "devauto2" : "devauto";
-        Reporter.Log($"Renaming '{originalName}' to '{tempName}'");
+        var baseName = originalName.Length is > 0 and <= MAX_NAME_LENGTH ? originalName : "devauto";
+        if (baseName != originalName)
+        {
+            Reporter.Log($"'{originalName}' exceeds the {MAX_NAME_LENGTH}-character limit — "
+                         + $"renaming to '{baseName}' to get a restorable baseline");
+            Views.Passport.RenameUser(baseName);
+            Assert.That(Views.Passport.WaitForUserName(baseName), Is.True,
+                "Passport header should show the baseline name before the revert is exercised");
+        }
+
+        var tempName = baseName == "devauto" ? "devauto2" : "devauto";
+        Reporter.Log($"Renaming '{baseName}' to '{tempName}'");
 
         Views.Passport.RenameUser(tempName);
         Assert.That(Views.Passport.WaitForUserName(tempName), Is.True,
@@ -81,28 +89,18 @@ public class PassportTests : BaseTest
         Assert.That(Views.Passport.UserNameHashtagText.GetText(), Is.EqualTo(originalHashtag),
             "The # discriminator is address-derived and must not change on rename");
 
-        Views.Passport.RenameUser(originalName);
-        Assert.That(Views.Passport.WaitForUserName(originalName), Is.True,
-            "Passport header should show the original name after reverting");
-        Reporter.Log($"Name reverted to '{originalName}'");
+        Views.Passport.RenameUser(baseName);
+        Assert.That(Views.Passport.WaitForUserName(baseName), Is.True,
+            "Passport header should show the baseline name after reverting");
+        Reporter.Log($"Name reverted to '{baseName}'");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
     [Test]
     public void TestEditAboutMeAndRestore()
     {
-        // Inline edit mode never opens on this chassis, and the edit pencil itself is
-        // intermittent: run 31176916555 found Info_Button_Edit and clicked it with no effect,
-        // run 31183128982 could not find it at all within 20s — so the affordance is likely
-        // gated on hover or on the About Me module being scrolled into view, which this test
-        // never does. Scoping the locator under //UserDetailInfo_PassportSubView was tried and
-        // is wrong. Run 31180360091 is therefore NOT evidence of this symptom: it failed on
-        // that self-inflicted locator change, and is cited only so nobody re-attempts it.
-        if (OperatingSystem.IsMacOS())
-            Assert.Ignore("pending macOS chassis tuning: About Me edit mode never opens — Info_Button_Edit is intermittently absent, and clicking it when present has no effect (runs 31164127596, 31176916555, 31183128982; run 31180360091 failed separately, on a since-reverted locator scoping)");
-
         OpenOwnPassport();
 
         // The edit-mode input pre-fills with the currently displayed text, and an empty bio
@@ -117,7 +115,7 @@ public class PassportTests : BaseTest
             "About Me should display the new bio after saving");
 
         // Close and reopen the passport to verify the bio persisted past the edit session.
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
         OpenOwnPassport();
         Assert.That(Views.Passport.Overview.AboutMe.BioText.GetText(), Is.EqualTo(tempBio),
@@ -129,7 +127,7 @@ public class PassportTests : BaseTest
             "About Me should display the original bio after restoring");
         Reporter.Log($"Bio restored to '{originalBio}'");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
@@ -149,19 +147,18 @@ public class PassportTests : BaseTest
             "At least one equipped wearable tile should be shown in the passport");
         Reporter.Log("Equipped items grid shows the currently equipped wearables");
 
-        Views.Passport.CloseButton.Click();
+        Views.Passport.CloseButton.Click(settleMs: 0);
         Views.Passport.WaitForGone();
     }
 
     private void OpenOwnPassport()
     {
-        Views.MainMenu.ProfileButton.Click();
-        Views.ProfileMenu.WaitFor();
-        // Sidebar context menus eat clicks for ~1s after becoming findable (same
-        // show-animation guard as the help menu — see NavbarTests).
-        Wait(1);
-        Views.ProfileMenu.PreviewProfileButton.Click();
-        Views.Passport.WaitFor();
-        Views.Passport.Overview.WaitFor();
+        Views.MainMenu.ProfileButton.Click(settleMs: 0);
+        // The menu runs its show animation with the raycaster off and eats clicks until it is
+        // back on, so wait on the raycaster rather than on the animation's length.
+        Views.ProfileMenu.WaitFor().WaitForComponentProperty(
+            "UnityEngine.UI.GraphicRaycaster", "enabled", true, "UnityEngine.UI", timeout: 15);
+        Views.ProfileMenu.PreviewProfileButton.Click(settleMs: 0);
+        Views.Passport.WaitUntilReady();
     }
 }

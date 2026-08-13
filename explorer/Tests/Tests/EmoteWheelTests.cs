@@ -14,13 +14,13 @@ public class EmoteWheelTests : BaseTest
     [Test]
     public void TestOpenEmoteWheelFromSidebar()
     {
-        Views.MainMenu.EmoteWheelButton.Click();
+        Views.MainMenu.EmoteWheelButton.Click(settleMs: 0);
         Views.EmotesWheel.WaitFor();
         Assert.That(Views.EmotesWheel.TitleLabel.GetText(), Is.EqualTo("Emotes"),
             "Emote wheel should show its Emotes title");
         Reporter.Log("Emote wheel opened from the sidebar emotes button");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.EmotesWheel.WaitForGone();
         Reporter.Log("Emote wheel closed with Escape");
     }
@@ -28,7 +28,7 @@ public class EmoteWheelTests : BaseTest
     [Test]
     public void TestOpenEmoteWheelWithShortcutShowsAllSlots()
     {
-        PressKey(AltKeyCode.B);
+        PressKey(AltKeyCode.B, delay: 0);
         Views.EmotesWheel.WaitFor();
         Reporter.Log("Emote wheel opened with the B shortcut");
 
@@ -44,7 +44,7 @@ public class EmoteWheelTests : BaseTest
         Reporter.Log($"All {EmotesWheelView.SLOT_COUNT} emote slots present on the wheel");
 
         // B toggles: a second press closes the wheel again.
-        PressKey(AltKeyCode.B);
+        PressKey(AltKeyCode.B, delay: 0);
         Views.EmotesWheel.WaitForGone();
         Reporter.Log("Emote wheel closed with a second B press");
     }
@@ -52,7 +52,7 @@ public class EmoteWheelTests : BaseTest
     [Test]
     public void TestTriggerEmoteFromWheelClosesWheel()
     {
-        PressKey(AltKeyCode.B);
+        PressKey(AltKeyCode.B, delay: 0);
         Views.EmotesWheel.WaitFor();
         Wait(0.5); // show-animation guard before clicking a slot
 

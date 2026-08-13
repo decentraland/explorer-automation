@@ -37,14 +37,14 @@ public class CommunitiesTests : BaseTest
     {
         OpenCommunities();
 
-        Views.ExplorePanel.Communities.InvitesAndRequestsButton.Click();
+        Views.ExplorePanel.Communities.InvitesAndRequestsButton.Click(settleMs: 0);
         Views.ExplorePanel.Communities.InvitesAndRequests.WaitFor();
         Assert.That(Views.ExplorePanel.Communities.InvitesAndRequests.Title.GetText(),
             Is.EqualTo("Invites & Requests"),
             "Invites & Requests view should replace the browse grid");
         Reporter.Log("Invites & Requests view opened");
 
-        Views.ExplorePanel.Communities.InvitesAndRequests.BackButton.Click();
+        Views.ExplorePanel.Communities.InvitesAndRequests.BackButton.Click(settleMs: 0);
         Views.ExplorePanel.Communities.InvitesAndRequests.WaitForGone();
         Assert.That(Views.ExplorePanel.Communities.BrowseResultsTitle.GetText(), Is.EqualTo("Browse Communities"),
             "Back button should restore the Browse Communities grid");
@@ -67,13 +67,18 @@ public class CommunitiesTests : BaseTest
         Assert.That(titleText,
             Is.EqualTo("Results for 'Decentraland'"),
             "Search should retitle the grid with the query");
-        Assert.That(Views.ExplorePanel.Communities.BrowseResultsCount.GetText(), Does.Match(@"^\(\d+\)$"),
+        // The count lands after the title, so it needs its own wait — reading it off the back
+        // of the title wait is a race the search loses whenever it resolves quickly.
+        var countText = Views.ExplorePanel.Communities.BrowseResultsCount.WaitForText(
+            text => text.StartsWith('(') && text.EndsWith(')'));
+
+        Assert.That(countText, Does.Match(@"^\(\d+\)$"),
             "Search should show a result count");
         Assert.That(Views.ExplorePanel.Communities.Cards[0].Title.GetText(), Is.Not.Empty,
             "Search should return community cards");
         Reporter.Log("Community search for 'Decentraland' returned results");
 
-        Views.ExplorePanel.Communities.BrowseBackButton.Click();
+        Views.ExplorePanel.Communities.BrowseBackButton.Click(settleMs: 0);
         var restoredTitleText = Views.ExplorePanel.Communities.BrowseResultsTitle.WaitForText(text => text == "Browse Communities");
         Assert.That(restoredTitleText, Is.EqualTo("Browse Communities"),
             "Back button should clear the search");
@@ -94,14 +99,20 @@ public class CommunitiesTests : BaseTest
         for (var i = 0; i < 5 && communityName == null; i++)
         {
             var card = Views.ExplorePanel.Communities.Cards[i];
-            var cardTitle = card.Title.GetText();
+            // Shot-suppressed read: naming the candidate is card selection, retried per card.
+            // One shot below, on the card whose click actually opened the detail.
+            var cardTitle = card.Title.GetText(20D, verificationShot: false);
             card.Thumbnail.Click();
-            Wait(2);
 
-            if (Views.ExplorePanel.Communities.CommunityDetail.IsPresent())
+            if (WaitUntil(() => Views.ExplorePanel.Communities.CommunityDetail.IsPresent(verificationShot: false), 2))
+            {
                 communityName = cardTitle;
+                Reporter.TakeVerificationShot($"opened_CommunityCard_{i}");
+            }
             else
+            {
                 Reporter.Log($"Card {i} ('{cardTitle}') click did not open the detail — likely below the fold, trying next card");
+            }
         }
 
         Assert.That(communityName, Is.Not.Null,
@@ -123,7 +134,7 @@ public class CommunitiesTests : BaseTest
             "Community detail should show section tabs or the private-access notice");
         Reporter.Log($"Community detail opened for '{communityName}'");
 
-        Views.ExplorePanel.Communities.CommunityDetail.CloseButton.Click();
+        Views.ExplorePanel.Communities.CommunityDetail.CloseButton.Click(settleMs: 0);
         Views.ExplorePanel.Communities.CommunityDetail.WaitForGone();
 
         Views.ExplorePanel.Close();

@@ -26,7 +26,7 @@ public class ChatTests : BaseTest
         Reporter.Log("Chat opened from the sidebar chat button");
 
         // The sidebar chat button toggles: a second click closes the panel again.
-        Views.MainMenu.ChatButton.Click();
+        Views.MainMenu.ChatButton.Click(settleMs: 0);
         Views.Chat.ConversationsToolbar.WaitForGone();
         Assert.That(Views.Chat.InputPlaceholder.GetText(), Is.EqualTo(ChatPanelView.PLACEHOLDER_CLOSED),
             "Chat input should show 'Press Enter to chat' after closing");
@@ -36,13 +36,13 @@ public class ChatTests : BaseTest
     [Test]
     public void TestOpenChatWithEnterAndCloseWithEscape()
     {
-        PressKey(AltKeyCode.Return);
+        PressKey(AltKeyCode.Return, delay: 0);
         Views.Chat.ConversationsToolbar.WaitFor();
         Assert.That(Views.Chat.InputPlaceholder.GetText(), Is.EqualTo(ChatPanelView.PLACEHOLDER_OPEN),
             "Chat input should be focused after pressing Enter");
         Reporter.Log("Chat opened with the Enter key");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.Chat.ConversationsToolbar.WaitForGone();
         Reporter.Log("Chat closed with Escape");
     }
@@ -132,7 +132,7 @@ public class ChatTests : BaseTest
             Views.MainMenu.ChatButton.Click();
             if (!TryWaitForToolbarGone(3))
             {
-                PressEscape(); // last resort; the probe below repairs the desync this causes
+                PressEscape(delay: 0); // last resort; the probe below repairs the desync this causes
                 TryWaitForToolbarGone(3);
             }
         }
@@ -176,8 +176,14 @@ public class ChatTests : BaseTest
     {
         for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
         {
-            if (Views.Chat.ConversationsToolbar.IsPresent())
+            // Shot-suppressed poll: the one shot fires on the frame the state was confirmed.
+            // Nothing on the timeout path — the caller either clicks again or falls through to
+            // an authoritative wait, and both of those capture.
+            if (Views.Chat.ConversationsToolbar.IsPresent(verificationShot: false))
+            {
+                Reporter.TakeVerificationShot($"present_{Views.Chat.ConversationsToolbar.ShotName}");
                 return true;
+            }
             Wait(0.5);
         }
 
@@ -193,7 +199,7 @@ public class ChatTests : BaseTest
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            PressEscape();
+            PressEscape(delay: 0);
             if (TryWaitForToolbarGone(3))
                 return;
 
@@ -201,7 +207,7 @@ public class ChatTests : BaseTest
         }
 
         Reporter.Log("Escape did not close the chat — falling back to the sidebar chat button");
-        Views.MainMenu.ChatButton.Click();
+        Views.MainMenu.ChatButton.Click(settleMs: 0);
 
         // Final authoritative wait so a genuine failure produces the standard error.
         Views.Chat.ConversationsToolbar.WaitForGone();
@@ -211,8 +217,12 @@ public class ChatTests : BaseTest
     {
         for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
         {
-            if (!Views.Chat.ConversationsToolbar.IsPresent())
+            // See TryWaitForToolbar: suppressed poll, one shot where the state is confirmed.
+            if (!Views.Chat.ConversationsToolbar.IsPresent(verificationShot: false))
+            {
+                Reporter.TakeVerificationShot($"absent_{Views.Chat.ConversationsToolbar.ShotName}");
                 return true;
+            }
             Wait(0.5);
         }
 

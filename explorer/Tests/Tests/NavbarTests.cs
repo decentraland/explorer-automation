@@ -11,54 +11,68 @@ public class NavbarTests : BaseTest
     //     explore panel's Map tab instead (covered by ShortcutsTests and NavmapTests).
     //   - Keyboard shortcuts (SidebarControlsScreenButton) — the controls panel is reachable
     //     via the help menu / H shortcut instead (covered by TestOpenControlsPanelFromHelpMenu).
+    //
+    // Seven of them are flag-gated, so their expected state is read from the client rather than
+    // assumed — see FeatureFlags. `SidebarController.OnViewInstantiated` deactivates each of these
+    // GameObjects when its gate is off, and an inactive object is not findable, so a hard-coded
+    // "always present" here fails on every run for as long as the flag stays off.
     [Test]
     public void TestSidebarShowsAllNavigationButtons()
     {
         Views.MainMenu.WaitFor();
 
-        var buttons = new (string Label, Locatable Element)[]
+        var buttons = new (string Label, Locatable Element, FeatureFlags.Expected Expected)[]
         {
-            ("My profile", Views.MainMenu.ProfileButton),
-            ("Notifications", Views.MainMenu.NotificationsButton),
-            ("Marketplace Credits", Views.MainMenu.MarketplaceCreditsButton),
-            ("Events", Views.MainMenu.EventsButton),
-            ("Places", Views.MainMenu.PlacesButton),
-            ("Communities", Views.MainMenu.CommunitiesButton),
-            ("Backpack", Views.MainMenu.BackpackButton),
-            ("Marketplace", Views.MainMenu.MarketplaceButton),
-            ("Gallery", Views.MainMenu.GalleryButton),
-            ("Settings", Views.MainMenu.SettingsButton),
-            ("Help", Views.MainMenu.HelpButton),
-            ("Sidebar config", Views.MainMenu.SidebarSettingsButton),
-            ("Nearby voice chat", Views.MainMenu.NearbyVoiceButton),
-            ("Portable Experiences (smart wearables)", Views.MainMenu.SmartWearablesButton),
-            ("Skybox", Views.MainMenu.SkyboxButton),
-            ("Camera", Views.MainMenu.InWorldCameraButton),
-            ("Emotes", Views.MainMenu.EmoteWheelButton),
-            ("Friends", Views.MainMenu.FriendsButton),
-            ("Chat", Views.MainMenu.ChatButton),
+            ("My profile", Views.MainMenu.ProfileButton, FeatureFlags.Expected.Present),
+            ("Notifications", Views.MainMenu.NotificationsButton, FeatureFlags.Expected.Present),
+            ("Marketplace Credits", Views.MainMenu.MarketplaceCreditsButton, FeatureFlags.UserGated("alfa-marketplace-credits")),
+            ("Events", Views.MainMenu.EventsButton, FeatureFlags.Feature("Discover")),
+            ("Places", Views.MainMenu.PlacesButton, FeatureFlags.Feature("Discover")),
+            ("Communities", Views.MainMenu.CommunitiesButton, FeatureFlags.UserGated("alfa-communities")),
+            ("Backpack", Views.MainMenu.BackpackButton, FeatureFlags.Expected.Present),
+            ("Marketplace", Views.MainMenu.MarketplaceButton, FeatureFlags.Expected.Present),
+            ("Gallery", Views.MainMenu.GalleryButton, FeatureFlags.Feature("CameraReel")),
+            ("Settings", Views.MainMenu.SettingsButton, FeatureFlags.Expected.Present),
+            ("Help", Views.MainMenu.HelpButton, FeatureFlags.Expected.Present),
+            ("Sidebar config", Views.MainMenu.SidebarSettingsButton, FeatureFlags.Expected.Present),
+            ("Nearby voice chat", Views.MainMenu.NearbyVoiceButton, FeatureFlags.Feature("NearbyVoiceChat")),
+            ("Portable Experiences (smart wearables)", Views.MainMenu.SmartWearablesButton, FeatureFlags.Expected.Present),
+            ("Skybox", Views.MainMenu.SkyboxButton, FeatureFlags.Expected.Present),
+            ("Camera", Views.MainMenu.InWorldCameraButton, FeatureFlags.Feature("CameraReel")),
+            ("Emotes", Views.MainMenu.EmoteWheelButton, FeatureFlags.Expected.Present),
+            ("Friends", Views.MainMenu.FriendsButton, FeatureFlags.Feature("Friends")),
+            ("Chat", Views.MainMenu.ChatButton, FeatureFlags.Expected.Present),
         };
 
-        var missing = new List<string>();
-        foreach (var (label, element) in buttons)
+        var wrong = new List<string>();
+        foreach (var (label, element, expected) in buttons)
         {
-            if (element.IsPresent())
-                Reporter.Log($"Sidebar button present: {label}");
+            if (expected == FeatureFlags.Expected.Unknown)
+            {
+                Reporter.Log($"Sidebar button not asserted: {label} — flag is on but carries a wallets allowlist");
+                continue;
+            }
+
+            bool shouldBePresent = expected == FeatureFlags.Expected.Present;
+            bool present = element.IsPresent();
+
+            if (present == shouldBePresent)
+                Reporter.Log($"Sidebar button {(present ? "present" : "absent, as its flag is off")}: {label}");
             else
-                missing.Add(label);
+                wrong.Add($"{label} (expected {(shouldBePresent ? "present, absent" : "absent, present")})");
         }
 
         Reporter.Log("Absent from this build's sidebar by design: Map (use M shortcut / Map tab), " +
                      "Keyboard shortcuts (use help menu / H shortcut)");
 
-        Assert.That(missing, Is.Empty,
-            $"Sidebar buttons missing from this build: {string.Join(", ", missing)}");
+        Assert.That(wrong, Is.Empty,
+            $"Sidebar buttons in a state the client's flags don't call for: {string.Join(", ", wrong)}");
     }
 
     [Test]
     public void TestOpenAndCloseNotificationsPanel()
     {
-        Views.MainMenu.NotificationsButton.Click();
+        Views.MainMenu.NotificationsButton.Click(settleMs: 0);
         Views.MainMenu.Notifications.WaitFor();
 
         Assert.That(Views.MainMenu.Notifications.TitleLabel.GetText(), Is.EqualTo("NOTIFICATIONS"),
@@ -66,7 +80,7 @@ public class NavbarTests : BaseTest
         Reporter.Log("Notifications panel opened from the sidebar bell");
 
         // The bell toggles: a second click closes the panel again.
-        Views.MainMenu.NotificationsButton.Click();
+        Views.MainMenu.NotificationsButton.Click(settleMs: 0);
         Views.MainMenu.Notifications.WaitForGone();
         Reporter.Log("Notifications panel closed by clicking the bell again");
     }
@@ -74,7 +88,7 @@ public class NavbarTests : BaseTest
     [Test]
     public void TestOpenHelpMenu()
     {
-        Views.MainMenu.HelpButton.Click();
+        Views.MainMenu.HelpButton.Click(settleMs: 0);
         Views.MainMenu.Help.WaitFor();
         Reporter.Log("Help menu opened from the sidebar");
 
@@ -89,26 +103,29 @@ public class NavbarTests : BaseTest
         Assert.That(Views.MainMenu.Help.DiscordButton.IsPresent(), Is.True,
             "Help menu should contain the Discord entry");
 
-        PressEscape();
+        PressEscape(delay: 0);
         Views.MainMenu.Help.WaitForGone();
     }
 
     [Test]
     public void TestOpenControlsPanelFromHelpMenu()
     {
-        Views.MainMenu.HelpButton.Click();
+        Views.MainMenu.HelpButton.Click(settleMs: 0);
         Views.MainMenu.Help.WaitFor();
-        // The context menu's show animation eats clicks right after the view becomes findable
-        // (verified live: an immediate click reports success but the panel never opens).
-        // There is no raycaster signal to wait on here, so settle for a brief fixed wait.
-        Wait(1);
 
-        Views.MainMenu.Help.MouseAndKeyControlsButton.Click();
+        // The context menu's show animation eats clicks right after the view becomes findable,
+        // and there is no raycaster signal here — so click again if the panel never opened.
+        // Per-attempt budget matches the WaitFor below, so only a swallowed click is retried.
+        ClickUntil(() => Views.MainMenu.Help.MouseAndKeyControlsButton.Click(settleMs: 0),
+            () => Views.ControlsPanel.IsPresent(verificationShot: false),
+            attempts: 2, timeoutPerAttempt: 20);
         Views.ControlsPanel.WaitFor();
         Reporter.Log("Mouse and Key Controls panel opened from the help menu");
-        Wait(1); // same show-animation guard before clicking the panel's own exit button
 
-        Views.ControlsPanel.ExitButton.Click();
+        // Same guard on the panel's own exit button.
+        ClickUntil(() => Views.ControlsPanel.ExitButton.Click(settleMs: 0),
+            () => !Views.ControlsPanel.IsPresent(verificationShot: false),
+            attempts: 2, timeoutPerAttempt: 20);
         Views.ControlsPanel.WaitForGone();
         Reporter.Log("Controls panel closed via its exit button");
     }

@@ -7,6 +7,8 @@ public abstract class BaseTest
     private const string PERF_ENV = "EXPLORER_PERF_RECORD";
     private const string PERF_DIR_ENV = "EXPLORER_PERF_DIR";
 
+    private static bool _bootedInWorld;
+
     protected Exception ExceptionFromOneTimeSetUp;
 
     private string _perfCsvPath;
@@ -176,6 +178,14 @@ public abstract class BaseTest
     [AllureStep("Ensure player is in-world")]
     protected virtual void EnsureInWorld()
     {
+        // Boot is a process-wide cost: the client stays live between fixtures, so once one
+        // has booted, the rest only need the main menu to confirm we're still in world.
+        if (_bootedInWorld && Views.MainMenu.IsPresent(verificationShot: false))
+        {
+            Reporter.Log("Already in-world from an earlier fixture — skipping boot");
+            return;
+        }
+
         // MinimumSpecsScreen overlays the splash on hardware that doesn't meet
         // the recommended specs (CI 4-vCPU runner). The modal is instantiated
         // late in MainSceneLoader bootstrap (VerifyMinimumHardwareRequirementMet),
@@ -252,6 +262,7 @@ public abstract class BaseTest
                 _sidebarSettled = true;
             }
         }
+        _bootedInWorld = true;
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
@@ -343,6 +354,10 @@ public abstract class BaseTest
 
     #region Input Helpers
 
+    /// <summary>
+    /// Presses a key and settles for <paramref name="delay"/> seconds. Pass <c>delay: 0</c> when
+    /// the call site waits on the state the press produces — that wait already proves it arrived.
+    /// </summary>
     [AllureStep("Press key")]
     protected void PressKey(AltKeyCode keyCode, float delay = 0.5f)
     {
@@ -352,9 +367,9 @@ public abstract class BaseTest
     }
 
     [AllureStep("Press Escape")]
-    protected void PressEscape()
+    protected void PressEscape(float delay = 0.5f)
     {
-        PressKey(AltKeyCode.Escape);
+        PressKey(AltKeyCode.Escape, delay);
     }
 
     #endregion

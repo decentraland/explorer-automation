@@ -15,23 +15,25 @@ public class EventsTests : BaseTest
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
 
         // Clicking a non-today day selector swaps the calendar for the single-day list.
-        Views.ExplorePanel.Events.DaySelectorButtons[2].Click();
+        Views.ExplorePanel.Events.DaySelectorButtons[2].Click(settleMs: 0);
         Views.ExplorePanel.Events.EventsByDay.WaitFor();
 
         // The counter first shows just the day ("Fri, Aug 07") and appends the event count
         // ("(9)") once the day's events finish loading — poll until the count arrives.
-        var counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText();
+        // Shot-suppressed reads: one shot below, on the value the assert runs against.
+        var counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText(20D, verificationShot: false);
         for (var attempt = 0; attempt < 10 && !counter.Contains('('); attempt++)
         {
             Wait(1);
-            counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText();
+            counter = Views.ExplorePanel.Events.ByDayResultsCounter.GetText(20D, verificationShot: false);
         }
 
+        Reporter.TakeVerificationShot("text_ResultsCounter");
         Assert.That(counter, Does.Match(@"\(\d+\)"),
             "Single-day view should show a '<day> (N)' results counter");
         Reporter.Log($"Switched to single-day view: {counter}");
 
-        Views.ExplorePanel.Events.GoToTodayButton.Click();
+        Views.ExplorePanel.Events.GoToTodayButton.Click(settleMs: 0);
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
         Views.ExplorePanel.Events.EventsByDay.WaitForGone();
         Reporter.Log("Returned to the calendar view via Today button");
@@ -46,23 +48,15 @@ public class EventsTests : BaseTest
         Views.ExplorePanel.Events.EventsCalendar.WaitFor();
         Wait(2); // day columns populate asynchronously
 
-        // The Today column only holds big cards while events are live, so fall back to
-        // tomorrow's first (always-scheduled) small card when nothing is live right now.
         // Card resolution + name capture happen inside the retry: the calendar re-binds
         // cards while events stream in, silently dropping clicks and moving anchors.
         var eventName = string.Empty;
         ClickUntil(() =>
         {
-            var card = Views.ExplorePanel.Events.TodayBigCards[0];
-            if (!card.IsPresent())
-            {
-                Reporter.Log("No live event card in the Today column — using tomorrow's first card");
-                card = Views.ExplorePanel.Events.TomorrowSmallCards[0];
-            }
-
+            var card = Views.ExplorePanel.Events.FindTopLeftVisibleCard();
             eventName = card.EventName.GetText();
             card.Click();
-        }, () => Views.ExplorePanel.Events.EventDetail.IsPresent());
+        }, () => Views.ExplorePanel.Events.EventDetail.IsPresent(verificationShot: false));
 
         Views.ExplorePanel.Events.EventDetail.WaitFor();
         Assert.That(Views.ExplorePanel.Events.EventDetail.EventName.GetText(), Is.EqualTo(eventName),
@@ -71,7 +65,7 @@ public class EventsTests : BaseTest
             "Event detail should contain a DESCRIPTION block");
         Reporter.Log($"Event detail opened for '{eventName}'");
 
-        Views.ExplorePanel.Events.EventDetail.CloseButton.Click();
+        Views.ExplorePanel.Events.EventDetail.CloseButton.Click(settleMs: 0);
         Views.ExplorePanel.Events.EventDetail.WaitForGone();
 
         Views.ExplorePanel.Close();

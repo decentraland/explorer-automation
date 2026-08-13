@@ -9,9 +9,18 @@ public class GlobalSetup
     public void RunBeforeAllTests()
     {
         DotNetEnv.Env.TraversePath().Load();
+        RegisterAllureTypeFormatters();
         StartDriver();
         ViewContainer.Initialize();
         Reporter.SetupUnityLogListener();
+    }
+
+    // Allure JSON-serializes every [AllureStep] argument, and a delegate serializes its whole
+    // reflection graph — declaring type, method, module, assembly — into the result file.
+    private static void RegisterAllureTypeFormatters()
+    {
+        AllureLifecycle.Instance.AddTypeFormatter(new DelegateFormatter<Func<string, bool>>("predicate"));
+        AllureLifecycle.Instance.AddTypeFormatter(new DelegateFormatter<Func<bool>>("condition"));
     }
 
     [OneTimeTearDown]
@@ -89,4 +98,10 @@ public class GlobalSetup
 public static class CommonStuff
 {
     public static AltDriver AltDriver { get; set; }
+}
+
+/// <summary>Renders a delegate step argument as a fixed label — the lambda's body isn't available at runtime.</summary>
+internal sealed class DelegateFormatter<T>(string label) : TypeFormatter<T>
+{
+    public override string Format(T value) => label;
 }
