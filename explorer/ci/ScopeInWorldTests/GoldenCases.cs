@@ -122,7 +122,8 @@ internal static class GoldenCases
         failed += Check("no filter token contains another",
             overlapping.Count == 0, $"[{string.Join(" ", overlapping)}]");
 
-        foreach (var bins in new[] { 1, 2, 3 })
+        // Tied to the constant CI plans with, so that count is always one of the covers asserted.
+        foreach (var bins in new[] { 1, Shards.DefaultCount, Shards.DefaultCount + 1 })
         {
             var plan = Shards.Plan(graph, graph.Fixtures, bins);
             var covered = Sorted(plan.SelectMany(s => s.Fixtures));
@@ -172,6 +173,32 @@ internal static class GoldenCases
         failed += Check($"{Weight(graph, big)} tests over {big.Count} fixtures plan two",
             Shards.Plan(graph, big, 2).Count == 2,
             $"planned {Shards.Plan(graph, big, 2).Count} from [{string.Join(" ", big)}]");
+
+        return failed + CheckScopeRoundTrip(graph);
+    }
+
+    /// <summary>
+    /// The split is planned from the scope string a PR run resolved, so that string has to read
+    /// back as the same fixtures — and a name this project does not have must refuse rather than
+    /// plan a shard whose filter matches nothing.
+    /// </summary>
+    private static int CheckScopeRoundTrip(ReachabilityGraph graph)
+    {
+        var failed = 0;
+        var pair = Sorted([graph.Fixtures[0], graph.Fixtures[^1]]);
+
+        failed += Check("ALL reads back as every fixture",
+            Program.TrySelect(graph, "ALL", out var all, out _)
+            && all.SequenceEqual(graph.Fixtures, StringComparer.Ordinal),
+            $"got [{string.Join(" ", all)}]");
+
+        failed += Check("a resolved scope reads back as the fixtures it names",
+            Program.TrySelect(graph, $"FIXTURES: {string.Join(" ", pair)}", out var back, out _)
+            && back.SequenceEqual(pair, StringComparer.Ordinal),
+            $"got [{string.Join(" ", back)}] for [{string.Join(" ", pair)}]");
+
+        failed += Check("a fixture this project does not have is refused",
+            !Program.TrySelect(graph, "FIXTURES: NotAFixtureTests", out _, out _), "it was accepted");
 
         return failed;
     }

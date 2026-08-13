@@ -6,9 +6,10 @@ using Microsoft.CodeAnalysis.MSBuild;
 namespace ExplorerAutomation.Ci.ScopeInWorldTests;
 
 /// <summary>
-/// Resolves which <c>[Category("InWorld")]</c> fixtures a set of changed files can reach.
-/// Reads repo-relative changed paths from stdin, prints <c>ALL</c>, <c>NONE</c> or
-/// <c>FIXTURES: A B C</c> to stdout, and the audit trail to stderr.
+/// Resolves which <c>[Category("InWorld")]</c> fixtures a set of changed files can reach, and
+/// splits a resolved scope across runners. Reads repo-relative changed paths from stdin (or takes
+/// an already-resolved <c>--scope</c>), prints <c>ALL</c>, <c>NONE</c> or <c>FIXTURES: A B C</c> to
+/// stdout, the audit trail to stderr, and any <c>--shard-plan</c> to that path.
 /// </summary>
 internal static class Program
 {
@@ -87,11 +88,21 @@ internal static class Program
 
         List<string> selected;
 
-        if (args.Contains("--all"))
+        // A scope already resolved elsewhere, handed back in the vocabulary this tool prints,
+        // so nothing has to encode the same answer twice.
+        if (Option(args, "--scope") is { } requested)
         {
-            selected = graph.Fixtures;
-            Console.Error.WriteLine($"=> ALL: requested explicitly ({string.Join(" ", selected)}).");
-            Console.WriteLine("ALL");
+            if (requested.Trim() == "NONE")
+            {
+                Console.Error.WriteLine("=> NONE: requested explicitly, nothing to plan.");
+                Console.WriteLine("NONE");
+                return 0;
+            }
+
+            if (!TrySelect(graph, requested, out selected, out var why))
+                return FailSafe(why);
+
+            Console.Error.WriteLine($"=> requested explicitly: {string.Join(" ", selected)}");
         }
         else
         {
@@ -111,33 +122,75 @@ internal static class Program
             }
 
             selected = result.Fixtures;
-
-            if (selected.Count == graph.Fixtures.Count)
-            {
-                Console.Error.WriteLine($"=> ALL: the closure covers every InWorld fixture ({string.Join(" ", graph.Fixtures)}).");
-                Console.WriteLine("ALL");
-            }
-            else
-            {
-                Console.Error.WriteLine($"=> FIXTURES: {string.Join(" ", selected)}");
-                Console.WriteLine($"FIXTURES: {string.Join(" ", selected)}");
-            }
+            Console.Error.WriteLine(selected.Count == graph.Fixtures.Count
+                ? $"=> ALL: the closure covers every InWorld fixture ({string.Join(" ", graph.Fixtures)})."
+                : $"=> FIXTURES: {string.Join(" ", selected)}");
         }
 
-        if (planPath is not null && int.TryParse(Option(args, "--shards"), out var shardCount))
+        var scope = selected.Count == graph.Fixtures.Count
+            ? "ALL"
+            : $"FIXTURES: {string.Join(" ", selected)}";
+        Console.WriteLine(scope);
+
+        if (planPath is not null)
         {
-            if (graph.CountsUntrusted is { } why)
-                Console.Error.WriteLine($"note: test counts are untrusted ({why}), planning one shard");
+            if (graph.CountsUntrusted is { } untrustedCounts)
+                Console.Error.WriteLine($"note: test counts are untrusted ({untrustedCounts}), planning one shard");
 
-            // Echoes stdout so the caller can reject a plan that outlived the scope it was built for.
-            var scope = selected.Count == graph.Fixtures.Count
-                ? "ALL"
-                : $"FIXTURES: {string.Join(" ", selected)}";
+            var bins = int.TryParse(Option(args, "--shards"), out var requestedBins)
+                ? requestedBins
+                : Shards.DefaultCount;
 
-            Shards.Write(planPath, scope, Shards.Plan(graph, selected, shardCount));
+            Shards.Write(planPath, scope, Shards.Plan(graph, selected, bins));
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Reads a scope back out of the string form this tool prints — <c>ALL</c> or
+    /// <c>FIXTURES: A B</c>. Every name must be a fixture of this graph, or the scope was
+    /// resolved against different code and cannot be planned for.
+    /// </summary>
+    internal static bool TrySelect(
+        ReachabilityGraph graph, string requested, out List<string> selected, out string why)
+    {
+        const string prefix = "FIXTURES:";
+
+        selected = [];
+        var scope = requested.Trim();
+
+        if (scope == "ALL")
+        {
+            selected = graph.Fixtures;
+            why = string.Empty;
+            return true;
+        }
+
+        if (!scope.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            why = $"--scope '{requested}' is neither ALL nor '{prefix} <names>'";
+            return false;
+        }
+
+        var named = scope[prefix.Length..]
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (named.Length == 0)
+        {
+            why = $"--scope '{requested}' names no fixture";
+            return false;
+        }
+
+        if (Array.Find(named, n => !graph.Fixtures.Contains(n, StringComparer.Ordinal)) is { } unknown)
+        {
+            why = $"--scope names {unknown}, which is not an InWorld fixture of this project";
+            return false;
+        }
+
+        selected = [..named.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        why = string.Empty;
+        return true;
     }
 
     internal static ScopeResult Resolve(ReachabilityGraph graph, IEnumerable<string> changed)
