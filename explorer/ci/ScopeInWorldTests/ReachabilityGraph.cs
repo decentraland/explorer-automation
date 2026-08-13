@@ -24,8 +24,17 @@ internal sealed class ReachabilityGraph
     /// <summary>fixture name → (reachable file → member path that reaches it).</summary>
     public Dictionary<string, Dictionary<string, string>> Reach { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>fixture name → a vstest <c>FullyQualifiedName~</c> operand matching only its tests.</summary>
+    public Dictionary<string, string> FilterTokens { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>fixture name → how many test cases NUnit will run for it.</summary>
+    public Dictionary<string, int> TestCounts { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Why the closure must not be believed, when something about the tree invalidates it.</summary>
     public string? Untrusted { get; private set; }
+
+    /// <summary>Why <see cref="TestCounts"/> must not be believed. Weights only — the closure stays valid.</summary>
+    public string? CountsUntrusted { get; private set; }
 
     private ReachabilityGraph(Compilation compilation, string repoRoot)
     {
@@ -45,9 +54,22 @@ internal sealed class ReachabilityGraph
             // Reach and the ALL check are keyed on the simple name, and the vstest filter
             // cannot separate two fixtures that share one either.
             if (!graph.Reach.TryAdd(fixture.Name, graph.Closure(fixture)))
+            {
                 graph.Untrusted ??= $"two InWorld fixtures are both named {fixture.Name}";
-            else
-                graph.Fixtures.Add(fixture.Name);
+                continue;
+            }
+
+            graph.Fixtures.Add(fixture.Name);
+
+            // vstest spells a nested fixture Outer+Inner while Roslyn spells it Outer.Inner,
+            // so the token below would match nothing and the shard would run empty.
+            if (fixture.ContainingType is not null)
+                graph.Untrusted ??= $"{fixture.Name} is a nested type";
+
+            // Trailing dot: a bare ~CameraTests also matches a later CameraTests2 and would
+            // run it twice, once per shard.
+            graph.FilterTokens[fixture.Name] = fixture.ToDisplayString() + ".";
+            graph.TestCounts[fixture.Name] = graph.CountTestCases(fixture);
         }
 
         graph.Untrusted ??= graph.FindMethodLevelCategory();
@@ -126,6 +148,56 @@ internal sealed class ReachabilityGraph
 
         return null;
     }
+
+    /// <summary>
+    /// Test cases a fixture contributes, used to weight the shard split. Inherited tests count
+    /// once, through the base chain, because NUnit runs them per derived fixture.
+    /// </summary>
+    private int CountTestCases(INamedTypeSymbol fixture)
+    {
+        var cases = 0;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        for (INamedTypeSymbol? t = fixture; t is not null && IsLocal(t); t = t.BaseType)
+            foreach (var method in t.GetMembers().OfType<IMethodSymbol>())
+            {
+                var attributes = method.GetAttributes()
+                    .Where(a => IsNUnit(a.AttributeClass))
+                    .Select(a => a.AttributeClass!.Name)
+                    .ToList();
+
+                var testCases = attributes.Count(n => n == "TestCaseAttribute");
+                var declared = testCases + attributes.Count(n => n == "TestAttribute");
+                var generated = attributes.Contains("TestCaseSourceAttribute")
+                                || attributes.Contains("TheoryAttribute");
+
+                if (declared == 0 && !generated)
+                    continue;
+
+                // An override and the member it overrides are one test to NUnit. Claimed only
+                // once it is known to be a test, or an attribute-less override would consume
+                // the slot of the base member carrying the attribute.
+                if (!seen.Add(Signature(method)))
+                    continue;
+
+                // Sources, theories and parameters filled from attributes expand at run time,
+                // so no count can be read off the syntax. A wrong weight unbalances the split
+                // in silence, so it demotes the plan to a single shard instead.
+                if (generated || (testCases == 0 && method.Parameters.Length > 0))
+                    CountsUntrusted ??= $"{t.Name}.{method.Name} expands its cases at run time";
+
+                cases += Math.Max(declared, 1);
+            }
+
+        return cases;
+    }
+
+    private static string Signature(IMethodSymbol method) =>
+        $"{method.Name}({string.Join(",", method.Parameters.Select(p => p.Type.ToDisplayString()))})";
+
+    private static bool IsNUnit(INamedTypeSymbol? attributeClass) =>
+        attributeClass?.ContainingNamespace?.ToDisplayString()
+            .StartsWith("NUnit", StringComparison.Ordinal) == true;
 
     #endregion
 

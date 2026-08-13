@@ -1,10 +1,32 @@
 name: Windows InWorld custom-image benchmark
 
 on:
+  workflow_call:
+    inputs:
+      shards:
+        description: 'Shard plan from Resolve test scope, as a JSON array. Empty runs test_filter on one runner.'
+        required: false
+        default: ''
+        type: string
+      test_filter:
+        description: 'NUnit filter. Used only for a shard the plan left without one.'
+        required: false
+        default: ''
+        type: string
+      verification_screenshots:
+        description: 'Capture intermediate verification screenshots.'
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
+      shards:
+        description: 'Shard plan as a JSON array. Leave empty to run test_filter on a single runner.'
+        required: false
+        default: ''
+        type: string
       test_filter:
-        description: 'NUnit filter. Use Category=InWorld for the complete 58-test suite.'
+        description: 'NUnit filter. Use Category=InWorld for the complete suite.'
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
         type: string
@@ -13,12 +35,6 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    branches:
-      - test/windows-inworld-custom-image
-    paths:
-      - .github/workflows/windows-inworld-custom-image.yml
-
 permissions:
   contents: read
 
@@ -30,15 +46,26 @@ concurrency:
 
 jobs:
   benchmark:
-    name: InWorld suite (Windows custom image)
+    # Explicit, or the matrix appends every value it carries — including the whole filter.
+    name: Windows InWorld tests ${{ matrix.name }}
     runs-on: win-gpu-t4-explorer
+    strategy:
+      fail-fast: false
+      # One entry per runner, planned by explorer/ci/ScopeInWorldTests from the fixtures the
+      # PR actually reaches. Never a literal fixture list: the suite outgrows one silently.
+      matrix:
+        include: ${{ fromJSON(inputs.shards != '' && inputs.shards || '[{"index":1,"name":"1/1","filter":"","fixtures":"","tests":0}]') }}
     timeout-minutes: 55
 
     env:
       BUILD_URL: https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev/pu-24728-9248698/Decentraland_windows64.zip
-      # Pushes are a fast end-to-end chassis smoke. A manual dispatch can
-      # override this with Category=InWorld for the complete sequential suite.
-      TEST_FILTER: ${{ inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
+      TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
+      WINDOWS_SHARD: ${{ matrix.name }}
+      SHARD_INDEX: ${{ matrix.index }}
+      SHARD_FIXTURES: ${{ matrix.fixtures }}
+      # 0 when the plan could not weight the split; the loss check then only asserts
+      # that the shard ran something.
+      SHARD_EXPECTED_TESTS: ${{ matrix.tests }}
       ALT_VERBOSE_LOGS: 'false'
       EXPLORER_PERF_RECORD: '0'
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
@@ -53,6 +80,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           "## Windows custom-image benchmark" >> $env:GITHUB_STEP_SUMMARY
           "" >> $env:GITHUB_STEP_SUMMARY
+          "- Shard: ``$env:WINDOWS_SHARD`` ($env:SHARD_EXPECTED_TESTS tests)" >> $env:GITHUB_STEP_SUMMARY
+          "- Fixtures: ``$env:SHARD_FIXTURES``" >> $env:GITHUB_STEP_SUMMARY
           "- Runner: ``$env:RUNNER_NAME``" >> $env:GITHUB_STEP_SUMMARY
           "- Image: ``unity-explorer-windows:1.0.0``" >> $env:GITHUB_STEP_SUMMARY
           "- Build: ``$env:BUILD_URL``" >> $env:GITHUB_STEP_SUMMARY
@@ -108,7 +137,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $userdata = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
           New-Item $userdata -ItemType Directory -Force | Out-Null
-          $account = "ci-inworld-$env:GITHUB_RUN_ID"
+          $account = "ci-inworld-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
           # MetaForge prints the generated seed phrase and auth token. Capture
           # its output so ephemeral test credentials never reach Actions logs.
           $createOutput = & mf account create $account --env org 2>&1 | Out-String
@@ -128,8 +157,7 @@ jobs:
           }
 
       - name: Run InWorld suite
-        # Manual Category=InWorld runs discover 59 sequential UI tests. Pushes
-        # run one cross-platform smoke test and should complete much sooner.
+        # Sized for the whole category on one runner, so a shard has ample headroom.
         timeout-minutes: 45
         shell: powershell
         env:
@@ -210,11 +238,13 @@ jobs:
 
           # No target: run against the explicitly launched Explorer session.
           $ErrorActionPreference = "Continue"
+          # Teed so the next step can read the count MetaForge reports. A pipe does not
+          # disturb $LASTEXITCODE, which still carries the native exit code.
           mf explorer test `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
             --report-type SingleFile `
-            --skip-allure-open
+            --skip-allure-open | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "mf-test.log")
           exit $LASTEXITCODE
 
       - name: Locate benchmark outputs
@@ -258,7 +288,7 @@ jobs:
         if: always() && steps.outputs.outputs.report_directory != ''
         uses: actions/upload-artifact@v4
         with:
-          name: windows-custom-image-allure-${{ github.run_id }}
+          name: windows-custom-image-allure-shard${{ matrix.index }}-${{ github.run_id }}
           path: ${{ steps.outputs.outputs.report_directory }}
           retention-days: 7
 
@@ -266,7 +296,7 @@ jobs:
         if: always() && steps.outputs.outputs.player_log != ''
         uses: actions/upload-artifact@v4
         with:
-          name: windows-custom-image-player-log-${{ github.run_id }}
+          name: windows-custom-image-player-log-shard${{ matrix.index }}-${{ github.run_id }}
           path: ${{ steps.outputs.outputs.player_log }}
           retention-days: 7
 
@@ -274,10 +304,51 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-custom-image-diagnostics-${{ github.run_id }}
+          name: windows-custom-image-diagnostics-shard${{ matrix.index }}-${{ github.run_id }}
           path: benchmark-diagnostics
           if-no-files-found: warn
           retention-days: 7
+
+      # A vstest filter that matches nothing exits clean, so a shard running less than it
+      # was planned is the failure this catches. After the uploads, so the diagnostics for
+      # a short run are already saved.
+      - name: Verify the shard ran its whole slice
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $log = Join-Path $env:RUNNER_TEMP "mf-test.log"
+
+          $ran = $null
+          if (Test-Path $log) {
+            $found = [regex]::Matches((Get-Content $log -Raw),
+              'Tests finished:\s*(\d+)\s*passed,\s*(\d+)\s*failed,\s*(\d+)\s*skipped')
+            if ($found.Count -gt 0) {
+              $g = $found[$found.Count - 1].Groups
+              $ran = [int]$g[1].Value + [int]$g[2].Value + [int]$g[3].Value
+            }
+          }
+
+          $expected = 0
+          if ($env:SHARD_EXPECTED_TESTS) { $expected = [int]$env:SHARD_EXPECTED_TESTS }
+
+          # Absent only when the suite never reported, which the failing step above already
+          # said. Claiming loss on a measurement we do not have would just be noise.
+          if ($null -eq $ran) {
+            "- Ran: not reported" >> $env:GITHUB_STEP_SUMMARY
+            Write-Host "::warning::MetaForge reported no test count for shard $env:WINDOWS_SHARD"
+            exit 0
+          }
+
+          "- Ran: ``$ran`` test(s) against ``$expected`` planned" >> $env:GITHUB_STEP_SUMMARY
+
+          if ($ran -eq 0) {
+            throw "Shard $env:WINDOWS_SHARD ran no tests — its filter matched nothing"
+          }
+          if ($expected -gt 0 -and $ran -lt $expected) {
+            throw "Shard $env:WINDOWS_SHARD ran $ran of $expected planned tests"
+          }
+          Write-Host "Shard $env:WINDOWS_SHARD ran $ran test(s), planned $expected"
 
       - name: Cleanup MetaForge state
         if: always()
