@@ -342,17 +342,28 @@ jobs:
           }
 
           if (-not (Test-DockerEngine)) {
-            if (-not (Test-Path $desktop)) {
-              throw "Docker Desktop is not installed at $desktop"
+            Write-Host "Starting Docker Desktop through its CLI"
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+              & $docker desktop start --timeout 120 1>$null 2>$null
+              $startExitCode = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
             }
 
-            $dockerService = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
-            if ($dockerService -and $dockerService.Status -ne "Running") {
-              Write-Host "Starting com.docker.service"
-              Start-Service -Name "com.docker.service"
+            if ($startExitCode -ne 0) {
+              Write-Warning "docker desktop start exited with code $startExitCode; falling back to the service and desktop process"
+              if (-not (Test-Path $desktop)) {
+                throw "Docker Desktop is not installed at $desktop"
+              }
+              $dockerService = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
+              if ($dockerService -and $dockerService.Status -ne "Running") {
+                Start-Service -Name "com.docker.service"
+              }
+              Start-Process -FilePath $desktop | Out-Null
             }
 
-            Start-Process -FilePath $desktop | Out-Null
             $deadline = [DateTime]::UtcNow.AddSeconds(120)
             do {
               Start-Sleep -Seconds 3
