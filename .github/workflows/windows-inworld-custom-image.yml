@@ -345,6 +345,13 @@ jobs:
             if (-not (Test-Path $desktop)) {
               throw "Docker Desktop is not installed at $desktop"
             }
+
+            $dockerService = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
+            if ($dockerService -and $dockerService.Status -ne "Running") {
+              Write-Host "Starting com.docker.service"
+              Start-Service -Name "com.docker.service"
+            }
+
             Start-Process -FilePath $desktop | Out-Null
             $deadline = [DateTime]::UtcNow.AddSeconds(120)
             do {
