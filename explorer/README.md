@@ -86,6 +86,22 @@ metaforge explorer run -- --alttester              # NOTE: no --clear
 metaforge explorer test --filter "Category=InWorld"
 ```
 
+### Local Catalyst fixture
+
+The [`explorer-e2e-infra`](https://github.com/decentraland/explorer-e2e-infra) fixture provides a deterministic, read-only Catalyst edge for local contract checks. Start it from that repository, then validate the service bundle consumed by Explorer:
+
+```bash
+cd ../explorer-e2e-infra
+FIXTURE_BUILD_IMAGE=0 ./scripts/fixture-up.sh
+
+cd ../explorer-automation
+FIXTURE_BASE_URL=http://localhost:8080 \
+FIXTURE_BASE_DOMAIN=localhost:8080 \
+./explorer/ci/configure-fixture.sh
+```
+
+The helper checks `/about`, `/content/status`, and `/lambdas/status`, and emits the Explorer arguments `--dclenv org --base-domain localhost:8080`. The current fixture intentionally has no Auth, Social, or Places service and is HTTP-only, so this validates wiring and service health; a full Unity run needs those service-plane endpoints plus HTTPS.
+
 ### Targeted filters
 
 NUnit's `--filter` syntax works with `Category=…`, `FullyQualifiedName~…`, `Name=…`, and boolean OR with `|`:

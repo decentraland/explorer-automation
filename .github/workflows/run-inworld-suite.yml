@@ -121,6 +121,16 @@ on:
         type: string
         required: false
         default: ''
+      fixture_base_url:
+        description: 'Optional reachable URL for an offline E2E Catalyst fixture. Empty keeps the org environment.'
+        type: string
+        required: false
+        default: ''
+      fixture_base_domain:
+        description: 'Optional host:port passed to Explorer --base-domain. Defaults to the host extracted from fixture_base_url.'
+        type: string
+        required: false
+        default: ''
 
   workflow_dispatch:
     inputs:
@@ -149,6 +159,16 @@ on:
         default: true
       windows_build_url:
         description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest unity-explorer dev build.'
+        type: string
+        required: false
+        default: ''
+      fixture_base_url:
+        description: 'Optional reachable URL for an offline E2E Catalyst fixture.'
+        type: string
+        required: false
+        default: ''
+      fixture_base_domain:
+        description: 'Optional host:port passed to Explorer --base-domain.'
         type: string
         required: false
         default: ''
@@ -189,6 +209,8 @@ jobs:
       TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       TESTS_REF: ${{ inputs.tests_ref || '' }}
+      FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
+      FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
       # Same-repo runs (push / dispatch) carry a real commit and ref, so prefer
       # those over the run-id placeholder — the S3 path and PR comment name the
       # actual code under test. Cross-repo callers pass both explicitly.
@@ -326,6 +348,16 @@ jobs:
         with:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      - name: Configure offline Catalyst fixture
+        if: env.FIXTURE_BASE_URL_INPUT != ''
+        env:
+          FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
+          FIXTURE_BASE_DOMAIN: ${{ env.FIXTURE_BASE_DOMAIN_INPUT }}
+        run: |
+          set -euo pipefail
+          chmod +x explorer/ci/configure-fixture.sh
+          ./explorer/ci/configure-fixture.sh
 
       - name: Compute identifiers
         id: ids
@@ -671,11 +703,17 @@ jobs:
           # Teed so the result step can read the count metaforge reports, the same way
           # the Windows shards do, and both rows of the unified table come from one source.
           TEST_EXIT=0
+          APP_ARGS="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen"
+          if [ -n "${FIXTURE_APP_ARGS:-}" ]; then
+            APP_ARGS="${APP_ARGS} ${FIXTURE_APP_ARGS}"
+          fi
+          echo "Launching Explorer with app args: ${APP_ARGS}"
+
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
             --report-type None \
-            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen" \
+            --app-args="${APP_ARGS}" \
             2>&1 | tee "$RUNNER_TEMP/mf-test.log" \
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
@@ -1131,6 +1169,8 @@ jobs:
       # Both legs from one ref, and — as on macOS — a cross-repo caller has no
       # explorer/ci to check out without it.
       tests_ref: ${{ inputs.tests_ref }}
+      fixture_base_url: ${{ inputs.fixture_base_url }}
+      fixture_base_domain: ${{ inputs.fixture_base_domain }}
     secrets: inherit
 
   # One table for every leg. Each leg posts its own row as an artifact because a
