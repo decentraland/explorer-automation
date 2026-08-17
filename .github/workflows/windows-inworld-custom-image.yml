@@ -35,6 +35,9 @@ on:
         type: string
       tests_ref:
         description: 'explorer-automation ref for tests and the explorer/ci scripts. Empty falls back to main.'
+        required: false
+        default: ''
+        type: string
       fixture_base_url:
         description: 'Optional reachable URL for an offline E2E Catalyst fixture.'
         required: false
@@ -338,14 +341,21 @@ jobs:
 
       # GHCR packages can remain private while the first fixture is being proven.
       # Public packages need no login; a caller may provide a read-only token through
-      # secrets: inherit when the package is private.
+      # secrets: inherit when the package is private. The token is inspected in the
+      # shell because the secrets context is not available in an if expression.
       - name: Log in to GHCR for private fixture image
-        if: env.FIXTURE_IMAGE_INPUT != '' && secrets.GHCR_READ_TOKEN != ''
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN }}
+        if: env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+        run: |
+          if ($env:GHCR_READ_TOKEN) {
+            $env:GHCR_READ_TOKEN | docker login ghcr.io --username $env:GHCR_USERNAME --password-stdin
+            if ($LASTEXITCODE -ne 0) { throw "GHCR login failed" }
+          } else {
+            Write-Host "GHCR_READ_TOKEN is not configured; attempting public image pull."
+          }
 
       - name: Start local Catalyst fixture
         if: env.FIXTURE_IMAGE_INPUT != ''
