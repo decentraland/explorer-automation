@@ -323,22 +323,36 @@ jobs:
           $ErrorActionPreference = "Stop"
           $dockerDir = "C:\Program Files\Docker\Docker\resources\bin"
           $docker = Join-Path $dockerDir "docker.exe"
+          $desktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
           if (-not (Test-Path $docker)) {
             throw "Docker CLI was not found at $docker"
           }
           $dockerDir | Out-File $env:GITHUB_PATH -Append -Encoding utf8
           $env:Path = "$dockerDir;$env:Path"
-          $desktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-          & $docker version *> $null
-          if ($LASTEXITCODE -ne 0 -and (Test-Path $desktop)) {
+
+          function Test-DockerEngine {
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+              & $docker version 1>$null 2>$null
+              return $LASTEXITCODE -eq 0
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+          }
+
+          if (-not (Test-DockerEngine)) {
+            if (-not (Test-Path $desktop)) {
+              throw "Docker Desktop is not installed at $desktop"
+            }
             Start-Process -FilePath $desktop | Out-Null
             $deadline = [DateTime]::UtcNow.AddSeconds(120)
             do {
               Start-Sleep -Seconds 3
-              & $docker version *> $null
-            } while ($LASTEXITCODE -ne 0 -and [DateTime]::UtcNow -lt $deadline)
+            } while (-not (Test-DockerEngine) -and [DateTime]::UtcNow -lt $deadline)
           }
-          if ($LASTEXITCODE -ne 0) { throw "Docker daemon is not reachable" }
+
+          if (-not (Test-DockerEngine)) { throw "Docker daemon is not reachable after starting Docker Desktop" }
           & $docker compose version
           if ($LASTEXITCODE -ne 0) { throw "Docker Compose is not available" }
           $osType = & $docker info --format '{{.OSType}}'
