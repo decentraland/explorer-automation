@@ -196,4 +196,8 @@ jobs:
       scope: ${{ needs.resolve.outputs.scope }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
+      # Empty keeps the established org Catalyst path. Set the repository variable
+      # after the published fixture and Windows runner have passed the manual proof.
+      fixture_image: ${{ vars.E2E_CATALYST_IMAGE || '' }}
+      fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
     secrets: inherit

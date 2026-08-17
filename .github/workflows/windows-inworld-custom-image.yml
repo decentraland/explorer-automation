@@ -41,9 +41,19 @@ on:
         default: ''
         type: string
       fixture_base_domain:
-        description: 'Optional host:port passed to Explorer --base-domain.'
+        description: 'Optional hostname passed to Explorer --base-domain (without a port).'
         required: false
         default: ''
+        type: string
+      fixture_image:
+        description: 'Optional Catalyrst image. When set, the workflow starts explorer-e2e-infra locally on this Windows runner.'
+        required: false
+        default: ''
+        type: string
+      fixture_ref:
+        description: 'explorer-e2e-infra ref to check out when fixture_image is set.'
+        required: false
+        default: 'main'
         type: string
   workflow_dispatch:
     inputs:
@@ -70,10 +80,18 @@ on:
         default: ''
         type: string
       fixture_base_domain:
-        description: 'Optional host:port passed to Explorer --base-domain.'
+        description: 'Optional hostname passed to Explorer --base-domain (without a port).'
         required: false
         default: ''
         type: string
+      fixture_image:
+        description: 'Catalyrst image. Set this to run explorer-e2e-infra locally on the Windows runner.'
+        required: false
+        default: ''
+      fixture_ref:
+        description: 'explorer-e2e-infra ref to check out when fixture_image is set.'
+        required: false
+        default: 'main'
 permissions:
   contents: read
 
@@ -273,6 +291,8 @@ jobs:
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
       FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
       FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
+      FIXTURE_IMAGE_INPUT: ${{ inputs.fixture_image || '' }}
+      FIXTURE_REF_INPUT: ${{ inputs.fixture_ref || 'main' }}
 
     steps:
       # `repository` is mandatory: a bare checkout inside a workflow_call run
@@ -285,6 +305,79 @@ jobs:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
+      - name: Check out Catalyst fixture
+        if: env.FIXTURE_IMAGE_INPUT != ''
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-e2e-infra
+          ref: ${{ inputs.fixture_ref || 'main' }}
+          path: .e2e-infra
+
+      - name: Verify fixture container runtime
+        if: env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $desktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+          docker version *> $null
+          if ($LASTEXITCODE -ne 0 -and (Test-Path $desktop)) {
+            Start-Process -FilePath $desktop | Out-Null
+            $deadline = [DateTime]::UtcNow.AddSeconds(120)
+            do {
+              Start-Sleep -Seconds 3
+              docker version *> $null
+            } while ($LASTEXITCODE -ne 0 -and [DateTime]::UtcNow -lt $deadline)
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Docker daemon is not reachable" }
+          docker compose version
+          if ($LASTEXITCODE -ne 0) { throw "Docker Compose is not available" }
+          $osType = docker info --format '{{.OSType}}'
+          if ($LASTEXITCODE -ne 0 -or $osType.Trim() -ne "linux") {
+            throw "Catalyst fixture requires a Linux container engine; Docker reported '$osType'"
+          }
+
+      # GHCR packages can remain private while the first fixture is being proven.
+      # Public packages need no login; a caller may provide a read-only token through
+      # secrets: inherit when the package is private.
+      - name: Log in to GHCR for private fixture image
+        if: env.FIXTURE_IMAGE_INPUT != '' && secrets.GHCR_READ_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Start local Catalyst fixture
+        if: env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        env:
+          CATALYRST_IMAGE: ${{ env.FIXTURE_IMAGE_INPUT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $fixture = Join-Path $env:GITHUB_WORKSPACE ".e2e-infra"
+          $httpPort = 18080
+          & (Join-Path $fixture "scripts\fixture-up.ps1") -Image $env:CATALYRST_IMAGE -HttpsPort 443 -HttpPort $httpPort -Domain localhost
+          if ($LASTEXITCODE -ne 0) { throw "Catalyst fixture failed to start" }
+
+          $base = "https://localhost"
+          $domain = "localhost"
+          "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_COMPOSE_DIR=$fixture" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Validate external Catalyst fixture inputs
+        if: env.FIXTURE_IMAGE_INPUT == '' && env.FIXTURE_BASE_URL_INPUT != ''
+        shell: powershell
+        run: |
+          if (-not $env:FIXTURE_BASE_URL_INPUT) { throw "FIXTURE_BASE_URL_INPUT is empty" }
+
+      - name: Reject conflicting Catalyst fixture modes
+        if: env.FIXTURE_IMAGE_INPUT != '' && env.FIXTURE_BASE_URL_INPUT != ''
+        shell: powershell
+        run: |
+          throw "fixture_image and fixture_base_url are mutually exclusive"
+
       - name: Resolve build URL
         shell: powershell
         env:
@@ -294,8 +387,8 @@ jobs:
           & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerBuildUrl.ps1") `
             -BuildUrl $env:BUILD_URL_INPUT
 
-      - name: Configure offline Catalyst fixture
-        if: env.FIXTURE_BASE_URL_INPUT != ''
+      - name: Configure external Catalyst fixture
+        if: env.FIXTURE_IMAGE_INPUT == '' && env.FIXTURE_BASE_URL_INPUT != ''
         shell: powershell
         env:
           FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
@@ -861,3 +954,31 @@ jobs:
           if ($env:MF_ACCOUNT) {
             try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
           }
+
+      - name: Collect Catalyst fixture logs
+        if: always() && env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $fixture = if ($env:FIXTURE_COMPOSE_DIR) { $env:FIXTURE_COMPOSE_DIR } else { Join-Path $env:GITHUB_WORKSPACE ".e2e-infra" }
+          $log = Join-Path $env:RUNNER_TEMP "catalyst-fixture.log"
+          docker compose --project-directory $fixture logs --no-color *> $log
+          Write-Host "Catalyst fixture logs: $log"
+
+      - name: Upload Catalyst fixture logs
+        if: always() && env.FIXTURE_IMAGE_INPUT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalyst-fixture-logs-${{ matrix.index }}
+          path: ${{ runner.temp }}/catalyst-fixture.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup Catalyst fixture
+        if: always() && env.FIXTURE_IMAGE_INPUT != ''
+        timeout-minutes: 5
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $fixture = if ($env:FIXTURE_COMPOSE_DIR) { $env:FIXTURE_COMPOSE_DIR } else { Join-Path $env:GITHUB_WORKSPACE ".e2e-infra" }
+          & (Join-Path $fixture "scripts\fixture-down.ps1") -Volumes

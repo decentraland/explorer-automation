@@ -56,4 +56,7 @@ jobs:
       # Windows leg splits it with the same tool, into the same number of shards,
       # as it splits a PR's narrower scope.
       scope: 'ALL'
+      # Empty keeps the established org Catalyst path until the fixture is opted in.
+      fixture_image: ${{ vars.E2E_CATALYST_IMAGE || '' }}
+      fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
     secrets: inherit
