@@ -321,20 +321,27 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
+          $dockerDir = "C:\Program Files\Docker\Docker\resources\bin"
+          $docker = Join-Path $dockerDir "docker.exe"
+          if (-not (Test-Path $docker)) {
+            throw "Docker CLI was not found at $docker"
+          }
+          $dockerDir | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          $env:Path = "$dockerDir;$env:Path"
           $desktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-          docker version *> $null
+          & $docker version *> $null
           if ($LASTEXITCODE -ne 0 -and (Test-Path $desktop)) {
             Start-Process -FilePath $desktop | Out-Null
             $deadline = [DateTime]::UtcNow.AddSeconds(120)
             do {
               Start-Sleep -Seconds 3
-              docker version *> $null
+              & $docker version *> $null
             } while ($LASTEXITCODE -ne 0 -and [DateTime]::UtcNow -lt $deadline)
           }
           if ($LASTEXITCODE -ne 0) { throw "Docker daemon is not reachable" }
-          docker compose version
+          & $docker compose version
           if ($LASTEXITCODE -ne 0) { throw "Docker Compose is not available" }
-          $osType = docker info --format '{{.OSType}}'
+          $osType = & $docker info --format '{{.OSType}}'
           if ($LASTEXITCODE -ne 0 -or $osType.Trim() -ne "linux") {
             throw "Catalyst fixture requires a Linux container engine; Docker reported '$osType'"
           }
