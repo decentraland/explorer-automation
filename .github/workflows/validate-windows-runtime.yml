@@ -108,7 +108,27 @@ jobs:
             & $docker desktop version
             & $docker desktop engine ls
             & $docker context ls
-            & $docker desktop logs --priority 2 --since 1h
+            $desktopLog = Join-Path $env:RUNNER_TEMP "docker-desktop-errors.log"
+            & $docker desktop logs --priority 2 --since 1h 2>&1 | Out-File $desktopLog -Encoding utf8
+            Write-Host "Docker Desktop CLI errors: $desktopLog"
+            Get-Content $desktopLog -Tail 300
+          }
+          Write-Host "=== Docker Desktop log files ==="
+          $logRoots = @(
+            (Join-Path $env:LOCALAPPDATA "Docker\log"),
+            (Join-Path $env:APPDATA "Docker")
+          ) | Select-Object -Unique
+          foreach ($logRoot in $logRoots) {
+            if (Test-Path $logRoot) {
+              Write-Host "Log root: $logRoot"
+              $files = Get-ChildItem $logRoot -File -Recurse -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending
+              $files | Select-Object -First 30 FullName, Length, LastWriteTime | Format-Table -AutoSize
+              foreach ($file in ($files | Select-Object -First 5)) {
+                Write-Host "--- $($file.FullName) ---"
+                Get-Content $file.FullName -Tail 120 -ErrorAction SilentlyContinue
+              }
+            }
           }
           Write-Host "=== Processes ==="
           Get-Process -Name @("Docker Desktop", "com.docker.backend", "com.docker.proxy", "dockerd", "vmmemWSL") -ErrorAction SilentlyContinue |
