@@ -39,6 +39,7 @@ permissions:
   # Must be a superset of run-inworld-suite.yml's, or the call dies at startup.
   contents: read
   pull-requests: write
+  id-token: write
 
 jobs:
   resolve:
@@ -196,8 +197,17 @@ jobs:
       scope: ${{ needs.resolve.outputs.scope }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
-      # Empty keeps the established org Catalyst path. Set the repository variable
-      # after the published fixture and Windows runner have passed the manual proof.
-      fixture_image: ${{ vars.E2E_CATALYST_IMAGE || '' }}
+      # External is opt-in. The legacy local image is only passed when local mode
+      # is explicitly selected; hosted GPU runners cannot provide nested Docker.
+      fixture_mode: ${{ vars.E2E_FIXTURE_MODE || 'org' }}
+      fixture_base_url: ${{ vars.E2E_FIXTURE_BASE_URL || '' }}
+      fixture_base_domain: ${{ vars.E2E_FIXTURE_BASE_DOMAIN || '' }}
+      fixture_manager_role_arn: ${{ vars.E2E_FIXTURE_MANAGER_ROLE_ARN || '' }}
+      fixture_manager_function: ${{ vars.E2E_FIXTURE_MANAGER_FUNCTION_NAME || '' }}
+      fixture_manager_region: ${{ vars.E2E_FIXTURE_MANAGER_AWS_REGION || 'us-east-1' }}
+      fixture_manager_profile: ${{ vars.E2E_FIXTURE_PROFILE || 'core-v1' }}
+      fixture_manager_ttl_minutes: ${{ vars.E2E_FIXTURE_TTL_MINUTES || '90' }}
+      fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'empty-bootstrap' }}
+      fixture_image: ${{ (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
     secrets: inherit

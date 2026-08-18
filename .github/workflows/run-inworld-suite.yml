@@ -35,6 +35,10 @@ name: InWorld Suite
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
 #   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (the build-URL probe queries unity-explorer's Actions API)
 #
+# Required repository/environment variables for external fixture mode:
+#   - E2E_FIXTURE_MANAGER_ROLE_ARN         IAM role assumed through GitHub OIDC
+#   - E2E_FIXTURE_MANAGER_FUNCTION_NAME    Lambda function name or ARN
+#
 # The S3 upload credentials come in two org-level families, each granted to a
 # different repo and pointing at a different bucket. `secrets: inherit` passes
 # only what the caller was actually granted, and an ungranted secret resolves
@@ -131,11 +135,46 @@ on:
         type: string
         required: false
         default: ''
+      fixture_mode:
+        description: 'Fixture mode: org, external, or local. External provisions a fixture through the remote manager; local is legacy Windows-only Docker mode.'
+        type: string
+        required: false
+        default: 'org'
       fixture_base_domain:
         description: 'Optional hostname passed to Explorer --base-domain. Must not include a port.'
         type: string
         required: false
         default: ''
+      fixture_manager_role_arn:
+        description: 'IAM role ARN assumed through GitHub Actions OIDC for the fixture manager.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_function:
+        description: 'E2E fixture manager Lambda name or ARN.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_region:
+        description: 'AWS region containing the fixture manager Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      fixture_manager_profile:
+        description: 'Fixture profile to provision through the manager Lambda.'
+        type: string
+        required: false
+        default: 'core-v1'
+      fixture_manager_ttl_minutes:
+        description: 'Lease duration for the external fixture.'
+        type: string
+        required: false
+        default: '90'
+      fixture_seed_version:
+        description: 'Immutable fixture seed version requested by the manager.'
+        type: string
+        required: false
+        default: 'empty-bootstrap'
       fixture_image:
         description: 'Optional Catalyrst image started locally by the Windows runner.'
         type: string
@@ -187,11 +226,47 @@ on:
         type: string
         required: false
         default: ''
+      fixture_mode:
+        description: 'Fixture mode: org, external, or local.'
+        type: choice
+        options: [org, external, local]
+        required: false
+        default: org
       fixture_base_domain:
         description: 'Optional hostname passed to Explorer --base-domain. Must not include a port.'
         type: string
         required: false
         default: ''
+      fixture_manager_role_arn:
+        description: 'IAM role ARN assumed through GitHub Actions OIDC for the fixture manager.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_function:
+        description: 'E2E fixture manager Lambda name or ARN.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_region:
+        description: 'AWS region containing the fixture manager Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      fixture_manager_profile:
+        description: 'Fixture profile to provision through the manager Lambda.'
+        type: string
+        required: false
+        default: 'core-v1'
+      fixture_manager_ttl_minutes:
+        description: 'Lease duration for the external fixture.'
+        type: string
+        required: false
+        default: '90'
+      fixture_seed_version:
+        description: 'Immutable fixture seed version requested by the manager.'
+        type: string
+        required: false
+        default: 'empty-bootstrap'
       fixture_image:
         description: 'Optional Catalyrst image started locally by the Windows runner.'
         type: string
@@ -216,11 +291,108 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
 
 jobs:
+  # Catalyst is provisioned outside the macOS and Windows runners. The Windows
+  # GPU image intentionally does not start Docker: GitHub's hosted pool does
+  # not expose the nested virtualization required by Docker Desktop/WSL2.
+  #
+  # A caller can still pass fixture_base_url for a manually managed fixture.
+  # In that case this job is skipped and the supplied URL is used unchanged.
+  fixture:
+    name: Provision external Catalyst fixture
+    if: inputs.fixture_mode == 'external' && inputs.fixture_base_url == ''
+    runs-on: ubuntu-latest
+    environment: e2e
+    timeout-minutes: 15
+    outputs:
+      base_url: ${{ steps.provision.outputs.base_url }}
+      base_domain: ${{ steps.provision.outputs.base_domain }}
+      fixture_id: ${{ steps.provision.outputs.fixture_id }}
+      seed: ${{ steps.provision.outputs.seed }}
+    steps:
+      - name: Check out automation helpers
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || 'main' }}
+
+      - name: Validate fixture manager configuration
+        env:
+          FIXTURE_MANAGER_ROLE_ARN: ${{ inputs.fixture_manager_role_arn }}
+          FIXTURE_MANAGER_FUNCTION: ${{ inputs.fixture_manager_function }}
+        run: |
+          set -euo pipefail
+          for name in FIXTURE_MANAGER_ROLE_ARN FIXTURE_MANAGER_FUNCTION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name must be configured for external fixture mode"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ inputs.fixture_manager_role_arn }}
+          aws-region: ${{ inputs.fixture_manager_region }}
+          role-session-name: e2e-fixture-${{ github.run_id }}
+
+      - name: Provision fixture through manager Lambda
+        id: provision
+        env:
+          E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
+          AWS_REGION: ${{ inputs.fixture_manager_region }}
+          FIXTURE_RUN_ID: ${{ github.run_id }}
+          FIXTURE_PROFILE: ${{ inputs.fixture_manager_profile }}
+          FIXTURE_TTL_MINUTES: ${{ inputs.fixture_manager_ttl_minutes }}
+          FIXTURE_SEED_VERSION: ${{ inputs.fixture_seed_version }}
+          FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain }}
+        run: |
+          set -euo pipefail
+
+          for name in E2E_FIXTURE_MANAGER_FUNCTION_NAME FIXTURE_PROFILE \
+                      FIXTURE_TTL_MINUTES FIXTURE_SEED_VERSION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name must be configured for external fixture mode"
+              exit 1
+            fi
+          done
+          result="$(bash explorer/ci/invoke-fixture-manager.sh create)"
+          endpoint="$(jq -r '.endpoint // empty' <<<"$result")"
+          fixture_id="$(jq -r '.fixtureId // .runId // empty' <<<"$result")"
+          seed="$(jq -r '.seedVersion // "unknown"' <<<"$result")"
+
+          if [[ "$endpoint" != https://* ]]; then
+            echo "::error::The manager Lambda returned '$endpoint'. Explorer E2E requires a trusted HTTPS edge with a hostname; direct HTTP task IPs are only a lifecycle smoke test."
+            exit 1
+          fi
+          base_domain="${FIXTURE_BASE_DOMAIN_INPUT}"
+          if [ -z "$base_domain" ]; then
+            base_domain="$(python3 -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).hostname or "")' "$endpoint")"
+          fi
+          if [ -z "$base_domain" ]; then
+            echo "::error::Could not derive fixture base domain from $endpoint"
+            exit 1
+          fi
+          echo "base_url=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "base_domain=$base_domain" >> "$GITHUB_OUTPUT"
+          echo "fixture_id=$fixture_id" >> "$GITHUB_OUTPUT"
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          {
+            echo "### External Catalyst fixture"
+            echo
+            echo "- Fixture: \`$fixture_id\`"
+            echo "- Base URL: \`$endpoint\`"
+            echo "- Seed: \`$seed\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   run:
     name: InWorld suite (macOS)
-    if: inputs.macos
+    needs: fixture
+    if: >-
+      always() && inputs.macos &&
+      (needs.fixture.result == 'success' || needs.fixture.result == 'skipped')
     runs-on: macos-14
     # Shared context for the report job. Per-column results cannot travel this way
     # (the Windows matrix would overwrite them), so those come back as artifacts.
@@ -240,8 +412,8 @@ jobs:
       TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       TESTS_REF: ${{ inputs.tests_ref || '' }}
-      FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
-      FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
+      FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
+      FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
       # Same-repo runs (push / dispatch) carry a real commit and ref, so prefer
       # those over the run-id placeholder — the S3 path and PR comment name the
       # actual code under test. Cross-repo callers pass both explicitly.
@@ -1182,7 +1354,10 @@ jobs:
   # job, and so under one fold, instead of the two the callers used to show.
   windows:
     name: Windows
-    if: inputs.windows
+    needs: fixture
+    if: >-
+      always() && inputs.windows &&
+      (needs.fixture.result == 'success' || needs.fixture.result == 'skipped')
     uses: ./.github/workflows/windows-inworld-custom-image.yml
     with:
       scope: ${{ inputs.scope }}
@@ -1200,11 +1375,60 @@ jobs:
       # Both legs from one ref, and — as on macOS — a cross-repo caller has no
       # explorer/ci to check out without it.
       tests_ref: ${{ inputs.tests_ref }}
-      fixture_base_url: ${{ inputs.fixture_base_url }}
-      fixture_base_domain: ${{ inputs.fixture_base_domain }}
+      fixture_base_url: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
+      fixture_base_domain: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
+      fixture_mode: ${{ inputs.fixture_mode }}
       fixture_image: ${{ inputs.fixture_image }}
       fixture_ref: ${{ inputs.fixture_ref }}
     secrets: inherit
+
+  # Cleanup owns the lease through the same OIDC role. It runs after both test
+  # legs, including when one of them failed. The Lambda's scheduled sweep is
+  # the backstop for a workflow cancellation before this job starts.
+  fixture-cleanup:
+    name: Destroy external Catalyst fixture
+    needs: [fixture, run, windows]
+    if: >-
+      always() && inputs.fixture_mode == 'external' &&
+      inputs.fixture_base_url == '' && needs.fixture.result != 'skipped'
+    runs-on: ubuntu-latest
+    environment: e2e
+    timeout-minutes: 10
+    steps:
+      - name: Check out automation helpers
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || 'main' }}
+
+      - name: Validate fixture manager configuration
+        env:
+          FIXTURE_MANAGER_ROLE_ARN: ${{ inputs.fixture_manager_role_arn }}
+          FIXTURE_MANAGER_FUNCTION: ${{ inputs.fixture_manager_function }}
+        run: |
+          set -euo pipefail
+          for name in FIXTURE_MANAGER_ROLE_ARN FIXTURE_MANAGER_FUNCTION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name must be configured for external fixture mode"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ inputs.fixture_manager_role_arn }}
+          aws-region: ${{ inputs.fixture_manager_region }}
+          role-session-name: e2e-fixture-cleanup-${{ github.run_id }}
+
+      - name: Destroy external Catalyst fixture
+        env:
+          E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
+          AWS_REGION: ${{ inputs.fixture_manager_region }}
+          FIXTURE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash explorer/ci/invoke-fixture-manager.sh destroy
 
   # One table for every leg. Each leg posts its own row as an artifact because a
   # matrix job cannot carry per-instance outputs, and shared context (commit, PR,

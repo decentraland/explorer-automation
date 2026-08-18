@@ -65,6 +65,40 @@ Two workflows run the desktop (C#) InWorld suite, both delegating to the reusabl
 
 macOS runs the whole selection on its one runner; Windows splits it across shards, planned in one place for every origin — see [explorer/ci/CLAUDE.md](explorer/ci/CLAUDE.md).
 
+### Offline Catalyst fixture
+
+The InWorld workflows can run against an ephemeral offline Catalyst managed by
+[`explorer-e2e-infra`](https://github.com/decentraland/explorer-e2e-infra). The
+default remains `.org`; opt in by setting these Actions repository or `e2e`
+environment variables:
+
+```text
+E2E_FIXTURE_MODE=external
+E2E_FIXTURE_MANAGER_ROLE_ARN=<IAM role ARN trusted for this repository/environment>
+E2E_FIXTURE_MANAGER_FUNCTION_NAME=<e2e-fixture-manager Lambda name or ARN>
+E2E_FIXTURE_MANAGER_AWS_REGION=us-east-1
+E2E_FIXTURE_PROFILE=core-v1
+E2E_FIXTURE_TTL_MINUTES=90
+E2E_FIXTURE_SEED_VERSION=empty-bootstrap
+```
+
+The reusable workflow assumes that role through GitHub Actions OIDC from the
+`e2e` environment. Its trust policy should match
+`repo:decentraland/explorer-automation:environment:e2e`, and the role should
+only be able to invoke the fixture-manager Lambda. No SSH key or long-lived
+AWS credential is needed in the repository. The Lambda creates the run-scoped
+ECS task from the requested seed, polls it until ready, and destroys it after
+the macOS and Windows legs finish; its scheduled sweep is the cleanup backstop
+for canceled jobs.
+
+The current PoC manager returns the task's direct HTTP public IP. That proves
+the Lambda → ECS lifecycle, but it is intentionally rejected by the workflow:
+Explorer's `--base-domain` contract needs a trusted HTTPS hostname. The next
+infra step is therefore an HTTPS edge (for example an ALB or a small TLS
+reverse proxy) in front of the task. Until that endpoint exists, use
+`fixture_base_url` for a manually managed HTTPS fixture or keep the workflows
+on `.org`.
+
 The visual regression suite has its own reusable (`run-visual-suite.yml`), driven by **Manual Visual Tests** from the Actions tab and by the `/generate-baselines` PR comment. A Windows counterpart for *that* suite still needs the same GPU runner image wired up.
 
 ## Layout
