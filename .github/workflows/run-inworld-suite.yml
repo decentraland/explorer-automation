@@ -343,7 +343,7 @@ jobs:
         env:
           E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
           AWS_REGION: ${{ inputs.fixture_manager_region }}
-          FIXTURE_RUN_ID: ${{ github.run_id }}
+          FIXTURE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           FIXTURE_PROFILE: ${{ inputs.fixture_manager_profile }}
           FIXTURE_TTL_MINUTES: ${{ inputs.fixture_manager_ttl_minutes }}
           FIXTURE_SEED_VERSION: ${{ inputs.fixture_seed_version }}
@@ -1425,7 +1425,7 @@ jobs:
         env:
           E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
           AWS_REGION: ${{ inputs.fixture_manager_region }}
-          FIXTURE_RUN_ID: ${{ github.run_id }}
+          FIXTURE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           bash explorer/ci/invoke-fixture-manager.sh destroy

@@ -107,7 +107,7 @@ case "${action}" in
         printf '%s\n' "${status}"
         exit 0
       fi
-      if [[ "${state}" == "FAILED" || "${state}" == "STOPPED" || "${state}" == "UNKNOWN" ]]; then
+      if [[ "${state}" == "FAILED" || "${state}" == "STOPPED" || "${state}" == "DESTROYED" || "${state}" == "UNKNOWN" ]]; then
         echo "fixture ${fixture_id} entered terminal state ${state}:" >&2
         jq . <<<"${status}" >&2
         exit 1
