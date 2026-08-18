@@ -1,0 +1,112 @@
+name: Validate Windows runtime image
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/validate-windows-runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-windows-runtime
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Docker and WSL on runtime runner
+    runs-on: win-gpu-t4-explorer
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate runtime image
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dockerDir = "C:\Program Files\Docker\Docker\resources\bin"
+          $docker = Join-Path $dockerDir "docker.exe"
+          $desktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+
+          if (-not (Test-Path $docker)) { throw "Docker CLI was not found at $docker" }
+          $env:Path = "$dockerDir;$env:Path"
+
+          foreach ($featureName in @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatform")) {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName
+            Write-Host "${featureName}: $($feature.State)"
+            if ($feature.State -ne "Enabled") {
+              throw "$featureName is '$($feature.State)'; expected Enabled on the consumer runner"
+            }
+          }
+
+          wsl.exe --status
+          wsl.exe --version
+          wsl.exe --list --verbose
+
+          function Test-DockerEngine {
+            & $docker version 1>$null 2>$null
+            return $LASTEXITCODE -eq 0
+          }
+
+          if (-not (Test-DockerEngine)) {
+            if (-not (Test-Path $desktop)) { throw "Docker Desktop was not found at $desktop" }
+            Write-Host "Starting Docker Desktop through its CLI"
+            & $docker desktop start --timeout 120
+            if ($LASTEXITCODE -ne 0) { throw "docker desktop start failed with exit code $LASTEXITCODE" }
+          }
+
+          if (-not (Test-DockerEngine)) { throw "Docker daemon is not reachable after starting Docker Desktop" }
+          & $docker compose version
+          if ($LASTEXITCODE -ne 0) { throw "Docker Compose is not available" }
+          $osType = & $docker info --format '{{.OSType}}'
+          if ($LASTEXITCODE -ne 0 -or $osType.Trim() -ne "linux") {
+            throw "Catalyst fixture requires a Linux container engine; Docker reported '$osType'"
+          }
+
+          & $docker version
+          & $docker info --format 'Docker server: {{.ServerVersion}} / OS: {{.OSType}}'
+
+      - name: Collect runtime diagnostics
+        if: failure()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $log = Join-Path $env:RUNNER_TEMP "windows-runtime-diagnostics.log"
+          Start-Transcript -Path $log -Force
+          Write-Host "=== Runtime identity ==="
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, OsArchitecture | Format-List
+          Write-Host "=== Hypervisor boot configuration ==="
+          bcdedit /enum "{current}"
+          Write-Host "=== Optional features ==="
+          foreach ($featureName in @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatform", "Microsoft-Hyper-V-All")) {
+            Get-WindowsOptionalFeature -Online -FeatureName $featureName | Select-Object FeatureName, State | Format-Table -AutoSize
+          }
+          Write-Host "=== WSL ==="
+          wsl.exe --status
+          wsl.exe --version
+          wsl.exe --list --verbose
+          Write-Host "=== Services ==="
+          Get-Service -Name @("com.docker.service", "vmcompute", "LxssManager", "hns", "LanmanServer") -ErrorAction SilentlyContinue |
+            Select-Object Name, Status, StartType | Format-Table -AutoSize
+          Write-Host "=== Docker Desktop ==="
+          $docker = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+          if (Test-Path $docker) {
+            & $docker desktop status
+            & $docker desktop version
+            & $docker desktop engine ls
+            & $docker context ls
+            & $docker desktop logs --priority 2 --since 1h
+          }
+          Write-Host "=== Processes ==="
+          Get-Process -Name @("Docker Desktop", "com.docker.backend", "com.docker.proxy", "dockerd", "vmmemWSL") -ErrorAction SilentlyContinue |
+            Select-Object Name, Id, CPU, StartTime, Path | Format-Table -AutoSize
+          Stop-Transcript
+
+      - name: Upload runtime diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-runtime-diagnostics
+          path: ${{ runner.temp }}/windows-runtime-diagnostics.log
+          if-no-files-found: warn
+          retention-days: 14
