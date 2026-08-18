@@ -44,15 +44,28 @@ jobs:
           wsl.exe --list --verbose
 
           function Test-DockerEngine {
-            & $docker version 1>$null 2>$null
-            return $LASTEXITCODE -eq 0
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+              & $docker version 1>$null 2>$null
+              return $LASTEXITCODE -eq 0
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
           }
 
           if (-not (Test-DockerEngine)) {
             if (-not (Test-Path $desktop)) { throw "Docker Desktop was not found at $desktop" }
             Write-Host "Starting Docker Desktop through its CLI"
-            & $docker desktop start --timeout 120
-            if ($LASTEXITCODE -ne 0) { throw "docker desktop start failed with exit code $LASTEXITCODE" }
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+              & $docker desktop start --timeout 120
+              $startExitCode = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if ($startExitCode -ne 0) { throw "docker desktop start failed with exit code $startExitCode" }
           }
 
           if (-not (Test-DockerEngine)) { throw "Docker daemon is not reachable after starting Docker Desktop" }
