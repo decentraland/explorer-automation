@@ -26,6 +26,11 @@ public class BackpackEmotesTests : BaseTest
     // swallowed is another click, so it polls briefly and clicks again rather than spending
     // WaitForText's default on a selection that never happened.
     private const double RETRY_READ_TIMEOUT = 4;
+    // Interval between the two samples that pin a read. One second only ever caught a grid
+    // moving within a frame of itself; the reflow that breaks this test lands tens of seconds
+    // after WaitForGridPageLoaded returns, because that wait sees sixteen bound tiles and
+    // cannot see a catalogue still arriving behind them.
+    private const double SETTLE_SAMPLE_INTERVAL = 5;
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
@@ -197,29 +202,25 @@ public class BackpackEmotesTests : BaseTest
     }
 
     /// <summary>
-    /// Selects the grid's leading loaded item and reads its name from the info panel, polling
+    /// Selects the grid's top-left loaded item and reads its name from the info panel, polling
     /// the label (PR #54's <c>WaitForText</c>) until it shows text — and, when the caller
     /// supplies <paramref name="previousName"/>, text that differs from it — instead of
     /// reading after a fixed settle.
-    /// Selects through <c>FirstLoadedGridItem</c>, which is rooted on the tile's FullBackpack
-    /// child. What CI disproved was clicking the tile ROOT (<c>GridItems[i]</c>), which left
-    /// the info panel unpopulated on run 31176916555 — ItemName never appeared. An indexed
-    /// FullBackpack path would be both deterministic and selectable and has never been run,
-    /// so it is untried rather than ruled out.
+    /// Picks by screen position. An indexed path would not help: the index selects a sibling,
+    /// and the pool does not keep siblings in display order. Clicking the tile ROOT
+    /// (<c>GridItems[i]</c>) is separately ruled out — it left the info panel unpopulated on
+    /// run 31176916555, so the click goes to the FullBackpack child either way.
     /// </summary>
     private string ReadFirstItemName(
         ExplorePanelBackpackView.EmotesTab emotes,
         string previousName = null,
         double timeoutSeconds = 10)
     {
-        // One lookup on the paravirt ceiling, not two on different ones. Waiting and then
-        // clicking resolved this path twice, and Click's own wait is fixed at the 20s default —
-        // so the second lookup had half the budget of the first, on a grid that re-binds between
-        // them. Clicking the object the wait returned leaves nothing to re-resolve. No settle
-        // after it: the read below waits on the selection the click produces.
-        emotes.FirstLoadedGridItem.LoadedIndicator
-              .WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false)
-              .Click();
+        // Screen position, not hierarchy order: the unindexed path answers with the page's
+        // trailing cell, the one cell whose content changes when a late arrival shifts the
+        // collection by one. Run 31791128888 read "Robot" and then "Ho Ho Ho" off that cell.
+        // Still one lookup — the sweep returns the object to click, nothing to re-resolve.
+        emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT).Click();
         return emotes.SelectedItemName.WaitForText(
             text => !string.IsNullOrEmpty(text) && text != previousName, timeoutSeconds);
     }
@@ -232,6 +233,7 @@ public class BackpackEmotesTests : BaseTest
     /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
     /// PR #54's "text differs from the previous name" predicate would invert the very
     /// condition being established.
+    /// Throws when they never agree — a value known to be moving is not a baseline.
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
     {
@@ -241,7 +243,7 @@ public class BackpackEmotesTests : BaseTest
         {
             // The one deliberate pause left in this fixture: it is the interval between two
             // samples, so it is the measurement, not padding around one.
-            Wait(1);
+            Wait(SETTLE_SAMPLE_INTERVAL);
             var reread = ReadFirstItemName(emotes);
             if (reread == name)
                 return name;
@@ -249,7 +251,13 @@ public class BackpackEmotesTests : BaseTest
             name = reread;
         }
 
-        return name;
+        // Returning the last read is what let a still-moving grid reach the round-trip
+        // assertion and fail there as a pagination bug. This is the only place that asserts
+        // the collection stopped changing, so it has to fail here instead.
+        throw new AssertionException(
+            $"The emote grid never stopped changing: {SlowChassis.SETTLE_READS + 1} reads taken "
+            + $"{SETTLE_SAMPLE_INTERVAL}s apart each named a different item, the last '{name}'. "
+            + "The catalogue is still arriving and re-sorting the page.");
     }
 
     /// <summary>

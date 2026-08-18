@@ -458,6 +458,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public const int SLOT_COUNT = 10;
         public const int GRID_ITEM_COUNT = 16;
         private const string GRID_PATH = "//Emotes/FullContainer/BackpackGrid";
+        // Rooted on the enabled FullBackpack child: only a tile holding real content has one.
+        private const string LOADED_TILE_PATH = GRID_PATH + "/BackpackEmoteGridItem(Clone)/FullBackpack";
 
         public EmoteSlot[] Slots { get; }
         public EmoteGridItem[] GridItems { get; }
@@ -497,7 +499,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             }
 
             // See WearablesTab.FirstLoadedGridItem — skips stale pooled tiles.
-            var loadedPath = $"{GRID_PATH}/BackpackEmoteGridItem(Clone)/FullBackpack";
+            const string loadedPath = LOADED_TILE_PATH;
             FirstLoadedGridItem = new BackpackGridItem(
                 new(By.PATH, loadedPath),
                 new(By.PATH, $"{loadedPath}/HoverBackground/Equip"),
@@ -568,6 +570,63 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 
             Reporter.TakeVerificationShot("loaded_EmoteGridPage");
             Reporter.Log("Emote grid page finished loading");
+        }
+
+        /// <summary>
+        /// Returns the loaded tile sitting left-top-most on screen. Use instead of
+        /// <see cref="FirstLoadedGridItem"/> wherever the same position has to name the same
+        /// item twice: hierarchy order does not track display order here, so the leading match
+        /// is the page's trailing cell, and that cell changes identity whenever a late arrival
+        /// shifts the collection by one.
+        /// One sweep per call rather than a probe per tile — the per-tile scan this replaces
+        /// cost sixteen presence checks and sixteen waits.
+        /// </summary>
+        [AllureStep("Find the left-top-most loaded emote tile")]
+        public AltObject FindTopLeftLoadedTile(double timeout = CONTENT_TIMEOUT)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(timeout);
+
+            while (true)
+            {
+                // FindObjects returns enabled objects only, which is the same "has content"
+                // filter the path itself encodes.
+                var topLeft = PickTopLeft(CommonStuff.AltDriver.FindObjects(By.PATH, LOADED_TILE_PATH));
+
+                if (topLeft is not null)
+                {
+                    Reporter.Log($"Picked the emote tile at x={topLeft.x}, mobileY={topLeft.mobileY}");
+                    return topLeft;
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                    throw new AssertionException(
+                        "No emote tile has loaded content on screen — the grid is empty or never finished loading");
+
+                Thread.Sleep(POLL_MS);
+            }
+        }
+
+        private static AltObject PickTopLeft(IEnumerable<AltObject> tiles)
+        {
+            AltObject topLeft = null;
+
+            foreach (var tile in tiles)
+            {
+                // y is bottom-origin and mobileY top-origin, so both being positive puts the
+                // centre inside the viewport without asking for the screen size.
+                if (tile.y <= 0 || tile.mobileY <= 0)
+                    continue;
+
+                // A row shares mobileY exactly, so an equal row falls to the leftmost column.
+                if (topLeft is not null
+                    && (tile.mobileY > topLeft.mobileY
+                        || (tile.mobileY == topLeft.mobileY && tile.x >= topLeft.x)))
+                    continue;
+
+                topLeft = tile;
+            }
+
+            return topLeft;
         }
 
         /// <summary>
