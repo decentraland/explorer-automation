@@ -14,6 +14,17 @@ elif command -v mkcert >/dev/null 2>&1 && [[ -s "$(mkcert -CAROOT)/rootCA.pem" ]
   curl_tls_args+=(--cacert "$(mkcert -CAROOT)/rootCA.pem")
 fi
 
+# macOS runners use Bash 3, where expanding an empty array with `set -u`
+# raises an "unbound variable" error. Keep the optional TLS arguments in one
+# helper so the public-HTTPS path works on both Bash 3 and newer Bash.
+curl_fixture() {
+  if ((${#curl_tls_args[@]})); then
+    curl "${curl_tls_args[@]}" "$@"
+  else
+    curl "$@"
+  fi
+}
+
 if [[ -z "${fixture_domain}" ]]; then
   echo "FIXTURE_BASE_DOMAIN could not be derived from ${fixture_url}" >&2
   exit 1
@@ -24,14 +35,14 @@ if [[ "${fixture_domain}" == *:* ]]; then
   exit 1
 fi
 
-about_json="$(curl "${curl_tls_args[@]}" --fail --silent --show-error --retry 10 --retry-delay 1 \
+about_json="$(curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/about")"
 
 printf '%s\n' "${about_json}" | jq -e '.healthy == true and .content.healthy == true and .lambdas.healthy == true' >/dev/null
 
-curl "${curl_tls_args[@]}" --fail --silent --show-error --retry 10 --retry-delay 1 \
+curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/content/status" >/dev/null
-curl "${curl_tls_args[@]}" --fail --silent --show-error --retry 10 --retry-delay 1 \
+curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/lambdas/status" >/dev/null
 
 if [[ "${fixture_url}" != https://* ]]; then
@@ -51,7 +62,7 @@ fi
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   {
-    echo "### Catalyst fixture"
+    echo "### Fixture infrastructure"
     echo
     echo "- Base URL: \`${fixture_url}\`"
     echo "- Base domain: \`${fixture_domain}\`"

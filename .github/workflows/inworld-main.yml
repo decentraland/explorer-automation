@@ -59,6 +59,7 @@ jobs:
       scope: 'ALL'
       # External is opt-in. The legacy local image is only passed when local mode
       # is explicitly selected; hosted GPU runners cannot provide nested Docker.
+      provision_fixture: ${{ vars.E2E_FIXTURE_PROVISION == 'true' }}
       fixture_mode: ${{ vars.E2E_FIXTURE_MODE || 'org' }}
       fixture_base_url: ${{ vars.E2E_FIXTURE_BASE_URL || '' }}
       fixture_base_domain: ${{ vars.E2E_FIXTURE_BASE_DOMAIN || '' }}

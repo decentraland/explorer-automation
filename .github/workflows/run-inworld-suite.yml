@@ -35,7 +35,7 @@ name: InWorld Suite
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
 #   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (the build-URL probe queries unity-explorer's Actions API)
 #
-# Required repository/environment variables for external fixture mode:
+# Required repository/environment variables for managed fixture infrastructure:
 #   - E2E_FIXTURE_MANAGER_ROLE_ARN         IAM role assumed through GitHub OIDC
 #   - E2E_FIXTURE_MANAGER_FUNCTION_NAME    Lambda function name or ARN
 #
@@ -131,12 +131,17 @@ on:
         required: false
         default: ''
       fixture_base_url:
-        description: 'Optional reachable URL for an offline E2E Catalyst fixture. Empty keeps the org environment.'
+        description: 'Optional reachable URL for offline E2E fixture infrastructure. Empty keeps the org environment.'
         type: string
         required: false
         default: ''
+      provision_fixture:
+        description: 'Provision ephemeral fixture infrastructure for this run. When false, keep the existing fixture behavior.'
+        type: boolean
+        required: false
+        default: false
       fixture_mode:
-        description: 'Fixture mode: org, external, or local. External provisions a fixture through the remote manager; local is legacy Windows-only Docker mode.'
+        description: 'Fixture mode for compatibility: org, external, or local. Use provision_fixture to control the managed lifecycle.'
         type: string
         required: false
         default: 'org'
@@ -222,12 +227,17 @@ on:
         required: false
         default: ''
       fixture_base_url:
-        description: 'Optional reachable URL for an offline E2E Catalyst fixture.'
+        description: 'Optional reachable URL for offline E2E fixture infrastructure.'
         type: string
         required: false
         default: ''
+      provision_fixture:
+        description: 'Provision ephemeral fixture infrastructure for this run. When false, keep the existing fixture behavior.'
+        type: boolean
+        required: false
+        default: false
       fixture_mode:
-        description: 'Fixture mode: org, external, or local.'
+        description: 'Compatibility mode: org, external, or local. Use provision_fixture for the managed lifecycle.'
         type: choice
         options: [org, external, local]
         required: false
@@ -294,15 +304,19 @@ permissions:
   id-token: write
 
 jobs:
-  # Catalyst is provisioned outside the macOS and Windows runners. The Windows
+  # Fixture infrastructure is provisioned outside the macOS and Windows runners. The Windows
   # GPU image intentionally does not start Docker: GitHub's hosted pool does
   # not expose the nested virtualization required by Docker Desktop/WSL2.
   #
   # A caller can still pass fixture_base_url for a manually managed fixture.
   # In that case this job is skipped and the supplied URL is used unchanged.
   fixture:
-    name: Provision external Catalyst fixture
-    if: inputs.fixture_mode == 'external' && inputs.fixture_base_url == ''
+    name: Provision fixture infrastructure
+    # `fixture_mode=external` remains an implicit compatibility path for callers
+    # that predate `provision_fixture`. New callers should use the explicit input.
+    if: >-
+      (inputs.provision_fixture || inputs.fixture_mode == 'external') &&
+      inputs.fixture_base_url == ''
     runs-on: ubuntu-latest
     environment: e2e
     timeout-minutes: 15
@@ -326,7 +340,7 @@ jobs:
           set -euo pipefail
           for name in FIXTURE_MANAGER_ROLE_ARN FIXTURE_MANAGER_FUNCTION; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::$name must be configured for external fixture mode"
+              echo "::error::$name must be configured for managed fixture provisioning"
               exit 1
             fi
           done
@@ -338,7 +352,7 @@ jobs:
           aws-region: ${{ inputs.fixture_manager_region }}
           role-session-name: e2e-fixture-${{ github.run_id }}
 
-      - name: Provision fixture through manager Lambda
+      - name: Provision fixture infrastructure through manager Lambda
         id: provision
         env:
           E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
@@ -354,7 +368,7 @@ jobs:
           for name in E2E_FIXTURE_MANAGER_FUNCTION_NAME FIXTURE_PROFILE \
                       FIXTURE_TTL_MINUTES FIXTURE_SEED_VERSION; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::$name must be configured for external fixture mode"
+              echo "::error::$name must be configured for managed fixture provisioning"
               exit 1
             fi
           done
@@ -380,7 +394,7 @@ jobs:
           echo "fixture_id=$fixture_id" >> "$GITHUB_OUTPUT"
           echo "seed=$seed" >> "$GITHUB_OUTPUT"
           {
-            echo "### External Catalyst fixture"
+            echo "### Fixture infrastructure"
             echo
             echo "- Fixture: \`$fixture_id\`"
             echo "- Base URL: \`$endpoint\`"
@@ -552,7 +566,7 @@ jobs:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
-      - name: Configure offline Catalyst fixture
+      - name: Configure fixture infrastructure
         if: env.FIXTURE_BASE_URL_INPUT != ''
         env:
           FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
@@ -1377,7 +1391,9 @@ jobs:
       tests_ref: ${{ inputs.tests_ref }}
       fixture_base_url: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
       fixture_base_domain: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
-      fixture_mode: ${{ inputs.fixture_mode }}
+      # A managed run is an external fixture from the Windows leg's point of view,
+      # even when the dispatch left the compatibility mode at its default `org`.
+      fixture_mode: ${{ inputs.provision_fixture && 'external' || inputs.fixture_mode }}
       fixture_image: ${{ inputs.fixture_image }}
       fixture_ref: ${{ inputs.fixture_ref }}
     secrets: inherit
@@ -1386,10 +1402,11 @@ jobs:
   # legs, including when one of them failed. The Lambda's scheduled sweep is
   # the backstop for a workflow cancellation before this job starts.
   fixture-cleanup:
-    name: Destroy external Catalyst fixture
+    name: Destroy fixture infrastructure
     needs: [fixture, run, windows]
     if: >-
-      always() && inputs.fixture_mode == 'external' &&
+      always() &&
+      (inputs.provision_fixture || inputs.fixture_mode == 'external') &&
       inputs.fixture_base_url == '' && needs.fixture.result != 'skipped'
     runs-on: ubuntu-latest
     environment: e2e
@@ -1409,7 +1426,7 @@ jobs:
           set -euo pipefail
           for name in FIXTURE_MANAGER_ROLE_ARN FIXTURE_MANAGER_FUNCTION; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::$name must be configured for external fixture mode"
+              echo "::error::$name must be configured for managed fixture cleanup"
               exit 1
             fi
           done
@@ -1421,7 +1438,7 @@ jobs:
           aws-region: ${{ inputs.fixture_manager_region }}
           role-session-name: e2e-fixture-cleanup-${{ github.run_id }}
 
-      - name: Destroy external Catalyst fixture
+      - name: Destroy fixture infrastructure
         env:
           E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
           AWS_REGION: ${{ inputs.fixture_manager_region }}
