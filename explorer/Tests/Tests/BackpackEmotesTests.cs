@@ -26,6 +26,11 @@ public class BackpackEmotesTests : BaseTest
     // swallowed is another click, so it polls briefly and clicks again rather than spending
     // WaitForText's default on a selection that never happened.
     private const double RETRY_READ_TIMEOUT = 4;
+    // Interval between the two samples that pin a read. One second only ever caught a grid
+    // moving within a frame of itself; the reflow that breaks this test lands tens of seconds
+    // after WaitForGridPageLoaded returns, because that wait sees sixteen bound tiles and
+    // cannot see a catalogue still arriving behind them.
+    private const double SETTLE_SAMPLE_INTERVAL = 5;
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
@@ -159,17 +164,24 @@ public class BackpackEmotesTests : BaseTest
         // held at a given moment, and the teardown's final frame only ever shows the last one.
         // Verification shots would not do: CI leaves them off by default, so the runs worth
         // examining are exactly the ones that would carry none.
-        var firstPageItem = ReadSettledFirstItemName(emotes);
+        // One anchor for the whole test. The grid layout does not move between pages, so the
+        // leading cell keeps its screen position and every read has to name THAT cell. Picking
+        // the leading loaded tile per read cannot do it: the tile just clicked is still
+        // rendering its preview and drops out of the loaded set, so the pick walks to the
+        // neighbour — run 32242647629 settled page 1 on cell 2 that way.
+        var cell = emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT);
+
+        var firstPageItem = ReadSettledFirstItemName(emotes, cell);
         Reporter.Log($"Page 1 first emote: {firstPageItem}");
         Reporter.TakeScreenshot("emotes_read_page1_baseline");
 
-        var secondPageItem = FlipPageAndReadFirstItem(emotes, emotes.Pager.NextButton, firstPageItem);
+        var secondPageItem = FlipPageAndReadFirstItem(emotes, emotes.Pager.NextButton, firstPageItem, cell);
         Reporter.Log($"Page 2 first emote: {secondPageItem}");
         Reporter.TakeScreenshot("emotes_read_page2");
         Assert.That(secondPageItem, Is.Not.EqualTo(firstPageItem),
             "First emote on page 2 should differ from first emote on page 1");
 
-        var backOnFirstPage = FlipPageAndReadFirstItem(emotes, emotes.Pager.PreviousButton, secondPageItem);
+        var backOnFirstPage = FlipPageAndReadFirstItem(emotes, emotes.Pager.PreviousButton, secondPageItem, cell);
         Reporter.TakeScreenshot("emotes_read_page1_again");
         Assert.That(backOnFirstPage, Is.EqualTo(firstPageItem),
             "Navigating back should show page 1's first emote again");
@@ -197,29 +209,27 @@ public class BackpackEmotesTests : BaseTest
     }
 
     /// <summary>
-    /// Selects the grid's leading loaded item and reads its name from the info panel, polling
+    /// Selects the grid's top-left loaded item and reads its name from the info panel, polling
     /// the label (PR #54's <c>WaitForText</c>) until it shows text — and, when the caller
     /// supplies <paramref name="previousName"/>, text that differs from it — instead of
     /// reading after a fixed settle.
-    /// Selects through <c>FirstLoadedGridItem</c>, which is rooted on the tile's FullBackpack
-    /// child. What CI disproved was clicking the tile ROOT (<c>GridItems[i]</c>), which left
-    /// the info panel unpopulated on run 31176916555 — ItemName never appeared. An indexed
-    /// FullBackpack path would be both deterministic and selectable and has never been run,
-    /// so it is untried rather than ruled out.
+    /// Picks by screen position. An indexed path would not help: the index selects a sibling,
+    /// and the pool does not keep siblings in display order. Clicking the tile ROOT
+    /// (<c>GridItems[i]</c>) is separately ruled out — it left the info panel unpopulated on
+    /// run 31176916555, so the click goes to the FullBackpack child either way.
     /// </summary>
     private string ReadFirstItemName(
         ExplorePanelBackpackView.EmotesTab emotes,
+        AltObject cell,
         string previousName = null,
         double timeoutSeconds = 10)
     {
-        // One lookup on the paravirt ceiling, not two on different ones. Waiting and then
-        // clicking resolved this path twice, and Click's own wait is fixed at the 20s default —
-        // so the second lookup had half the budget of the first, on a grid that re-binds between
-        // them. Clicking the object the wait returned leaves nothing to re-resolve. No settle
-        // after it: the read below waits on the selection the click produces.
-        emotes.FirstLoadedGridItem.LoadedIndicator
-              .WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false)
-              .Click();
+        // Screen position, not hierarchy order: the unindexed path answers with the page's
+        // trailing cell, the one cell whose content changes when a late arrival shifts the
+        // collection by one. Run 31791128888 read "Robot" and then "Ho Ho Ho" off that cell.
+        // Waiting on the anchored cell also outlasts a page rebuild, which is the only reason
+        // this read can find nothing. One lookup — the sweep returns the object to click.
+        emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT, anchor: cell).Click();
         return emotes.SelectedItemName.WaitForText(
             text => !string.IsNullOrEmpty(text) && text != previousName, timeoutSeconds);
     }
@@ -232,24 +242,31 @@ public class BackpackEmotesTests : BaseTest
     /// Reads without a <c>previousName</c> on purpose: this needs two AGREEING samples, so
     /// PR #54's "text differs from the previous name" predicate would invert the very
     /// condition being established.
+    /// Throws when they never agree — a value known to be moving is not a baseline.
     /// </summary>
-    private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
+    private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes, AltObject cell)
     {
-        var name = ReadFirstItemName(emotes);
+        var name = ReadFirstItemName(emotes, cell);
 
         for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
             // The one deliberate pause left in this fixture: it is the interval between two
             // samples, so it is the measurement, not padding around one.
-            Wait(1);
-            var reread = ReadFirstItemName(emotes);
+            Wait(SETTLE_SAMPLE_INTERVAL);
+            var reread = ReadFirstItemName(emotes, cell);
             if (reread == name)
                 return name;
 
             name = reread;
         }
 
-        return name;
+        // Returning the last read is what let a still-moving grid reach the round-trip
+        // assertion and fail there as a pagination bug. This is the only place that asserts
+        // the collection stopped changing, so it has to fail here instead.
+        throw new AssertionException(
+            $"The emote grid never stopped changing: {SlowChassis.SETTLE_READS + 1} reads taken "
+            + $"{SETTLE_SAMPLE_INTERVAL}s apart each named a different item, the last '{name}'. "
+            + "The catalogue is still arriving and re-sorting the page.");
     }
 
     /// <summary>
@@ -261,7 +278,8 @@ public class BackpackEmotesTests : BaseTest
     private string FlipPageAndReadFirstItem(
         ExplorePanelBackpackView.EmotesTab emotes,
         Clickable pagerButton,
-        string previousName)
+        string previousName,
+        AltObject cell)
     {
         pagerButton.Click();
 
@@ -270,18 +288,18 @@ public class BackpackEmotesTests : BaseTest
             // previousName here (PR #54): this read only has to notice the flip, so polling
             // for a differing name is right. No separate WaitUntilLoaded — ReadFirstItemName
             // already waits on the paravirt ceiling, the stronger of the two.
-            var name = ReadFirstItemName(emotes, previousName, RETRY_READ_TIMEOUT);
+            var name = ReadFirstItemName(emotes, cell, previousName, RETRY_READ_TIMEOUT);
             if (name != previousName)
                 // Settle before returning, do not trust the first differing read. This is the
                 // value the round-trip assertion compares, so it is the read that has to be
                 // stable: a grid caught mid-re-bind can briefly show neither the outgoing nor
                 // the settled incoming page. Settling only the page-1 baseline would leave the
                 // failing read unguarded.
-                return ReadSettledFirstItemName(emotes);
+                return ReadSettledFirstItemName(emotes, cell);
         }
 
         // Still reading the outgoing page's name: return a settled read so the caller's
         // assertion fails against what the grid actually ended up showing.
-        return ReadSettledFirstItemName(emotes);
+        return ReadSettledFirstItemName(emotes, cell);
     }
 }

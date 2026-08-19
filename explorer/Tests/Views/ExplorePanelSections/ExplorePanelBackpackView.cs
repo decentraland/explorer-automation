@@ -458,6 +458,11 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         public const int SLOT_COUNT = 10;
         public const int GRID_ITEM_COUNT = 16;
         private const string GRID_PATH = "//Emotes/FullContainer/BackpackGrid";
+        // Rooted on the enabled FullBackpack child: only a tile holding real content has one.
+        private const string LOADED_TILE_PATH = GRID_PATH + "/BackpackEmoteGridItem(Clone)/FullBackpack";
+        // Half a cell. The grid pitch measured ~137px at 1749x984, and a tile re-bound in
+        // place lands on the same centre, so this only has to reject the neighbours.
+        private const int CELL_TOLERANCE = 60;
 
         public EmoteSlot[] Slots { get; }
         public EmoteGridItem[] GridItems { get; }
@@ -497,7 +502,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             }
 
             // See WearablesTab.FirstLoadedGridItem — skips stale pooled tiles.
-            var loadedPath = $"{GRID_PATH}/BackpackEmoteGridItem(Clone)/FullBackpack";
+            const string loadedPath = LOADED_TILE_PATH;
             FirstLoadedGridItem = new BackpackGridItem(
                 new(By.PATH, loadedPath),
                 new(By.PATH, $"{loadedPath}/HoverBackground/Equip"),
@@ -568,6 +573,83 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 
             Reporter.TakeVerificationShot("loaded_EmoteGridPage");
             Reporter.Log("Emote grid page finished loading");
+        }
+
+        /// <summary>
+        /// Returns the loaded tile sitting left-top-most on screen. Use instead of
+        /// <see cref="FirstLoadedGridItem"/> wherever the same position has to name the same
+        /// item twice: hierarchy order does not track display order here, so the leading match
+        /// is the page's trailing cell, and that cell changes identity whenever a late arrival
+        /// shifts the collection by one.
+        /// One sweep per call rather than a probe per tile — the per-tile scan this replaces
+        /// cost sixteen presence checks and sixteen waits.
+        /// </summary>
+        [AllureStep("Find the left-top-most loaded emote tile")]
+        public AltObject FindTopLeftLoadedTile(double timeout = CONTENT_TIMEOUT, AltObject anchor = null)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(timeout);
+
+            while (true)
+            {
+                // FindObjects returns enabled objects only, which is the same "has content"
+                // filter the path itself encodes.
+                var tiles = CommonStuff.AltDriver.FindObjects(By.PATH, LOADED_TILE_PATH);
+                var pick = anchor is null ? PickTopLeft(tiles) : PickAt(tiles, anchor);
+
+                if (pick is not null)
+                {
+                    Reporter.Log($"Picked the emote tile at x={pick.x}, mobileY={pick.mobileY}");
+                    return pick;
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                    throw new AssertionException(anchor is null
+                        ? "No emote tile has loaded content on screen — the grid is empty or never finished loading"
+                        : $"The emote tile at x={anchor.x}, mobileY={anchor.mobileY} never came back with content");
+
+                Thread.Sleep(POLL_MS);
+            }
+        }
+
+        /// <summary>
+        /// The tile occupying <paramref name="anchor"/>'s cell, or null while it holds none.
+        /// Clicking a tile drops it out of the loaded set until the client finishes rendering
+        /// its preview, so a re-pick would step to the neighbouring cell and consecutive reads
+        /// of "the same" cell would alternate forever (CI run 32152404832).
+        /// </summary>
+        private static AltObject PickAt(IEnumerable<AltObject> tiles, AltObject anchor)
+        {
+            foreach (var tile in tiles)
+            {
+                if (Math.Abs(tile.x - anchor.x) <= CELL_TOLERANCE
+                    && Math.Abs(tile.mobileY - anchor.mobileY) <= CELL_TOLERANCE)
+                    return tile;
+            }
+
+            return null;
+        }
+
+        private static AltObject PickTopLeft(IEnumerable<AltObject> tiles)
+        {
+            AltObject topLeft = null;
+
+            foreach (var tile in tiles)
+            {
+                // y is bottom-origin and mobileY top-origin, so both being positive puts the
+                // centre inside the viewport without asking for the screen size.
+                if (tile.y <= 0 || tile.mobileY <= 0)
+                    continue;
+
+                // A row shares mobileY exactly, so an equal row falls to the leftmost column.
+                if (topLeft is not null
+                    && (tile.mobileY > topLeft.mobileY
+                        || (tile.mobileY == topLeft.mobileY && tile.x >= topLeft.x)))
+                    continue;
+
+                topLeft = tile;
+            }
+
+            return topLeft;
         }
 
         /// <summary>
