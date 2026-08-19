@@ -186,12 +186,13 @@ jobs:
     if: needs.resolve.outputs.should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
-      # Empty build_url makes the reusable resolve the newest unity-explorer
-      # dev build. That must stay a branch build: release zips are compiled
-      # without the AltTester scripting define and hang at "Wait for
-      # connection: 0%".
-      build_url: ''
+      # Temporary validation pin for Unity Explorer PR #9728. Remove after the
+      # fixture test is validated; the normal path resolves the newest dev
+      # build when this value is empty.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/gateway/wd-25340-a555b79/Decentraland_macos.zip'
       filter: ${{ needs.resolve.outputs.filter }}
+      windows: false
+      macos: true
       # What Windows splits. The filter says the same thing in vstest's vocabulary, but nothing
       # maps one back to the fixtures the packer weighs, so the scope travels as itself.
       scope: ${{ needs.resolve.outputs.scope }}
