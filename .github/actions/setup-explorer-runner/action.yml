@@ -48,13 +48,12 @@ runs:
         export PATH="$HOME/.dotnet:$PATH"
         dotnet --version
 
-        # AltTester Desktop ships as a zip wrapping a .dmg + sample build
-        # Pipeline: download zip => extract dmg => mount => copy .app => eject
-        ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_1.zip"
-        curl -fsSL "$ALTTESTER_URL" -o /tmp/alttester.zip
-        unzip -q /tmp/alttester.zip -d /tmp/alttester
-        ALTTESTER_DMG=$(find /tmp/alttester -maxdepth 4 -name "AltTesterDesktop*.dmg" -type f | head -1)
-        [ -n "$ALTTESTER_DMG" ] || { echo "::error::AltTesterDesktop dmg not found in zip"; exit 1; }
+        # AltTester publishes the macOS package as a DMG. Keep the version
+        # pinned because this runner chassis is shared by the InWorld and
+        # visual suites, and a silent upstream rename must not break both.
+        ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktop__v2.3.3.dmg"
+        ALTTESTER_DMG=/tmp/AltTesterDesktop.dmg
+        curl -fsSL "$ALTTESTER_URL" -o "$ALTTESTER_DMG"
         hdiutil attach "$ALTTESTER_DMG" -nobrowse -quiet
         ALTTESTER_APP=$(find /Volumes -maxdepth 3 -name "AltTesterDesktop.app" -type d 2>/dev/null | head -1)
         [ -n "$ALTTESTER_APP" ] || { echo "::error::AltTesterDesktop.app not found under /Volumes after mount"; ls /Volumes; exit 1; }
