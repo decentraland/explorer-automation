@@ -38,7 +38,16 @@ fi
 about_json="$(curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/about")"
 
-printf '%s\n' "${about_json}" | jq -e '.healthy == true and .content.healthy == true and .lambdas.healthy == true' >/dev/null
+expected_content_url="${fixture_url}/content"
+expected_lambdas_url="${fixture_url}/lambdas"
+printf '%s\n' "${about_json}" | jq -e \
+  --arg expected_content_url "${expected_content_url}" \
+  --arg expected_lambdas_url "${expected_lambdas_url}" \
+  '.healthy == true
+   and .content.healthy == true
+   and .lambdas.healthy == true
+   and (.content.publicUrl | rtrimstr("/")) == $expected_content_url
+   and (.lambdas.publicUrl | rtrimstr("/")) == $expected_lambdas_url' >/dev/null
 
 curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/content/status" >/dev/null
@@ -53,7 +62,10 @@ fi
 # Catalyst is the complete realm for this fixture. Keep org as the environment
 # so non-Catalyst services continue using their normal endpoints, and force
 # communications offline because this fixture has no Archipelago/LiveKit.
-fixture_app_args="--dclenv org --realm=${fixture_url} --comms-adapter offline:offline"
+# Keep value-taking arguments separated by spaces. MetaForge forwards this
+# string to Unity differently on macOS and Windows; the `--realm=...` form is
+# parsed as a flag name on macOS and silently falls back to the org realm.
+fixture_app_args="--dclenv org --realm ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {
