@@ -50,7 +50,7 @@ runs:
 
         # AltTester Desktop ships as a zip wrapping a .dmg + sample build
         # Pipeline: download zip => extract dmg => mount => copy .app => eject
-        ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_1.zip"
+        ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktopPackageMac__2_3_3.zip"
         curl -fsSL "$ALTTESTER_URL" -o /tmp/alttester.zip
         unzip -q /tmp/alttester.zip -d /tmp/alttester
         ALTTESTER_DMG=$(find /tmp/alttester -maxdepth 4 -name "AltTesterDesktop*.dmg" -type f | head -1)
