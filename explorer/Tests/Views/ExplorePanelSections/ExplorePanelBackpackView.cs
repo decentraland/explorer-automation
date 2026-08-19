@@ -224,6 +224,22 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
+        /// Reads the wearable URN the tile is currently bound to.
+        /// </summary>
+        [AllureStep("Read grid item URN")]
+        internal string ReadItemUrn()
+        {
+            // A blank pooled tile still carries the component with a stale ItemId, so content
+            // is a precondition here for the same reason it is in ReadEquippedFlag.
+            if (!LoadedIndicator.IsPresent(verificationShot: false))
+                throw new AssertionException(
+                    $"Grid item '{ShotName}' holds no content — its URN cannot be read.");
+
+            return WaitFor(UI_TIMEOUT, verificationShot: false)
+                .GetComponentProperty<string>(ITEM_VIEW_COMPONENT, "ItemId", ITEM_VIEW_ASSEMBLY);
+        }
+
+        /// <summary>
         /// Reads the equipped flag, then hovers so the overlay shows the matching Equip/Unequip
         /// affordance in the verification shot.
         /// </summary>
@@ -272,6 +288,8 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 
         public const int GRID_ITEM_COUNT = 16;
         private const string GRID_PATH = "//Avatar/CategoriesView/FullContainer/BackpackGrid";
+        private const string SLOT_VIEW_COMPONENT = "DCL.Backpack.AvatarSlotView";
+        private const string SLOT_VIEW_ASSEMBLY  = "Backpack";
 
         public BackpackGridItem[] GridItems { get; }
 
@@ -455,25 +473,55 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
-        /// Reads the URN currently assigned to an avatar slot via <c>AvatarSlotView.SlotWearableUrn</c>.
+        /// Returns the loaded tile bound to <paramref name="urn"/>, polling while the grid
+        /// streams in — tiles bind asynchronously and a partial page never fills all 16 slots.
         /// </summary>
-        public string GetSlotUrn(Clickable slot) =>
-            slot.WaitFor(20D, verificationShot: false)
-                .GetComponentProperty<string>("DCL.Backpack.AvatarSlotView", "SlotWearableUrn", "Assembly-CSharp");
+        [AllureStep("Find the grid item bound to a URN")]
+        public BackpackGridItem FindGridItemWithUrn(string urn, double timeoutSeconds = CONTENT_TIMEOUT)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+            while (true)
+            {
+                foreach (var item in GridItems)
+                {
+                    // Shot-suppressed probes — target selection, not a test verification.
+                    if (!item.LoadedIndicator.IsPresent(verificationShot: false))
+                        continue;
+                    if (item.ReadItemUrn() != urn)
+                        continue;
+
+                    Reporter.Log($"Found the grid tile bound to '{urn}'");
+                    return item;
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                    throw new AssertionException($"No loaded grid tile is bound to '{urn}'");
+                Thread.Sleep(POLL_MS);
+            }
+        }
 
         /// <summary>
-        /// Returns true when the slot has both a non-empty URN and a visible thumbnail image,
-        /// which means the asset bundle loaded successfully.
+        /// Reads the URN currently assigned to an avatar slot, or null while the slot is empty.
+        /// </summary>
+        public string GetSlotUrn(Clickable slot) =>
+            slot.WaitFor(UI_TIMEOUT, verificationShot: false)
+                .GetComponentProperty<string>(SLOT_VIEW_COMPONENT, "SlotWearableUrn", SLOT_VIEW_ASSEMBLY);
+
+        /// <summary>
+        /// Returns true when the slot has a URN and its thumbnail holds a real downloaded
+        /// image — a failed download still activates the image with a 1x1 gray fallback sprite.
         /// </summary>
         public bool IsSlotThumbnailLoaded(Clickable slot)
         {
-            var altObj = slot.WaitFor(20D, verificationShot: false);
-            var urn = altObj.GetComponentProperty<string>("DCL.Backpack.AvatarSlotView", "SlotWearableUrn", "Assembly-CSharp");
+            var altObj = slot.WaitFor(UI_TIMEOUT, verificationShot: false);
+            var urn = altObj.GetComponentProperty<string>(SLOT_VIEW_COMPONENT, "SlotWearableUrn", SLOT_VIEW_ASSEMBLY);
             if (string.IsNullOrEmpty(urn))
                 return false;
-            var thumbnailActive = altObj.GetComponentProperty<bool>(
-                "DCL.Backpack.AvatarSlotView", "SlotWearableThumbnail.gameObject.activeSelf", "Assembly-CSharp");
-            return thumbnailActive;
+            if (!altObj.GetComponentProperty<bool>(
+                    SLOT_VIEW_COMPONENT, "SlotWearableThumbnail.gameObject.activeSelf", SLOT_VIEW_ASSEMBLY))
+                return false;
+            return altObj.GetComponentProperty<float>(
+                SLOT_VIEW_COMPONENT, "SlotWearableThumbnail.sprite.rect.width", SLOT_VIEW_ASSEMBLY) > 1f;
         }
 
         #endregion
