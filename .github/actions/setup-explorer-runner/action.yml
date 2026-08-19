@@ -49,6 +49,7 @@ runs:
         dotnet --version
 
         # AltTester publishes the macOS package as a DMG. Keep the version
+        # pinned here so the PR path also revalidates the shared macOS runner.
         # pinned because this runner chassis is shared by the InWorld and
         # visual suites, and a silent upstream rename must not break both.
         ALTTESTER_URL="https://alttester.com/app/uploads/AltTester/desktop/AltTesterDesktop__v2.3.3.dmg"
