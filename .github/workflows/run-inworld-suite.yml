@@ -316,7 +316,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: decentraland/explorer-automation
-          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || 'main' }}
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       - name: Validate fixture manager configuration
         env:
@@ -1399,7 +1399,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: decentraland/explorer-automation
-          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || 'main' }}
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
       - name: Validate fixture manager configuration
         env:
