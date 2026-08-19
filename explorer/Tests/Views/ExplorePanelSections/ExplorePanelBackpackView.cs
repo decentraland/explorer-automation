@@ -460,6 +460,9 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         private const string GRID_PATH = "//Emotes/FullContainer/BackpackGrid";
         // Rooted on the enabled FullBackpack child: only a tile holding real content has one.
         private const string LOADED_TILE_PATH = GRID_PATH + "/BackpackEmoteGridItem(Clone)/FullBackpack";
+        // Half a cell. The grid pitch measured ~137px at 1749x984, and a tile re-bound in
+        // place lands on the same centre, so this only has to reject the neighbours.
+        private const int CELL_TOLERANCE = 60;
 
         public EmoteSlot[] Slots { get; }
         public EmoteGridItem[] GridItems { get; }
@@ -582,7 +585,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         /// cost sixteen presence checks and sixteen waits.
         /// </summary>
         [AllureStep("Find the left-top-most loaded emote tile")]
-        public AltObject FindTopLeftLoadedTile(double timeout = CONTENT_TIMEOUT)
+        public AltObject FindTopLeftLoadedTile(double timeout = CONTENT_TIMEOUT, AltObject anchor = null)
         {
             var deadline = DateTime.UtcNow.AddSeconds(timeout);
 
@@ -590,20 +593,40 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             {
                 // FindObjects returns enabled objects only, which is the same "has content"
                 // filter the path itself encodes.
-                var topLeft = PickTopLeft(CommonStuff.AltDriver.FindObjects(By.PATH, LOADED_TILE_PATH));
+                var tiles = CommonStuff.AltDriver.FindObjects(By.PATH, LOADED_TILE_PATH);
+                var pick = anchor is null ? PickTopLeft(tiles) : PickAt(tiles, anchor);
 
-                if (topLeft is not null)
+                if (pick is not null)
                 {
-                    Reporter.Log($"Picked the emote tile at x={topLeft.x}, mobileY={topLeft.mobileY}");
-                    return topLeft;
+                    Reporter.Log($"Picked the emote tile at x={pick.x}, mobileY={pick.mobileY}");
+                    return pick;
                 }
 
                 if (DateTime.UtcNow >= deadline)
-                    throw new AssertionException(
-                        "No emote tile has loaded content on screen — the grid is empty or never finished loading");
+                    throw new AssertionException(anchor is null
+                        ? "No emote tile has loaded content on screen — the grid is empty or never finished loading"
+                        : $"The emote tile at x={anchor.x}, mobileY={anchor.mobileY} never came back with content");
 
                 Thread.Sleep(POLL_MS);
             }
+        }
+
+        /// <summary>
+        /// The tile occupying <paramref name="anchor"/>'s cell, or null while it holds none.
+        /// Clicking a tile drops it out of the loaded set until the client finishes rendering
+        /// its preview, so a re-pick would step to the neighbouring cell and consecutive reads
+        /// of "the same" cell would alternate forever (CI run 32152404832).
+        /// </summary>
+        private static AltObject PickAt(IEnumerable<AltObject> tiles, AltObject anchor)
+        {
+            foreach (var tile in tiles)
+            {
+                if (Math.Abs(tile.x - anchor.x) <= CELL_TOLERANCE
+                    && Math.Abs(tile.mobileY - anchor.mobileY) <= CELL_TOLERANCE)
+                    return tile;
+            }
+
+            return null;
         }
 
         private static AltObject PickTopLeft(IEnumerable<AltObject> tiles)

@@ -220,7 +220,20 @@ public class BackpackEmotesTests : BaseTest
         // trailing cell, the one cell whose content changes when a late arrival shifts the
         // collection by one. Run 31791128888 read "Robot" and then "Ho Ho Ho" off that cell.
         // Still one lookup — the sweep returns the object to click, nothing to re-resolve.
-        emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT).Click();
+        return ReadTileName(emotes, emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT),
+                            previousName, timeoutSeconds);
+    }
+
+    /// <summary>
+    /// Selects one tile and reads the name the info panel gives it.
+    /// </summary>
+    private string ReadTileName(
+        ExplorePanelBackpackView.EmotesTab emotes,
+        AltObject tile,
+        string previousName = null,
+        double timeoutSeconds = 10)
+    {
+        tile.Click();
         return emotes.SelectedItemName.WaitForText(
             text => !string.IsNullOrEmpty(text) && text != previousName, timeoutSeconds);
     }
@@ -237,14 +250,20 @@ public class BackpackEmotesTests : BaseTest
     /// </summary>
     private string ReadSettledFirstItemName(ExplorePanelBackpackView.EmotesTab emotes)
     {
-        var name = ReadFirstItemName(emotes);
+        var cell = emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT);
+        var name = ReadTileName(emotes, cell);
 
         for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
         {
             // The one deliberate pause left in this fixture: it is the interval between two
             // samples, so it is the measurement, not padding around one.
             Wait(SETTLE_SAMPLE_INTERVAL);
-            var reread = ReadFirstItemName(emotes);
+
+            // Anchored to the cell the first sample landed on. Clicking a tile drops it out of
+            // the loaded set until its preview finishes rendering, so a fresh pick walks to the
+            // neighbouring cell and the samples alternate forever (CI run 32152404832).
+            cell = emotes.FindTopLeftLoadedTile(SlowChassis.SETTLE_TIMEOUT, anchor: cell);
+            var reread = ReadTileName(emotes, cell);
             if (reread == name)
                 return name;
 
