@@ -44,7 +44,7 @@ on:
         default: ''
         type: string
       fixture_base_domain:
-        description: 'Optional hostname passed to Explorer --base-domain (without a port).'
+        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
         required: false
         default: ''
         type: string
@@ -88,7 +88,7 @@ on:
         default: ''
         type: string
       fixture_base_domain:
-        description: 'Optional hostname passed to Explorer --base-domain (without a port).'
+        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
         required: false
         default: ''
         type: string
@@ -424,7 +424,7 @@ jobs:
           $domain = "localhost"
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --realm=$base --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_COMPOSE_DIR=$fixture" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Validate external Catalyst fixture inputs
@@ -432,7 +432,6 @@ jobs:
         shell: powershell
         run: |
           if (-not $env:FIXTURE_BASE_URL_INPUT) { throw "fixture_mode=external requires fixture_base_url" }
-          if (-not $env:FIXTURE_BASE_DOMAIN_INPUT) { throw "fixture_mode=external requires fixture_base_domain" }
 
       - name: Validate local Catalyst fixture inputs
         if: env.FIXTURE_MODE_INPUT == 'local'
@@ -465,7 +464,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $base = $env:FIXTURE_BASE_URL.TrimEnd('/')
           if (-not $base.StartsWith('https://')) {
-            throw "FIXTURE_BASE_URL must use HTTPS because --base-domain generates HTTPS URLs"
+            throw "FIXTURE_BASE_URL must use HTTPS because the Unity realm URL is fetched directly"
           }
           $about = Invoke-RestMethod "$base/about"
           if (-not $about.healthy -or -not $about.content.healthy -or -not $about.lambdas.healthy) {
@@ -480,7 +479,7 @@ jobs:
           }
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --realm=$base --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Record benchmark context
         shell: powershell
@@ -681,9 +680,9 @@ jobs:
           # Echoed the way MetaForge echoes its own launch on the macOS leg. This leg launches
           # the client itself, so without this the log shows only MetaForge's "No target
           # specified" - which reads like a misconfiguration and says nothing about what ran.
-          if ($env:FIXTURE_BASE_DOMAIN) {
-            $explorerArgs += @('--base-domain', $env:FIXTURE_BASE_DOMAIN)
-            Write-Host "Using Catalyst fixture base domain: $($env:FIXTURE_BASE_DOMAIN)"
+          if ($env:FIXTURE_BASE_URL) {
+            $explorerArgs += @('--realm', $env:FIXTURE_BASE_URL, '--comms-adapter', 'offline:offline')
+            Write-Host "Using Catalyst fixture realm: $($env:FIXTURE_BASE_URL) (comms offline)"
           }
           Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
           $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru

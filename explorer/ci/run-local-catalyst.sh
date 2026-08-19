@@ -10,7 +10,7 @@ Options:
   --build-url <value>     Unity Explorer build URL or MetaForge build ref.
   --filter <expression>   NUnit filter. Default: Category=InWorld.
   --infra-dir <path>      explorer-e2e-infra checkout. Default: ../explorer-e2e-infra.
-  --fixture-port <port>   HTTPS host port. Must be 443 because --base-domain accepts a domain, not a port. Default: 443.
+  --fixture-port <port>   HTTPS host port. Must be 443 because the realm URL is passed to Unity. Default: 443.
   --no-build               Reuse the existing Catalyrst image (the default).
   --keep-fixture           Leave Docker services running after the test.
   --health-only            Start and validate the fixture, but do not run Unity.
@@ -84,7 +84,7 @@ while (($# > 0)); do
 done
 
 if [[ "${fixture_https_port}" != "443" ]]; then
-  echo "The Unity --base-domain contract cannot carry a port; use HTTPS port 443." >&2
+  echo "The Unity realm URL must be reachable over HTTPS; use HTTPS port 443." >&2
   exit 2
 fi
 
@@ -147,7 +147,7 @@ fixture_config="$({
 })"
 printf '%s\n' "$fixture_config"
 
-fixture_app_args="--dclenv org --base-domain ${fixture_domain}"
+fixture_app_args="--dclenv org --realm=${fixture_url} --comms-adapter offline:offline"
 
 if [[ "$health_only" == 1 ]]; then
   echo "Fixture is ready. Unity test was skipped (--health-only)."

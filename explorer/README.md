@@ -99,7 +99,7 @@ The [`explorer-e2e-infra`](https://github.com/decentraland/explorer-e2e-infra) f
 
 The script expects `explorer-e2e-infra` next to this repository and reuses `explorer-e2e-infra-catalyrst:latest` by default. Set `CATALYRST_IMAGE` to use another tag, or pass `FIXTURE_BUILD_IMAGE=1` when the image must be rebuilt. Override the repository path with `--infra-dir /path/to/explorer-e2e-infra`; use `--keep-fixture` for iterative runs or `--health-only` to validate the fixture without launching Unity.
 
-The helper checks `/about`, `/content/status`, and `/lambdas/status`, and passes `--dclenv org --base-domain localhost` to Explorer. The fixture terminates HTTPS on port 443 with a locally trusted `mkcert` certificate; install `mkcert` and run its CA setup before the first local run. The current `core-v1` fixture intentionally has no Auth, Social, Places, or world snapshot; it is the first Catalyst/service-plane bootstrap and will not make fixtures that require those services pass yet.
+The helper checks `/about`, `/content/status`, and `/lambdas/status`, and passes `--dclenv org --realm=https://localhost --comms-adapter offline:offline` to Explorer. Catalyst is the complete realm for this fixture; its `/about` response points the client at the fixture's content and lambdas endpoints. The fixture terminates HTTPS on port 443 with a locally trusted `mkcert` certificate; install `mkcert` and run its CA setup before the first local run. The current `core-v1` fixture intentionally has no Auth, Social, Places, or world snapshot; it is the first Catalyst/service-plane bootstrap and will not make fixtures that require those services pass yet.
 
 ### Targeted filters
 

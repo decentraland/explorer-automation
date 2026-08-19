@@ -98,13 +98,13 @@ ECS task from the requested seed, polls it until ready, and destroys it after
 the macOS and Windows legs finish; its scheduled sweep is the cleanup backstop
 for canceled jobs.
 
-The current PoC manager returns the task's direct HTTP public IP. That proves
-the Lambda → ECS lifecycle, but it is intentionally rejected by the workflow:
-Explorer's `--base-domain` contract needs a trusted HTTPS hostname. The next
-infra step is therefore an HTTPS edge (for example an ALB or a small TLS
-reverse proxy) in front of the task. Until that endpoint exists, use
-`fixture_base_url` for a manually managed HTTPS fixture or keep the workflows
-on `.org`.
+The manager returns a run-scoped HTTPS realm URL. The workflow passes that URL
+to Explorer as `--realm`; Explorer fetches `/about` from the Catalyst edge and
+uses the advertised content and lambdas endpoints from the same fixture. The
+workflow also passes `--comms-adapter offline:offline`, because the first stack
+does not provision Archipelago or LiveKit. Auth, Places, Social, and other
+non-Catalyst services remain on the selected `org` environment until their
+fixtures are added.
 
 The visual regression suite has its own reusable (`run-visual-suite.yml`), driven by **Manual Visual Tests** from the Actions tab and by the `/generate-baselines` PR comment. A Windows counterpart for *that* suite still needs the same GPU runner image wired up.
 

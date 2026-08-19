@@ -146,7 +146,7 @@ on:
         required: false
         default: 'org'
       fixture_base_domain:
-        description: 'Optional hostname passed to Explorer --base-domain. Must not include a port.'
+        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
         type: string
         required: false
         default: ''
@@ -243,7 +243,7 @@ on:
         required: false
         default: org
       fixture_base_domain:
-        description: 'Optional hostname passed to Explorer --base-domain. Must not include a port.'
+        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
         type: string
         required: false
         default: ''

@@ -31,7 +31,7 @@ if [[ -z "${fixture_domain}" ]]; then
 fi
 
 if [[ "${fixture_domain}" == *:* ]]; then
-  echo "FIXTURE_BASE_DOMAIN must be a hostname without a port; --base-domain does not support ports" >&2
+  echo "FIXTURE_BASE_DOMAIN must be a hostname without a port; --realm URLs must be HTTPS" >&2
   exit 1
 fi
 
@@ -46,11 +46,14 @@ curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/lambdas/status" >/dev/null
 
 if [[ "${fixture_url}" != https://* ]]; then
-  echo "FIXTURE_BASE_URL must use HTTPS because --base-domain generates HTTPS URLs" >&2
+  echo "FIXTURE_BASE_URL must use HTTPS because the Unity realm URL is fetched directly" >&2
   exit 1
 fi
 
-fixture_app_args="--dclenv org --base-domain ${fixture_domain}"
+# Catalyst is the complete realm for this fixture. Keep org as the environment
+# so non-Catalyst services continue using their normal endpoints, and force
+# communications offline because this fixture has no Archipelago/LiveKit.
+fixture_app_args="--dclenv org --realm=${fixture_url} --comms-adapter offline:offline"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {
@@ -65,6 +68,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "### Fixture infrastructure"
     echo
     echo "- Base URL: \`${fixture_url}\`"
+    echo "- Realm URL: \`${fixture_url}\`"
     echo "- Base domain: \`${fixture_domain}\`"
     echo "- App args: \`${fixture_app_args}\`"
   } >> "${GITHUB_STEP_SUMMARY}"
@@ -73,6 +77,7 @@ fi
 cat <<JSON
 {
   "baseUrl": "${fixture_url}",
+  "realmUrl": "${fixture_url}",
   "baseDomain": "${fixture_domain}",
   "appArgs": "${fixture_app_args}"
 }
