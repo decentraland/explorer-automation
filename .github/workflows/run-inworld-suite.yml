@@ -680,13 +680,8 @@ jobs:
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
-      # The L1/L2 wearable-visibility tests need the client booted with
-      # --self-preview-wearables: the run's throwaway account owns no on-chain
-      # wearables, and self-preview loads the named URNs through the same
-      # catalyst + asset-bundle pipeline without ownership. App args parse at
-      # boot, so this is a second, fresh client — after the main pass so the
-      # flag's replaced backpack catalog cannot leak into it. Gated to scopes
-      # that include the fixture, so a narrow PR run does not pay the boot.
+      # The L1/L2 tests need a client booted with --self-preview-wearables: the
+      # run's fresh account owns nothing on-chain, and app args only parse at boot.
       - name: Run self-preview wearable pass
         id: selfpreview
         if: env.DRY_RUN != 'true' && (env.TEST_FILTER == 'Category=InWorld' || contains(env.TEST_FILTER, 'BackpackWearableVisibility'))
@@ -694,16 +689,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
-          # Mirrored into --self-preview-wearables below; the SelfPreview tests
-          # read it to know which URN belongs to which tier. One L1 (a Qm CIDv0
-          # entity, the class the Aug 2026 converter regression broke) and one
-          # L2 (eyewear, so the two land in different avatar slots).
+          # Mirrored into --self-preview-wearables below: one L1 Qm hat, one L2 eyewear.
           SELF_PREVIEW_WEARABLES: urn:decentraland:ethereum:collections-v1:dcl_launch:dcl_hat_hat,urn:decentraland:matic:collections-v2:0x19f3a2e14ef3f35c7402304ff02b26bef7f31235:0
         run: |
           set -euo pipefail
-          # Kill whatever the main pass left: with AltTester already listening,
-          # MetaForge assumes an app is connected and would skip the relaunch,
-          # leaving the old client — without the flag — answering the tests.
+          # A listening AltTester server makes MetaForge skip the relaunch, keeping the old args.
           pkill -9 -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null || true
           mf explorer server stop --non-interactive || true
           TEST_EXIT=0
@@ -716,8 +706,7 @@ jobs:
             || TEST_EXIT=$?
           [ "$TEST_EXIT" = 0 ] || exit "$TEST_EXIT"
 
-          # A filter matching nothing exits clean, so an emptied SelfPreview
-          # category would otherwise pass forever without running anything.
+          # A filter matching nothing exits clean — an empty SelfPreview category must not pass.
           if ! sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/mf-selfpreview.log" \
               | grep -qE 'Tests finished:|All [0-9]+ tests? passed'; then
             echo "::error::Self-preview pass reported no test summary — is the SelfPreview category empty?"
@@ -1037,8 +1026,7 @@ jobs:
           set -euo pipefail
           PASSED=null; FAILED=0; SKIPPED=0; RAN=null
 
-          # A failed self-preview pass must not hide behind a green main pass:
-          # the row is the one verdict the PR comment shows for this leg.
+          # A failed self-preview pass must not hide behind a green main pass.
           if [ "${PREVIEW_RESULT:-skipped}" = 'failure' ] && [ "${STEP_RESULT:-skipped}" = 'success' ]; then
             STEP_RESULT='failure'
           fi
@@ -1046,8 +1034,7 @@ jobs:
           # Two summary forms to match: metaforge prints "All N tests passed." when nothing
           # failed and "Tests finished: ..." otherwise. Matching only the latter reported no
           # count exactly on a green run, which is also when a loss check has to work.
-          # The self-preview pass logs separately so its 2-test summary cannot shadow the
-          # main pass's; both fold into one row here.
+          # The self-preview log is separate so its summary cannot shadow the main pass's.
           for LOG in "$RUNNER_TEMP/mf-test.log" "$RUNNER_TEMP/mf-selfpreview.log"; do
             [ -f "$LOG" ] || continue
             PLAIN=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG")

@@ -229,8 +229,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Read grid item URN")]
         internal string ReadItemUrn()
         {
-            // A blank pooled tile still carries the component with a stale ItemId, so content
-            // is a precondition here for the same reason it is in ReadEquippedFlag.
+            // A blank pooled tile still carries the component with a stale ItemId.
             if (!LoadedIndicator.IsPresent(verificationShot: false))
                 throw new AssertionException(
                     $"Grid item '{ShotName}' holds no content — its URN cannot be read.");
@@ -473,8 +472,7 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
-        /// Returns the loaded tile bound to <paramref name="urn"/>, polling while the grid
-        /// streams in — tiles bind asynchronously and a partial page never fills all 16 slots.
+        /// Returns the loaded tile bound to <paramref name="urn"/>, polling while the grid streams in.
         /// </summary>
         [AllureStep("Find the grid item bound to a URN")]
         public BackpackGridItem FindGridItemWithUrn(string urn, double timeoutSeconds = CONTENT_TIMEOUT)

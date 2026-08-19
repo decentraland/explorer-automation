@@ -121,8 +121,7 @@ export function main() {
       'urn:decentraland:off-chain:base-avatars:mouth_00',
       // NFT wearable — DCL Launch hat (Ethereum mainnet collections-v1)
       'urn:decentraland:ethereum:collections-v1:dcl_launch:dcl_hat_hat',
-      // NFT wearable — CoRoNoscope eyewear (Polygon collections-v2), so the
-      // snapshot also covers an L2 entity's texture pipeline.
+      // NFT wearable — CoRoNoscope eyewear (Polygon collections-v2)
       'urn:decentraland:matic:collections-v2:0x19f3a2e14ef3f35c7402304ff02b26bef7f31235:0',
     ],
     skinColor: Color3.create(0.35, 0.22, 0.14),

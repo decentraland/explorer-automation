@@ -2,8 +2,7 @@ using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 namespace ExplorerAutomation.Tests.Tests;
 
-// Not [Category("InWorld")]: these run in CI's dedicated self-preview pass, whose client
-// boots with --self-preview-wearables so the throwaway account can load on-chain wearables.
+// Runs only in CI's self-preview pass, whose client boots with --self-preview-wearables.
 [AllureSuite("Backpack Wearable Preview Tests")]
 [Category("SelfPreview")]
 [Order(18)]
