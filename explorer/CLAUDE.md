@@ -216,22 +216,28 @@ smallest `mobileY` and breaks ties on `x`. Probe the element that will be clicke
 The places grid also gates presses behind its skeleton — `WaitForResultsInteractive` waits for
 `LoadedState`'s `CanvasGroup` to start blocking raycasts, which only happens once the fade ends.
 
-The two backpack grids do not behave alike, and the same fix is right for one and wrong for the
-other. In the **wearables** grid the unindexed `FirstLoadedGridItem` path answers with a tile that
-is neither the one displayed first nor the same one after a re-bind — the pagination round trip
-read "Blue Star Earring" leaving page 1 and "Blue T-Shirt" returning to it, and the final frame
-showed the selection bottom-right while the visual first item was top-left. Picking the
-left-top-most loaded tile by screen position fixes it. In the **emotes** grid the same path is
-stable (two runs a day apart both read "Ho Ho Ho"), and picking by position instead *destabilises*
-it: the leading tile intermittently reports not-loaded, so the pick alternates between two tiles in
-one row (x=873 and x=1010, both mobileY=331) and the round trip fails. Measure before porting a
-grid fix sideways.
+Both backpack grids need the same fix. The unindexed `FirstLoadedGridItem` path answers with the
+page's *trailing* cell, so its content changes whenever a late arrival shifts the collection by
+one — wearables read "Blue Star Earring" leaving page 1 and "Blue T-Shirt" returning to it, emotes
+read "Robot" and then "Ho Ho Ho" off the same screen position. An index does not help: `[i]`
+selects a sibling, not a cell, and on a full page `[0]` resolves to that same trailing object.
+Pick by screen position.
+
+Position alone is not enough, because reading moves the target. Clicking a tile disables its
+`FullBackpack` while the client renders the info-panel preview, so re-picking the leading *loaded*
+tile walks to the neighbour and consecutive reads alternate between two cells in one row (x=873
+and x=1010). Take the cell once and re-acquire that position for every later read.
+
+`WaitForGridPageLoaded` proves sixteen tiles are bound, not that the collection stopped arriving;
+a read taken before it settles is a moving value, so fail on samples that never agree rather than
+returning the last one. Fingerprint for the emotes grid: page 1's top-left is "Clap", page 2's is
+"Robot" — a page-1 read of "Ho Ho Ho" means the trailing cell is being addressed again.
 
 Still index-addressed and carrying the same latent bug: `PlacesTests`'s search and filter
 assertions, which assume index 0 is the leading result, and `CommunitiesTests` (`Cards[0].Title`).
 Its detail flow brute-forces the problem by clicking cards 0-4 in turn. The
-backpack pools are safe by another route — they blank and re-park tiles rather than scrolling
-them away, and are already fenced by `LoadedIndicator` / `HasFullGridPage`.
+backpack pools never scroll a tile out of view — they blank and re-park instead — but
+`LoadedIndicator` fences content, not position, so it does not make an index name a cell.
 
 ## Environment Coupling
 
