@@ -475,19 +475,60 @@ jobs:
 
           cd "$REPO_ROOT"
 
+          # createCommitOnBranch targets PR_REPO with a token scoped to PR_REPO, so both must
+          # be this repo. Only explorer-automation runs record/bootstrap (caller table above);
+          # fail loud rather than mis-target if that ever changes.
+          if [ "$PR_REPO" != "decentraland/explorer-automation" ]; then
+            echo "::error::Baseline auto-commit only supported from decentraland/explorer-automation, not '$PR_REPO'."
+            exit 1
+          fi
+
           git add '**/Baselines/**/*.png' || true
           if git diff --cached --quiet; then
             echo "No baseline changes to commit."
             exit 0
           fi
 
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Commit through the GraphQL API rather than `git push`: the repo's signed-commits
+          # rule rejects the runner's unsigned push, and createCommitOnBranch commits are
+          # signed by GitHub. Every payload piece reaches jq through a file (--rawfile /
+          # --slurpfile), never argv, so the base64 (~8 MB across all baselines) can't hit ARG_MAX.
+          git fetch --quiet origin "$TESTS_REF"
+          EXPECTED_HEAD=$(git rev-parse FETCH_HEAD)
 
-          MSG=$'chore(baselines): regenerate via /generate-baselines\n\nTriggered by PR #'"${PR_NUMBER}"$' on '"${PR_REPO}"$'.\nRecorded against build '"${COMMIT_SHA}"$'.'
-          git commit -m "$MSG"
+          ADD_ITEMS="$RUNNER_TEMP/additions.ndjson"
+          : > "$ADD_ITEMS"
+          git diff --cached --name-only --diff-filter=ACM | while IFS= read -r f; do
+            base64 < "$f" | tr -d '\n' > "$RUNNER_TEMP/b64"
+            jq -n --arg path "$f" --rawfile contents "$RUNNER_TEMP/b64" \
+              '{path: $path, contents: $contents}' >> "$ADD_ITEMS"
+          done
+          jq -s '.' "$ADD_ITEMS" > "$RUNNER_TEMP/additions.json"
+          git diff --cached --name-only --diff-filter=D \
+            | jq -R 'select(length > 0) | {path: .}' | jq -s '.' > "$RUNNER_TEMP/deletions.json"
 
-          git push origin "HEAD:${TESTS_REF}"
+          BODY=$(printf 'Triggered by PR #%s on %s.\nRecorded against build %s.' \
+            "$PR_NUMBER" "$PR_REPO" "$COMMIT_SHA")
+
+          # --slurpfile wraps the file's JSON in an outer array, hence the [0] unwrap.
+          jq -n \
+            --arg repo "$PR_REPO" \
+            --arg branch "$TESTS_REF" \
+            --arg oid "$EXPECTED_HEAD" \
+            --arg headline 'chore(baselines): regenerate via /generate-baselines' \
+            --arg body "$BODY" \
+            --slurpfile additions "$RUNNER_TEMP/additions.json" \
+            --slurpfile deletions "$RUNNER_TEMP/deletions.json" \
+            '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                expectedHeadOid: $oid,
+                message: {headline: $headline, body: $body},
+                fileChanges: {additions: $additions[0], deletions: $deletions[0]}}}}' \
+            > "$RUNNER_TEMP/ccob.json"
+
+          gh api graphql --input "$RUNNER_TEMP/ccob.json"
+          echo "Committed regenerated baselines to ${TESTS_REF} (signed by GitHub)."
 
       - name: Find existing PR comment
         if: always() && env.PR_NUMBER != ''
