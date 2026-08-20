@@ -178,10 +178,10 @@ jobs:
       commit_sha: ${{ env.COMMIT_SHA }}
       branch_label: ${{ env.BRANCH_LABEL }}
       test_filter: ${{ env.TEST_FILTER }}
-    # Budgeted from the step cap below: 30m test + ~1m40s setup + the
-    # on-failure tail (log dump, artifact upload, 2m-capped cleanup) ≈ 35m.
-    # Measured green run 31177978453: 19m38s wall over 49 tests.
-    timeout-minutes: 40
+    # Budgeted from the step caps below: 30m test + 12m self-preview pass +
+    # ~1m40s setup + the on-failure tail (log dump, artifact upload, 2m-capped
+    # cleanup) ≈ 47m. Measured green run 31177978453: 19m38s wall over 49 tests.
+    timeout-minutes: 50
 
     env:
       BUILD_URL_INPUT: ${{ inputs.build_url || '' }}
@@ -680,6 +680,39 @@ jobs:
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
 
+      # The L1/L2 tests need a client booted with --self-preview-wearables: the
+      # run's fresh account owns nothing on-chain, and app args only parse at boot.
+      - name: Run self-preview wearable pass
+        id: selfpreview
+        if: env.DRY_RUN != 'true' && (env.TEST_FILTER == 'Category=InWorld' || contains(env.TEST_FILTER, 'BackpackWearableVisibility'))
+        timeout-minutes: 12
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          BUILD_URL: ${{ steps.build.outputs.build_url }}
+          # Mirrored into --self-preview-wearables below: one L1 Qm hat, one L2 eyewear.
+          SELF_PREVIEW_WEARABLES: urn:decentraland:ethereum:collections-v1:dcl_launch:dcl_hat_hat,urn:decentraland:matic:collections-v2:0x19f3a2e14ef3f35c7402304ff02b26bef7f31235:0
+        run: |
+          set -euo pipefail
+          # A listening AltTester server makes MetaForge skip the relaunch, keeping the old args.
+          pkill -9 -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null || true
+          mf explorer server stop --non-interactive || true
+          TEST_EXIT=0
+          mf explorer test "$BUILD_URL" \
+            --non-interactive \
+            --filter "Category=SelfPreview" \
+            --report-type None \
+            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --self-preview-wearables ${SELF_PREVIEW_WEARABLES}" \
+            2>&1 | tee "$RUNNER_TEMP/mf-selfpreview.log" \
+            || TEST_EXIT=$?
+          [ "$TEST_EXIT" = 0 ] || exit "$TEST_EXIT"
+
+          # A filter matching nothing exits clean — an empty SelfPreview category must not pass.
+          if ! sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/mf-selfpreview.log" \
+              | grep -qE 'Tests finished:|All [0-9]+ tests? passed'; then
+            echo "::error::Self-preview pass reported no test summary — is the SelfPreview category empty?"
+            exit 1
+          fi
+
       # The generation metaforge used to do, minus `--single-file`. Writing to
       # the same directory metaforge used keeps the rest of the publish chain
       # untouched: the locate step below still finds index.html, and `aws s3
@@ -985,18 +1018,25 @@ jobs:
         if: always()
         env:
           STEP_RESULT: ${{ steps.test.outcome }}
+          PREVIEW_RESULT: ${{ steps.selfpreview.outcome }}
           # S3 serves a rendered report, so prefer it; the artifact is a zip to download.
           REPORT_URL: ${{ steps.s3.outcome == 'success' && steps.ids.outputs.report_url || steps.artifact.outputs.artifact-url }}
           REPORT_KIND: ${{ steps.s3.outcome == 'success' && 'Open' || 'Download' }}
         run: |
           set -euo pipefail
-          LOG="$RUNNER_TEMP/mf-test.log"
           PASSED=null; FAILED=0; SKIPPED=0; RAN=null
+
+          # A failed self-preview pass must not hide behind a green main pass.
+          if [ "${PREVIEW_RESULT:-skipped}" = 'failure' ] && [ "${STEP_RESULT:-skipped}" = 'success' ]; then
+            STEP_RESULT='failure'
+          fi
 
           # Two summary forms to match: metaforge prints "All N tests passed." when nothing
           # failed and "Tests finished: ..." otherwise. Matching only the latter reported no
           # count exactly on a green run, which is also when a loss check has to work.
-          if [ -f "$LOG" ]; then
+          # The self-preview log is separate so its summary cannot shadow the main pass's.
+          for LOG in "$RUNNER_TEMP/mf-test.log" "$RUNNER_TEMP/mf-selfpreview.log"; do
+            [ -f "$LOG" ] || continue
             PLAIN=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG")
             COUNTS=$(printf '%s\n' "$PLAIN" \
               | grep -oE 'Tests finished: [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped' \
@@ -1005,15 +1045,21 @@ jobs:
               | grep -oE 'All [0-9]+ tests? passed' \
               | tail -n 1 | grep -oE '[0-9]+' || true)
 
+            P=''; F=0; S=0
             if [ -n "$COUNTS" ]; then
-              PASSED=$(echo "$COUNTS" | cut -d' ' -f1)
-              FAILED=$(echo "$COUNTS" | cut -d' ' -f2)
-              SKIPPED=$(echo "$COUNTS" | cut -d' ' -f3)
-              RAN=$((PASSED + FAILED + SKIPPED))
+              P=$(echo "$COUNTS" | cut -d' ' -f1)
+              F=$(echo "$COUNTS" | cut -d' ' -f2)
+              S=$(echo "$COUNTS" | cut -d' ' -f3)
             elif [ -n "$GREEN" ]; then
-              PASSED=$GREEN; FAILED=0; SKIPPED=0; RAN=$GREEN
+              P=$GREEN
             fi
-          fi
+
+            if [ -n "$P" ]; then
+              if [ "$PASSED" = null ]; then PASSED=0; RAN=0; fi
+              PASSED=$((PASSED + P)); FAILED=$((FAILED + F)); SKIPPED=$((SKIPPED + S))
+              RAN=$((RAN + P + F + S))
+            fi
+          done
 
           mkdir -p "$RUNNER_TEMP/inworld-result"
           jq -n \

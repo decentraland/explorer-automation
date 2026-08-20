@@ -224,6 +224,21 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         }
 
         /// <summary>
+        /// Reads the wearable URN the tile is currently bound to.
+        /// </summary>
+        [AllureStep("Read grid item URN")]
+        internal string ReadItemUrn()
+        {
+            // A blank pooled tile still carries the component with a stale ItemId.
+            if (!LoadedIndicator.IsPresent(verificationShot: false))
+                throw new AssertionException(
+                    $"Grid item '{ShotName}' holds no content — its URN cannot be read.");
+
+            return WaitFor(UI_TIMEOUT, verificationShot: false)
+                .GetComponentProperty<string>(ITEM_VIEW_COMPONENT, "ItemId", ITEM_VIEW_ASSEMBLY);
+        }
+
+        /// <summary>
         /// Reads the equipped flag, then hovers so the overlay shows the matching Equip/Unequip
         /// affordance in the verification shot.
         /// </summary>
@@ -272,10 +287,22 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
 
         public const int GRID_ITEM_COUNT = 16;
         private const string GRID_PATH = "//Avatar/CategoriesView/FullContainer/BackpackGrid";
+        private const string SLOT_VIEW_COMPONENT = "DCL.Backpack.AvatarSlotView";
+        private const string SLOT_VIEW_ASSEMBLY  = "Backpack";
 
         public BackpackGridItem[] GridItems { get; }
 
-        public readonly Clickable AvatarSlotHair = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHair");
+        public readonly Clickable AvatarSlotHair     = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHair");
+        public readonly Clickable AvatarSlotTop      = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotTop");
+        public readonly Clickable AvatarSlotBottom   = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotBottom");
+        public readonly Clickable AvatarSlotShoes    = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotShoes");
+        public readonly Clickable AvatarSlotEyes     = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotEyes");
+        public readonly Clickable AvatarSlotEyebrows = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotEyebrows");
+        public readonly Clickable AvatarSlotMouth    = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotMouth");
+        public readonly Clickable AvatarSlotHat      = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHat");
+        public readonly Clickable AvatarSlotMask     = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotMask");
+        public readonly Clickable AvatarSlotEyewear  = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotEyewear");
+        public readonly Clickable AvatarSlotHandwear = new(By.PATH, "//CategoriesView/SlotsContainer/AvatarSlotHandwear");
         // AvatarSlotView.SelectedBackground: enabled only while this slot's category is the
         // active filter. A direct child, not "//Background" — deeper nodes share the name and
         // are always enabled.
@@ -442,6 +469,57 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             }
 
             throw new AssertionException("Every loaded grid item is equipped — cannot pick a target");
+        }
+
+        /// <summary>
+        /// Returns the loaded tile bound to <paramref name="urn"/>, polling while the grid streams in.
+        /// </summary>
+        [AllureStep("Find the grid item bound to a URN")]
+        public BackpackGridItem FindGridItemWithUrn(string urn, double timeoutSeconds = CONTENT_TIMEOUT)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+            while (true)
+            {
+                foreach (var item in GridItems)
+                {
+                    // Shot-suppressed probes — target selection, not a test verification.
+                    if (!item.LoadedIndicator.IsPresent(verificationShot: false))
+                        continue;
+                    if (item.ReadItemUrn() != urn)
+                        continue;
+
+                    Reporter.Log($"Found the grid tile bound to '{urn}'");
+                    return item;
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                    throw new AssertionException($"No loaded grid tile is bound to '{urn}'");
+                Thread.Sleep(POLL_MS);
+            }
+        }
+
+        /// <summary>
+        /// Reads the URN currently assigned to an avatar slot, or null while the slot is empty.
+        /// </summary>
+        public string GetSlotUrn(Clickable slot) =>
+            slot.WaitFor(UI_TIMEOUT, verificationShot: false)
+                .GetComponentProperty<string>(SLOT_VIEW_COMPONENT, "SlotWearableUrn", SLOT_VIEW_ASSEMBLY);
+
+        /// <summary>
+        /// Returns true when the slot has a URN and its thumbnail holds a real downloaded
+        /// image — a failed download still activates the image with a 1x1 gray fallback sprite.
+        /// </summary>
+        public bool IsSlotThumbnailLoaded(Clickable slot)
+        {
+            var altObj = slot.WaitFor(UI_TIMEOUT, verificationShot: false);
+            var urn = altObj.GetComponentProperty<string>(SLOT_VIEW_COMPONENT, "SlotWearableUrn", SLOT_VIEW_ASSEMBLY);
+            if (string.IsNullOrEmpty(urn))
+                return false;
+            if (!altObj.GetComponentProperty<bool>(
+                    SLOT_VIEW_COMPONENT, "SlotWearableThumbnail.gameObject.activeSelf", SLOT_VIEW_ASSEMBLY))
+                return false;
+            return altObj.GetComponentProperty<float>(
+                SLOT_VIEW_COMPONENT, "SlotWearableThumbnail.sprite.rect.width", SLOT_VIEW_ASSEMBLY) > 1f;
         }
 
         #endregion
