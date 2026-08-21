@@ -68,7 +68,7 @@ jobs:
       fixture_manager_region: ${{ vars.E2E_FIXTURE_MANAGER_AWS_REGION || 'us-east-1' }}
       fixture_manager_profile: ${{ vars.E2E_FIXTURE_PROFILE || 'core-v1' }}
       fixture_manager_ttl_minutes: ${{ vars.E2E_FIXTURE_TTL_MINUTES || '90' }}
-      fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'empty-bootstrap' }}
+      fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'avatar-assets' }}
       fixture_image: ${{ (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
     secrets: inherit

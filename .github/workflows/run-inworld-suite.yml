@@ -179,7 +179,7 @@ on:
         description: 'Immutable fixture seed version requested by the manager.'
         type: string
         required: false
-        default: 'empty-bootstrap'
+        default: 'avatar-assets'
       fixture_image:
         description: 'Optional Catalyrst image started locally by the Windows runner.'
         type: string
@@ -276,7 +276,7 @@ on:
         description: 'Immutable fixture seed version requested by the manager.'
         type: string
         required: false
-        default: 'empty-bootstrap'
+        default: 'avatar-assets'
       fixture_image:
         description: 'Optional Catalyrst image started locally by the Windows runner.'
         type: string

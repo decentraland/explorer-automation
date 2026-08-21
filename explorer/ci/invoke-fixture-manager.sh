@@ -19,7 +19,7 @@ Required environment:
 Create-only environment:
   FIXTURE_PROFILE       Default: core-v1
   FIXTURE_TTL_MINUTES   Default: 90
-  FIXTURE_SEED_VERSION  Default: empty-bootstrap
+  FIXTURE_SEED_VERSION  Default: avatar-assets
 USAGE
 }
 
@@ -79,7 +79,7 @@ case "${action}" in
   create)
     ttl_minutes="${FIXTURE_TTL_MINUTES:-90}"
     profile="${FIXTURE_PROFILE:-core-v1}"
-    seed_version="${FIXTURE_SEED_VERSION:-empty-bootstrap}"
+    seed_version="${FIXTURE_SEED_VERSION:-avatar-assets}"
     payload="$(jq -cn \
       --arg action create \
       --arg runId "${FIXTURE_RUN_ID}" \
