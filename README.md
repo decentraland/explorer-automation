@@ -98,13 +98,11 @@ ECS task from the requested seed, polls it until ready, and destroys it after
 the macOS and Windows legs finish; its scheduled sweep is the cleanup backstop
 for canceled jobs.
 
-The manager returns a run-scoped HTTPS realm URL. The workflow passes that URL
-to Explorer as `--realm`; Explorer fetches `/about` from the Catalyst edge and
-uses the advertised content and lambdas endpoints from the same fixture. The
-workflow also passes `--comms-adapter offline:offline`, because the first stack
-does not provision Archipelago or LiveKit. Auth, Places, Social, and other
-non-Catalyst services remain on the selected `org` environment until their
-fixtures are added.
+The manager returns the run-scoped HTTPS fixture URL. The workflow passes it to
+Explorer as `--realm <fixture-url>` and `--gateway <fixture-url>`; the same
+origin exposes the realm `/about`, Catalyst content/lambdas, and the registry
+gateway. `--base-domain` is not a Unity Explorer argument. Communications stay
+offline because the first stack does not provision Archipelago or LiveKit.
 
 The visual regression suite has its own reusable (`run-visual-suite.yml`), driven by **Manual Visual Tests** from the Actions tab and by the `/generate-baselines` PR comment. A Windows counterpart for *that* suite still needs the same GPU runner image wired up.
 

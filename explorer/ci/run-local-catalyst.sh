@@ -147,7 +147,7 @@ fixture_config="$({
 })"
 printf '%s\n' "$fixture_config"
 
-fixture_app_args="--dclenv org --realm ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
+fixture_app_args="--dclenv org --realm ${fixture_url} --gateway ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
 
 if [[ "$health_only" == 1 ]]; then
   echo "Fixture is ready. Unity test was skipped (--health-only)."

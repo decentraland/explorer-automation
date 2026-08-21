@@ -65,7 +65,7 @@ fi
 # Keep value-taking arguments separated by spaces. MetaForge forwards this
 # string to Unity differently on macOS and Windows; the `--realm=...` form is
 # parsed as a flag name on macOS and silently falls back to the org realm.
-fixture_app_args="--dclenv org --realm ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
+fixture_app_args="--dclenv org --realm ${fixture_url} --gateway ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {
