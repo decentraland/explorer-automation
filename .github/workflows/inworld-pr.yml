@@ -186,10 +186,10 @@ jobs:
     if: needs.resolve.outputs.should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
-      # Temporary validation pin for Unity Explorer PR #9728. Remove after the
-      # fixture test is validated; the normal path resolves the newest dev
-      # build when this value is empty.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/gateway/wd-25340-a555b79/Decentraland_macos.zip'
+      # Temporary validation pin for Unity Explorer PR #9822. The fixture realm
+      # requires its trusted-domain and gateway URL support; the normal path
+      # resolves the newest dev build when this value is empty.
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/e2e-infra/pr-25398-041acc9/Decentraland_macos.zip'
       filter: ${{ needs.resolve.outputs.filter }}
       windows: false
       macos: true
