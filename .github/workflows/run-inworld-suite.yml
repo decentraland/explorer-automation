@@ -837,7 +837,11 @@ jobs:
           mkdir -p "$HOME/Library/Application Support/Decentraland/Explorer"
           ACCOUNT="ci-inworld-${GITHUB_RUN_ID}"
           mf account create "$ACCOUNT" --env org
-          mf account login "$ACCOUNT" --env org
+          # The token bridge is what lets the Explorer restore this account at
+          # startup. A regular account login only writes the cached identity;
+          # without --auto-login the client falls back to LoginSelection and
+          # every InWorld fixture fails before its first assertion.
+          mf account login "$ACCOUNT" --env org --auto-login
           echo "MF_ACCOUNT=${ACCOUNT}" >> "$GITHUB_ENV"
 
       - name: Clear Explorer Player.log
