@@ -71,7 +71,11 @@ fi
 # The fixture scene is deployed at Genesis Plaza (0,0). Keep the startup
 # parcel explicit because MetaForge's default is 100,100, which is empty in
 # this deterministic realm and leaves the client on the splash screen.
-fixture_app_args="--dclenv org --realm ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
+# Keep the fixture feature flags local as well. Production currently enables
+# asset-bundle fallback, which routes scene discovery to ABGen instead of the
+# Catalyst content endpoint. The fixture serves that flag as disabled so the
+# seeded scene at 0,0 is loaded from Catalyst.
+fixture_app_args="--dclenv org --realm ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --accept-untrusted-realm --comms-adapter offline:offline"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {
