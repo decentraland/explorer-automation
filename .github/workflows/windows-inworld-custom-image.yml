@@ -573,7 +573,10 @@ jobs:
           # its output so ephemeral test credentials never reach Actions logs.
           $createOutput = & mf account create $account --env org 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "MetaForge account creation failed" }
-          $loginOutput = & mf account login $account --env org 2>&1 | Out-String
+          # The token bridge is required for the Explorer to restore this
+          # account at startup. Without --auto-login it stops at LoginSelection
+          # and every InWorld fixture fails before its first assertion.
+          $loginOutput = & mf account login $account --env org --auto-login 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "MetaForge account login failed" }
           Write-Host "Provisioned ephemeral MetaForge account $account for org"
           "MF_ACCOUNT=$account" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
