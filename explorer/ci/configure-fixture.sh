@@ -62,10 +62,13 @@ fi
 # Catalyst is the complete realm for this fixture. Keep org as the environment
 # so non-Catalyst services continue using their normal endpoints, and force
 # communications offline because this fixture has no Archipelago/LiveKit.
+# Unity does not have a generic --gateway override. The optimized-assets
+# override is the supported way to point Asset Bundle Registry, profiles, and
+# the Asset Bundle CDN at the fixture edge.
 # Keep value-taking arguments separated by spaces. MetaForge forwards this
 # string to Unity differently on macOS and Windows; the `--realm=...` form is
 # parsed as a flag name on macOS and silently falls back to the org realm.
-fixture_app_args="--dclenv org --realm ${fixture_url} --gateway ${fixture_url} --dcl-lists-url ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
+fixture_app_args="--dclenv org --realm ${fixture_url} --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {

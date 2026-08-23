@@ -424,7 +424,7 @@ jobs:
           $domain = "localhost"
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "FIXTURE_APP_ARGS=--dclenv org --realm $base --gateway $base --dcl-lists-url $base --accept-untrusted-realm --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --realm $base --optimized-assets-url $base --dcl-lists-url $base --accept-untrusted-realm --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_COMPOSE_DIR=$fixture" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Validate external Catalyst fixture inputs
@@ -479,7 +479,7 @@ jobs:
           }
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "FIXTURE_APP_ARGS=--dclenv org --realm $base --gateway $base --dcl-lists-url $base --accept-untrusted-realm --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --realm $base --optimized-assets-url $base --dcl-lists-url $base --accept-untrusted-realm --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Record benchmark context
         shell: powershell
@@ -684,9 +684,9 @@ jobs:
           # the client itself, so without this the log shows only MetaForge's "No target
           # specified" - which reads like a misconfiguration and says nothing about what ran.
           if ($env:FIXTURE_BASE_URL) {
-            $explorerArgs += @('--realm', $env:FIXTURE_BASE_URL, '--gateway', $env:FIXTURE_BASE_URL, '--dcl-lists-url', $env:FIXTURE_BASE_URL, '--accept-untrusted-realm', '--comms-adapter', 'offline:offline')
+            $explorerArgs += @('--realm', $env:FIXTURE_BASE_URL, '--optimized-assets-url', $env:FIXTURE_BASE_URL, '--dcl-lists-url', $env:FIXTURE_BASE_URL, '--accept-untrusted-realm', '--comms-adapter', 'offline:offline')
             Write-Host "Using Catalyst fixture realm: $($env:FIXTURE_BASE_URL)"
-            Write-Host "Using Catalyst fixture gateway: $($env:FIXTURE_BASE_URL)"
+            Write-Host "Using Catalyst fixture optimized assets: $($env:FIXTURE_BASE_URL)"
             Write-Host "Using Catalyst fixture realm: $($env:FIXTURE_BASE_URL) (comms offline)"
           }
           Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
