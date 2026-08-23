@@ -68,7 +68,10 @@ fi
 # Keep value-taking arguments separated by spaces. MetaForge forwards this
 # string to Unity differently on macOS and Windows; the `--realm=...` form is
 # parsed as a flag name on macOS and silently falls back to the org realm.
-fixture_app_args="--dclenv org --realm ${fixture_url} --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
+# The fixture scene is deployed at Genesis Plaza (0,0). Keep the startup
+# parcel explicit because MetaForge's default is 100,100, which is empty in
+# this deterministic realm and leaves the client on the splash screen.
+fixture_app_args="--dclenv org --realm ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --accept-untrusted-realm --comms-adapter offline:offline"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {
