@@ -30,8 +30,8 @@ if [[ -z "${fixture_domain}" ]]; then
   exit 1
 fi
 
-if [[ "${fixture_domain}" == *:* ]]; then
-  echo "FIXTURE_BASE_DOMAIN must be a hostname without a port; --realm URLs must be HTTPS" >&2
+if [[ "${fixture_url}" != https://* ]]; then
+  echo "FIXTURE_BASE_URL must use HTTPS because the Unity realm URL is fetched directly" >&2
   exit 1
 fi
 
@@ -54,17 +54,19 @@ curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
 curl_fixture --fail --silent --show-error --retry 10 --retry-delay 1 \
   --connect-timeout 2 --max-time 10 "${fixture_url}/lambdas/status" >/dev/null
 
-if [[ "${fixture_url}" != https://* ]]; then
-  echo "FIXTURE_BASE_URL must use HTTPS because the Unity realm URL is fetched directly" >&2
-  exit 1
+fixture_uri_scheme="${fixture_url%%://*}"
+fixture_authority="${fixture_url#*://}"
+fixture_authority="${fixture_authority%%/*}"
+friends_api_scheme="ws"
+if [[ "${fixture_uri_scheme}" == "https" ]]; then
+  friends_api_scheme="wss"
 fi
 
 # Catalyst is the complete realm for this fixture. Keep org as the environment
-# so non-Catalyst services continue using their normal endpoints, and force
-# communications offline because this fixture has no Archipelago/LiveKit.
-# Unity does not have a generic --gateway override. The optimized-assets
-# override is the supported way to point Asset Bundle Registry, profiles, and
-# the Asset Bundle CDN at the fixture edge.
+# so non-Catalyst services continue using their normal endpoints. Unity PR 9822
+# adds the gateway override used here to route Social HTTP through the fixture.
+# Gatekeeper and Social RPC have explicit endpoint overrides because they are
+# not part of the gateway URL transformation.
 # Keep value-taking arguments separated by spaces. MetaForge forwards this
 # string to Unity differently on macOS and Windows; the `--realm=...` form is
 # parsed as a flag name on macOS and silently falls back to the org realm.
@@ -75,7 +77,8 @@ fi
 # asset-bundle fallback, which routes scene discovery to ABGen instead of the
 # Catalyst content endpoint. The fixture serves that flag as disabled so the
 # seeded scene at 0,0 is loaded from Catalyst.
-fixture_app_args="--dclenv org --realm ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --accept-untrusted-realm --comms-adapter offline:offline"
+friends_api_url="${friends_api_scheme}://${fixture_authority}/social-rpc"
+fixture_app_args="--dclenv org --realm ${fixture_url} --gateway ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --gatekeeper-url ${fixture_url}/comms-gatekeeper --friends-api-url ${friends_api_url} --accept-untrusted-realm"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {

@@ -422,9 +422,12 @@ jobs:
 
           $base = "https://localhost"
           $domain = "localhost"
+          $baseUri = [Uri]$base
+          $friendsApiScheme = if ($baseUri.Scheme -eq 'https') { 'wss' } else { 'ws' }
+          $friendsApiUrl = "$friendsApiScheme://$($baseUri.Authority)/social-rpc"
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "FIXTURE_APP_ARGS=--dclenv org --realm $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --accept-untrusted-realm --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --realm $base --gateway $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --gatekeeper-url $base/comms-gatekeeper --friends-api-url $friendsApiUrl --accept-untrusted-realm" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_COMPOSE_DIR=$fixture" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Validate external Catalyst fixture inputs
@@ -477,9 +480,12 @@ jobs:
           if ($domain.Contains(':') -or $domain.Contains('/')) {
             throw "FIXTURE_BASE_DOMAIN must be a hostname without a port or path"
           }
+          $baseUri = [Uri]$base
+          $friendsApiScheme = if ($baseUri.Scheme -eq 'https') { 'wss' } else { 'ws' }
+          $friendsApiUrl = "$friendsApiScheme://$($baseUri.Authority)/social-rpc"
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "FIXTURE_APP_ARGS=--dclenv org --realm $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --accept-untrusted-realm --comms-adapter offline:offline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --realm $base --gateway $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --gatekeeper-url $base/comms-gatekeeper --friends-api-url $friendsApiUrl --accept-untrusted-realm" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Record benchmark context
         shell: powershell
@@ -684,10 +690,15 @@ jobs:
           # the client itself, so without this the log shows only MetaForge's "No target
           # specified" - which reads like a misconfiguration and says nothing about what ran.
           if ($env:FIXTURE_BASE_URL) {
-            $explorerArgs += @('--realm', $env:FIXTURE_BASE_URL, '--position', '0,0', '--optimized-assets-url', $env:FIXTURE_BASE_URL, '--dcl-lists-url', $env:FIXTURE_BASE_URL, '--feature-flags-url', "$($env:FIXTURE_BASE_URL)/__fixture/feature-flags", '--accept-untrusted-realm', '--comms-adapter', 'offline:offline')
+            $fixtureUri = [Uri]$env:FIXTURE_BASE_URL
+            $friendsApiScheme = if ($fixtureUri.Scheme -eq 'https') { 'wss' } else { 'ws' }
+            $friendsApiUrl = "$friendsApiScheme://$($fixtureUri.Authority)/social-rpc"
+            $explorerArgs += @('--realm', $env:FIXTURE_BASE_URL, '--gateway', $env:FIXTURE_BASE_URL, '--position', '0,0', '--optimized-assets-url', $env:FIXTURE_BASE_URL, '--dcl-lists-url', $env:FIXTURE_BASE_URL, '--feature-flags-url', "$($env:FIXTURE_BASE_URL)/__fixture/feature-flags", '--gatekeeper-url', "$($env:FIXTURE_BASE_URL)/comms-gatekeeper", '--friends-api-url', $friendsApiUrl, '--accept-untrusted-realm')
             Write-Host "Using Catalyst fixture realm: $($env:FIXTURE_BASE_URL)"
             Write-Host "Using Catalyst fixture optimized assets: $($env:FIXTURE_BASE_URL)"
-            Write-Host "Using Catalyst fixture realm: $($env:FIXTURE_BASE_URL) (comms offline)"
+            Write-Host "Using fixture gateway: $($env:FIXTURE_BASE_URL)"
+            Write-Host "Using Comms Gatekeeper: $($env:FIXTURE_BASE_URL)/comms-gatekeeper"
+            Write-Host "Using Social RPC: $friendsApiUrl"
           }
           Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
           $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru
