@@ -77,7 +77,7 @@ fi
 # Catalyst content endpoint. The fixture serves that flag as disabled so the
 # seeded scene at 0,0 is loaded from Catalyst.
 friends_api_url="${friends_api_scheme}://${fixture_authority}/social-rpc"
-fixture_app_args="--dclenv org --base-domain ${fixture_domain} --eth-network sepolia --realm ${fixture_url} --gateway ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --gatekeeper-url ${fixture_url}/comms-gatekeeper --friends-api-url ${friends_api_url} --accept-untrusted-realm"
+fixture_app_args="--dclenv org --base-domain ${fixture_domain} --eth-network sepolia --realm ${fixture_url} --gateway-url ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --gatekeeper-url ${fixture_url}/comms-gatekeeper --friends-api-url ${friends_api_url} --accept-untrusted-realm"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {

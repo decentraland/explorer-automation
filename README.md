@@ -99,7 +99,7 @@ the macOS and Windows legs finish; its scheduled sweep is the cleanup backstop
 for canceled jobs.
 
 The manager returns the run-scoped HTTPS fixture URL. The workflow passes it to
-Explorer as `--realm <fixture-url>` and `--gateway <fixture-url>`; the same
+Explorer as `--realm <fixture-url>` and `--gateway-url <fixture-url>`; the same
 origin exposes the realm `/about`, Catalyst content/lambdas, and the registry
 gateway. `--base-domain` is not a Unity Explorer argument. Communications stay
 offline because the first stack does not provision Archipelago or LiveKit.
