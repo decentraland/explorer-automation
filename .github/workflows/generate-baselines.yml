@@ -24,8 +24,8 @@ name: Generate Baselines
 #     1. If the explorer-automation PR's head branch matches an open
 #        unity-explorer PR's head branch, use *that* PR's latest successful
 #        Unity Cloud Build. Pairs explorer + tests under coordinated change.
-#     2. Otherwise, fall back to unity-explorer's latest non-prerelease
-#        GitHub release zip. Stable target for routine baseline updates.
+#     2. Otherwise, fall back to unity-explorer's newest dev push build —
+#        branch builds keep the AltTester define that release zips strip.
 #
 # Required secrets / vars (configure once on the repo):
 #   - secrets.ALTTESTER_LICENSE                       AltTester Pro license key
@@ -198,7 +198,7 @@ jobs:
             if ! printf '%s' "$PAIRED_HEAD_REF" | grep -Eq '^[A-Za-z0-9._/-]+$' \
                || [ "${PAIRED_HEAD_REF#-}" != "$PAIRED_HEAD_REF" ] \
                || ! printf '%s' "$PAIRED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
-              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} has a ref/SHA outside the allowed character set; falling back to release."
+              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} has a ref/SHA outside the allowed character set; falling back to a dev build."
               PAIRED_PR_JSON='null'
             fi
           fi
@@ -220,32 +220,42 @@ jobs:
                 echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
-              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but its latest Unity Cloud Build for ${SHORT_SHA} was triggered by '${ORIGINAL_EVENT}', not pull_request. Falling back to release."
+              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but its latest Unity Cloud Build for ${SHORT_SHA} was triggered by '${ORIGINAL_EVENT}', not pull_request. Falling back to a dev build."
             else
-              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but no successful Unity Cloud Build yet for ${SHORT_SHA}. Falling back to release."
+              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but no successful Unity Cloud Build yet for ${SHORT_SHA}. Falling back to a dev build."
             fi
           fi
 
-          # ── 2. Fallback: latest non-prerelease unity-explorer release ────
-          RELEASE_JSON=$(gh api \
-            "repos/decentraland/unity-explorer/releases?per_page=20" \
-            --jq '[.[] | select(.prerelease == false and .draft == false)] | .[0]')
+          # ── 2. Fallback: newest unity-explorer dev push build ───────────
+          # Branch builds keep the AltTester scripting define; release artifacts
+          # strip it, so a release zip installs but never accepts the AltTester
+          # connection and recording hangs until the job timeout.
+          ARTIFACT_BASE="${PUBLIC_URL_PREFIX}/@dcl/unity-explorer/branch"
+          CANDIDATES_JSON=$(gh api \
+            "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10" \
+            --jq '[.workflow_runs[] | {head_sha, run_number}]')
+          BUILD_URL=""
+          for i in 0 1 2 3 4; do
+            CAND=$(echo "$CANDIDATES_JSON" | jq -r ".[$i]")
+            [ "$CAND" = "null" ] && break
+            RUN=$(echo "$CAND"  | jq -r '.run_number')
+            SHA7=$(echo "$CAND" | jq -r '.head_sha[0:7]')
+            URL="${ARTIFACT_BASE}/dev/pu-${RUN}-${SHA7}/Decentraland_macos.zip"
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$URL" || true)
+            HTTP=${HTTP:-000}
+            if [ "$HTTP" = "200" ]; then
+              BUILD_URL="$URL"
+              echo "::notice::Recording against latest unity-explorer dev build: run=${RUN} sha=${SHA7}"
+              break
+            fi
+            echo "::warning::dev build pu-${RUN}-${SHA7} returned HTTP ${HTTP} — trying next."
+          done
 
-          if [ -z "$RELEASE_JSON" ] || [ "$RELEASE_JSON" = "null" ]; then
-            echo "::error::No paired unity-explorer PR build available, and no published release found. Cannot record baselines."
+          if [ -z "$BUILD_URL" ]; then
+            echo "::error::No paired unity-explorer PR build and no reachable dev push build. Cannot record baselines."
             exit 1
           fi
 
-          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-          BUILD_URL=$(echo "$RELEASE_JSON" \
-            | jq -r '.assets[] | select(.name == "Decentraland_macos.zip") | .browser_download_url')
-
-          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
-            echo "::error::Release ${RELEASE_TAG} has no Decentraland_macos.zip asset attached."
-            exit 1
-          fi
-
-          echo "::notice::Recording against unity-explorer release ${RELEASE_TAG}."
           echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
 
   run-suite:

@@ -103,7 +103,7 @@ export function main() {
     emoteId: EMOTE_FRIENDLIEST_PLAYER,
   })
 
-  // ── col 2 — BaseMale, base + NFT wearable (polygon), scale 1.5 ───────────
+  // ── col 2 — BaseMale, base + NFT wearables (ethereum + polygon), scale 1.2 ──
   makeAvatar({
     x: 8,
     rotationDeg: 180,
@@ -121,6 +121,8 @@ export function main() {
       'urn:decentraland:off-chain:base-avatars:mouth_00',
       // NFT wearable — DCL Launch hat (Ethereum mainnet collections-v1)
       'urn:decentraland:ethereum:collections-v1:dcl_launch:dcl_hat_hat',
+      // NFT wearable — CoRoNoscope eyewear (Polygon collections-v2)
+      'urn:decentraland:matic:collections-v2:0x19f3a2e14ef3f35c7402304ff02b26bef7f31235:0',
     ],
     skinColor: Color3.create(0.35, 0.22, 0.14),
     hairColor: Color3.create(0.05, 0.05, 0.05),

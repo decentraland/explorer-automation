@@ -10,7 +10,7 @@ internal static class GoldenCases
     private const string EveryFixture = "<all>";
 
     /// <summary>A fixture quietly leaving the category must read as drift, not as narrower scope.</summary>
-    private const int ExpectedFixtureCount = 16;
+    private const int ExpectedFixtureCount = 17;
 
     private static readonly (string Changed, string[] Expected)[] Cases =
     [
@@ -33,8 +33,8 @@ internal static class GoldenCases
 
         ("explorer/Tests/Views/ExplorePanelSections/ExplorePanelBackpackView.cs",
         [
-            "BackpackEmotesTests", "BackpackOutfitsTests", "BackpackWearablesTests",
-            "ExplorePanelTests", "ShortcutsTests",
+            "BackpackEmotesTests", "BackpackOutfitsTests", "BackpackWearableVisibilityTests",
+            "BackpackWearablesTests", "ExplorePanelTests", "ShortcutsTests",
         ]),
 
         // Anti-collapse canary: a sibling section of Backpack under the same aggregate view.

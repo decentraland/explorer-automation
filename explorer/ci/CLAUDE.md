@@ -11,6 +11,14 @@ connects. And with AltTester already listening, MetaForge assumes an app is conn
 launching the Explorer, so the workflow launches the pre-installed build itself and waits for
 `command received` in `AltTester-Server.log` before handing over.
 
+## AltTester Desktop is fetched from a vendor URL that prunes
+
+`setup-explorer-runner` downloads AltTester Desktop for the **macOS** runner from
+`alttester.com/app/uploads/AltTester/desktop/`, which serves only the current release and deletes
+the rest — so a version pin there 404s on the vendor's next release and kills every macOS leg
+before a test runs. Read the current version off <https://alttester.com/downloads/> and bump
+`ALTTESTER_VERSION`. Windows is unaffected: its runner image ships the app.
+
 ## PowerShell 5.1 on the Windows runner
 
 The generated `.ps1` is read as ANSI, so a `run:` body must stay ASCII — an em dash is a parse
