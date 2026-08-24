@@ -146,7 +146,7 @@ on:
         required: false
         default: 'org'
       fixture_base_domain:
-        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
+        description: 'Optional fixture hostname. The Unity client receives it as --base-domain.'
         type: string
         required: false
         default: ''
@@ -243,7 +243,7 @@ on:
         required: false
         default: org
       fixture_base_domain:
-        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
+        description: 'Optional fixture hostname. The Unity client receives it as --base-domain.'
         type: string
         required: false
         default: ''

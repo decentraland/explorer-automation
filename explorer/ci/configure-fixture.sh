@@ -62,11 +62,10 @@ if [[ "${fixture_uri_scheme}" == "https" ]]; then
   friends_api_scheme="wss"
 fi
 
-# Catalyst is the complete realm for this fixture. Keep org as the environment
-# so non-Catalyst services continue using their normal endpoints. Unity PR 9822
-# adds the gateway override used here to route Social HTTP through the fixture.
-# Gatekeeper and Social RPC have explicit endpoint overrides because they are
-# not part of the gateway URL transformation.
+# Catalyst is the complete realm for this fixture. Keep the existing gateway
+# override for HTTP services and pass the custom base domain for Unity builds
+# that resolve backend hosts from it. Social RPC remains an explicit path
+# override because it is not part of GatewayUrlsSource's transformed URL set.
 # Keep value-taking arguments separated by spaces. MetaForge forwards this
 # string to Unity differently on macOS and Windows; the `--realm=...` form is
 # parsed as a flag name on macOS and silently falls back to the org realm.
@@ -78,7 +77,7 @@ fi
 # Catalyst content endpoint. The fixture serves that flag as disabled so the
 # seeded scene at 0,0 is loaded from Catalyst.
 friends_api_url="${friends_api_scheme}://${fixture_authority}/social-rpc"
-fixture_app_args="--dclenv org --realm ${fixture_url} --gateway ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --gatekeeper-url ${fixture_url}/comms-gatekeeper --friends-api-url ${friends_api_url} --accept-untrusted-realm"
+fixture_app_args="--dclenv org --base-domain ${fixture_domain} --eth-network sepolia --realm ${fixture_url} --gateway ${fixture_url} --position 0,0 --optimized-assets-url ${fixture_url} --dcl-lists-url ${fixture_url} --feature-flags-url ${fixture_url}/__fixture/feature-flags --gatekeeper-url ${fixture_url}/comms-gatekeeper --friends-api-url ${friends_api_url} --accept-untrusted-realm"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {
