@@ -63,6 +63,11 @@ on:
         required: false
         default: 'main'
         type: string
+      fixture_canary:
+        description: 'Run the single in-world bootstrap canary before a fixture suite.'
+        required: false
+        default: true
+        type: boolean
   workflow_dispatch:
     inputs:
       scope:
@@ -106,6 +111,11 @@ on:
         description: 'explorer-e2e-infra ref to check out when fixture_image is set.'
         required: false
         default: 'main'
+      fixture_canary:
+        description: 'Run the single in-world bootstrap canary before a fixture suite.'
+        required: false
+        default: true
+        type: boolean
 permissions:
   contents: read
 
@@ -308,6 +318,8 @@ jobs:
       FIXTURE_MODE_INPUT: ${{ inputs.fixture_mode || 'org' }}
       FIXTURE_IMAGE_INPUT: ${{ inputs.fixture_image || '' }}
       FIXTURE_REF_INPUT: ${{ inputs.fixture_ref || 'main' }}
+      FIXTURE_CANARY: ${{ inputs.fixture_canary && 'true' || 'false' }}
+      EXPLORER_FAIL_FAST_INFRA: '1'
 
     steps:
       # `repository` is mandatory: a bare checkout inside a workflow_call run
@@ -486,6 +498,35 @@ jobs:
           "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain --realm $base --gateway $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --gatekeeper-url $base/comms-gatekeeper --friends-api-url $friendsApiUrl --accept-untrusted-realm" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Preflight fixture control plane
+        if: env.FIXTURE_BASE_URL_INPUT != '' || env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $base = $env:FIXTURE_BASE_URL.TrimEnd('/')
+          if (-not $base) { throw "Fixture base URL was not configured" }
+          $about = Invoke-RestMethod "$base/about"
+          if (-not $about.healthy -or -not $about.content.healthy -or -not $about.lambdas.healthy) {
+            throw "Fixture realm is not healthy: $base/about"
+          }
+          $manifest = Invoke-RestMethod "$base/__fixture/gateway/manifest"
+          if (-not $manifest.services.comms.enabled) { throw "Fixture gateway has Comms disabled" }
+          Invoke-RestMethod "$base/comms-gatekeeper/status" | Out-Null
+          $headers = @{ Authorization = "Bearer fixture-comms-token" }
+          $body = @{ room_id = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"; user_addresses = @(
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002"
+          ) } | ConvertTo-Json -Compress
+          $credentials = Invoke-RestMethod "$base/comms-gatekeeper/private-voice-chat" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+          $urls = @($credentials.PSObject.Properties | ForEach-Object { $_.Value.connection_url })
+          if ($urls.Count -ne 2) { throw "Gatekeeper returned $($urls.Count) LiveKit credentials instead of 2" }
+          foreach ($url in $urls) {
+            if (-not $url.StartsWith('livekit:') -or -not $url.Contains('access_token=') -or $url.Contains('fixture-livekit.invalid')) {
+              throw "Gatekeeper returned an invalid LiveKit connection URL"
+            }
+          }
+          Write-Host "Fixture control-plane preflight passed; LiveKit connection URLs were issued"
 
       - name: Record benchmark context
         shell: powershell
@@ -725,6 +766,20 @@ jobs:
           # --report-type None for the same reason as the macOS leg: SingleFile inlines every
           # attachment as base64 and overruns allure's size cap on a full run. Generation is
           # ours, in the step below.
+          $canaryFilter = 'Name=TestExplorerIsInWorldFromTokenBridge'
+          if ($env:FIXTURE_CANARY -eq 'true' -and $env:FIXTURE_BASE_URL -and $env:TEST_FILTER -ne $canaryFilter) {
+            Write-Host "Running fixture bootstrap canary: $canaryFilter"
+            mf explorer test `
+              --non-interactive `
+              --filter $canaryFilter `
+              --report-type None | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "mf-fixture-canary.log")
+            $canaryExit = $LASTEXITCODE
+            if ($canaryExit -ne 0) {
+              throw "Fixture bootstrap canary failed with exit code $canaryExit; full InWorld suite was not started."
+            }
+            Write-Host "Fixture bootstrap canary passed; continuing with $env:TEST_FILTER"
+          }
+
           mf explorer test `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
@@ -887,6 +942,8 @@ jobs:
           $diagnosticFiles = @(
             (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
             (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
+            (Join-Path $env:RUNNER_TEMP "mf-fixture-canary.log"),
+            (Join-Path $env:RUNNER_TEMP "mf-test.log"),
             (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
           )
           foreach ($file in $diagnosticFiles) {

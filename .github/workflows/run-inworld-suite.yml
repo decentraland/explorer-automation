@@ -190,6 +190,11 @@ on:
         type: string
         required: false
         default: 'main'
+      fixture_canary:
+        description: 'Run the single in-world bootstrap canary before a fixture suite. A failure aborts before the full selection.'
+        type: boolean
+        required: false
+        default: true
 
   workflow_dispatch:
     inputs:
@@ -231,6 +236,11 @@ on:
         type: string
         required: false
         default: ''
+      fixture_canary:
+        description: 'Run the single in-world bootstrap canary before a fixture suite.'
+        type: boolean
+        required: false
+        default: true
       provision_fixture:
         description: 'Provision ephemeral fixture infrastructure for this run. When false, keep the existing fixture behavior.'
         type: boolean
@@ -440,6 +450,8 @@ jobs:
       # 'true' only when triaging AltTester issues — Debug level adds ~30 MB of
       # polling chatter per run.
       ALT_VERBOSE_LOGS: 'false'
+      FIXTURE_CANARY: ${{ inputs.fixture_canary && 'true' || 'false' }}
+      EXPLORER_FAIL_FAST_INFRA: '1'
 
     steps:
       - name: Validate inputs
@@ -575,6 +587,15 @@ jobs:
           set -euo pipefail
           chmod +x explorer/ci/configure-fixture.sh
           ./explorer/ci/configure-fixture.sh
+
+      - name: Preflight fixture control plane
+        if: env.FIXTURE_BASE_URL_INPUT != ''
+        env:
+          FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
+        run: |
+          set -euo pipefail
+          chmod +x explorer/ci/fixture-preflight.sh
+          ./explorer/ci/fixture-preflight.sh
 
       - name: Compute identifiers
         id: ids
@@ -930,6 +951,30 @@ jobs:
           fi
           echo "Launching Explorer with app args: ${APP_ARGS}"
 
+          # A managed fixture must prove the client can complete the multiplayer
+          # bootstrap before spending time on the full UI selection. This keeps
+          # a broken LiveKit path at a few minutes instead of repeating the same
+          # 20-second locator timeout for every test.
+          CANARY_FILTER='Name=TestExplorerIsInWorldFromTokenBridge'
+          if [ "${FIXTURE_CANARY:-false}" = 'true' ] \
+             && [ -n "${FIXTURE_BASE_URL:-}" ] \
+             && [ "${TEST_FILTER}" != "${CANARY_FILTER}" ]; then
+            echo "Running fixture bootstrap canary: ${CANARY_FILTER}"
+            CANARY_EXIT=0
+            mf explorer test "$BUILD_URL" \
+              --non-interactive \
+              --filter "$CANARY_FILTER" \
+              --report-type None \
+              --app-args="${APP_ARGS}" \
+              2>&1 | tee "$RUNNER_TEMP/mf-fixture-canary.log" \
+              || CANARY_EXIT=$?
+            if [ "$CANARY_EXIT" -ne 0 ]; then
+              echo "::error::Fixture bootstrap canary failed; full InWorld suite was not started."
+              exit "$CANARY_EXIT"
+            fi
+            echo "Fixture bootstrap canary passed; continuing with ${TEST_FILTER}"
+          fi
+
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
@@ -1259,6 +1304,8 @@ jobs:
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/allure-report/**
             explorer/Tests/bin/Debug/net10.0/allure-results/**
+            ${{ runner.temp }}/mf-fixture-canary.log
+            ${{ runner.temp }}/mf-test.log
             ${{ runner.temp }}/explorer-perf/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
             ~/Library/Logs/DiagnosticReports/Explorer*
@@ -1439,6 +1486,7 @@ jobs:
       # Both legs from one ref, and — as on macOS — a cross-repo caller has no
       # explorer/ci to check out without it.
       tests_ref: ${{ inputs.tests_ref }}
+      fixture_canary: ${{ inputs.fixture_canary }}
       fixture_base_url: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
       fixture_base_domain: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
       # A managed run is an external fixture from the Windows leg's point of view,
