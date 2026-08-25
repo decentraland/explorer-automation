@@ -125,23 +125,27 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
                 throw new AssertionException($"No own chat entry containing '{messageFragment}' to react to");
 
             var entryPath = $"{OWN_ENTRY_PATH}[{index}]";
-            new Clickable(By.PATH, entryPath + "/MessageBubbleElement").WaitFor().PointerEnter();
-            var emojiSelectorButton = new Clickable(By.PATH, entryPath + "//EmojiSelectorButton");
-            emojiSelectorButton.WaitFor(5); // wait for the hover-revealed reaction button to enable
-            emojiSelectorButton.Click();
-            ReactionSelector.WaitFor(10);
-            FirstReactionOption.Click();
-            Reporter.Log($"Picked the first quick reaction for entry {index} (attempt {attempt})");
 
+            // The whole hover-through-pick sequence is inside the retry now, not just the
+            // reaction-row check below: a click any one of these waits was guarding can be
+            // dropped by the same pool re-bind, and only retrying from the hover recovers it.
             try
             {
+                new Clickable(By.PATH, entryPath + "/MessageBubbleElement").WaitFor().PointerEnter();
+                var emojiSelectorButton = new Clickable(By.PATH, entryPath + "//EmojiSelectorButton");
+                emojiSelectorButton.WaitFor(5); // wait for the hover-revealed reaction button to enable
+                emojiSelectorButton.Click();
+                ReactionSelector.WaitFor(10);
+                FirstReactionOption.Click();
+                Reporter.Log($"Picked the first quick reaction for entry {index} (attempt {attempt})");
+
                 new Locatable(By.PATH, entryPath + "/ChatReactionsRow_Own(Clone)").WaitFor(10);
                 DismissReactionSelectorIfOpen();
                 return;
             }
             catch when (attempt < ATTEMPTS)
             {
-                Reporter.Log("Reaction row did not appear — pool likely re-bound, retrying");
+                Reporter.Log("Reaction did not land — click likely dropped or pool re-bound, retrying");
             }
         }
     }

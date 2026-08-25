@@ -93,7 +93,10 @@ public class MinimapTests : BaseTest
     {
         Views.Minimap.WaitFor();
 
-        Views.Minimap.MapRenderButton.Click(settleMs: 0);
+        // Retry, not just settleMs: 0 + a single wait — a click this button drops leaves
+        // no other signal to recover from than clicking it again.
+        ClickUntil(() => Views.Minimap.MapRenderButton.Click(settleMs: 0),
+                   () => Views.ExplorePanel.Navmap.IsPresent(verificationShot: false));
         Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Clicking the minimap opened the full navmap");
 

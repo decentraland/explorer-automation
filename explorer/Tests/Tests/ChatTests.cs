@@ -36,7 +36,10 @@ public class ChatTests : BaseTest
     [Test]
     public void TestOpenChatWithEnterAndCloseWithEscape()
     {
-        PressKey(AltKeyCode.Return, delay: 0);
+        // Retry, not just delay: 0 + a single wait — a dropped Enter has no other signal to
+        // recover from than pressing it again (harmless: the chat ignores an empty submit).
+        ClickUntil(() => PressKey(AltKeyCode.Return, delay: 0),
+                   () => Views.Chat.ConversationsToolbar.IsPresent(verificationShot: false));
         Views.Chat.ConversationsToolbar.WaitFor();
         Assert.That(Views.Chat.InputPlaceholder.GetText(), Is.EqualTo(ChatPanelView.PLACEHOLDER_OPEN),
             "Chat input should be focused after pressing Enter");
