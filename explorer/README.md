@@ -100,7 +100,7 @@ The [`explorer-e2e-infra`](https://github.com/decentraland/explorer-e2e-infra) f
 The script expects `explorer-e2e-infra` next to this repository and reuses `explorer-e2e-infra-catalyrst:latest` by default. Set `CATALYRST_IMAGE` to use another tag, or pass `FIXTURE_BUILD_IMAGE=1` when the image must be rebuilt. Override the repository path with `--infra-dir /path/to/explorer-e2e-infra`; use `--keep-fixture` for iterative runs or `--health-only` to validate the fixture without launching Unity.
 
 The helper checks `/about`, `/content/status`, and `/lambdas/status`, and
-passes `--dclenv org --realm https://localhost --gateway-url https://localhost
+passes `--dclenv org --realm https://localhost --gateway https://localhost
 --accept-untrusted-realm --comms-adapter offline:offline` to Explorer. The
 fixture terminates HTTPS on port 443 with a locally trusted `mkcert` certificate;
 install `mkcert` and run its CA setup before the first local run. The current
