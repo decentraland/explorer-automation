@@ -131,6 +131,9 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
             // dropped by the same pool re-bind, and only retrying from the hover recovers it.
             try
             {
+                // A hiccup-triggered performance prompt can also be what ate the previous
+                // attempt's click — clear it before trying again.
+                PerformanceIssuePrompt.DismissIfPresent();
                 new Clickable(By.PATH, entryPath + "/MessageBubbleElement").WaitFor().PointerEnter();
                 var emojiSelectorButton = new Clickable(By.PATH, entryPath + "//EmojiSelectorButton");
                 emojiSelectorButton.WaitFor(5); // wait for the hover-revealed reaction button to enable

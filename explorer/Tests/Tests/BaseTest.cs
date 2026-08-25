@@ -175,6 +175,10 @@ public abstract class BaseTest
         if (!Views.AuthenticationMainScreen.IsPresent())
             PressEscape();
 
+        // Catches a prompt left over from the previous test's teardown; ClickUntil below covers
+        // one that appears mid-test.
+        PerformanceIssuePrompt.DismissIfPresent();
+
         // Arm verification screenshots LAST so the counter starts at the test body and the
         // setup plumbing above (auth-screen probe, Escape) stays shot-free. EnsureInWorld's
         // boot waits run in OneTimeSetUp while shots are disarmed, so they never capture.
@@ -382,6 +386,9 @@ public abstract class BaseTest
     {
         for (var attempt = 1; attempt <= attempts; attempt++)
         {
+            // A hiccup-triggered prompt can appear between attempts and eat the click same as a
+            // grid rebuild does — clear it first so the click actually reaches its target.
+            PerformanceIssuePrompt.DismissIfPresent();
             click();
             var deadline = DateTime.UtcNow.AddSeconds(timeoutPerAttempt);
             while (DateTime.UtcNow < deadline)
