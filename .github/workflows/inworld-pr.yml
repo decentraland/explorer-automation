@@ -186,10 +186,10 @@ jobs:
     if: needs.resolve.outputs.should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
-      # Temporary validation pin for Unity Explorer PR #9822. The fixture realm
+      # Temporary validation pin for Unity Explorer PR #9868. The fixture realm
       # requires its trusted-domain and gateway URL support; the normal path
       # resolves the newest dev build when this value is empty.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/chore/e2e-infra/pr-25398-041acc9/Decentraland_macos.zip'
+      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/fix/e2e-fixture-gateway-routes/pr-25530-32f6db6/Decentraland_macos.zip'
       filter: ${{ needs.resolve.outputs.filter }}
       windows: false
       macos: true
@@ -212,4 +212,5 @@ jobs:
       fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'avatar-assets' }}
       fixture_image: ${{ (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
+      real_livekit_smoke: true
     secrets: inherit

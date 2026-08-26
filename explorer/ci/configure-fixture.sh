@@ -67,7 +67,7 @@ fi
 # that resolve backend hosts from it. Social RPC remains an explicit path
 # override because it is not part of GatewayUrlsSource's transformed URL set.
 # The fixture gateway is the same origin as the realm; --gateway is the
-# command-line override implemented by unity-explorer#9822.
+# command-line override implemented by unity-explorer#9868.
 # Keep value-taking arguments separated by spaces. MetaForge forwards this
 # string to Unity differently on macOS and Windows; the `--realm=...` form is
 # parsed as a flag name on macOS and silently falls back to the org realm.
