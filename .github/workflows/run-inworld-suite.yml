@@ -191,7 +191,7 @@ on:
         required: false
         default: 'main'
       fixture_canary:
-        description: 'Run the single in-world bootstrap canary before a fixture suite. A failure aborts before the full selection.'
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
         type: boolean
         required: false
         default: true
@@ -237,7 +237,7 @@ on:
         required: false
         default: ''
       fixture_canary:
-        description: 'Run the single in-world bootstrap canary before a fixture suite.'
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
         type: boolean
         required: false
         default: true
@@ -450,8 +450,7 @@ jobs:
       # 'true' only when triaging AltTester issues — Debug level adds ~30 MB of
       # polling chatter per run.
       ALT_VERBOSE_LOGS: 'false'
-      FIXTURE_CANARY: ${{ inputs.fixture_canary && 'true' || 'false' }}
-      EXPLORER_FAIL_FAST_INFRA: '1'
+      EXPLORER_FAIL_FAST_INFRA: ${{ inputs.fixture_canary && '1' || '0' }}
 
     steps:
       - name: Validate inputs
@@ -951,30 +950,6 @@ jobs:
           fi
           echo "Launching Explorer with app args: ${APP_ARGS}"
 
-          # A managed fixture must prove the client can complete the multiplayer
-          # bootstrap before spending time on the full UI selection. This keeps
-          # a broken LiveKit path at a few minutes instead of repeating the same
-          # 20-second locator timeout for every test.
-          CANARY_FILTER='Name=TestExplorerIsInWorldFromTokenBridge'
-          if [ "${FIXTURE_CANARY:-false}" = 'true' ] \
-             && [ -n "${FIXTURE_BASE_URL:-}" ] \
-             && [ "${TEST_FILTER}" != "${CANARY_FILTER}" ]; then
-            echo "Running fixture bootstrap canary: ${CANARY_FILTER}"
-            CANARY_EXIT=0
-            mf explorer test "$BUILD_URL" \
-              --non-interactive \
-              --filter "$CANARY_FILTER" \
-              --report-type None \
-              --app-args="${APP_ARGS}" \
-              2>&1 | tee "$RUNNER_TEMP/mf-fixture-canary.log" \
-              || CANARY_EXIT=$?
-            if [ "$CANARY_EXIT" -ne 0 ]; then
-              echo "::error::Fixture bootstrap canary failed; full InWorld suite was not started."
-              exit "$CANARY_EXIT"
-            fi
-            echo "Fixture bootstrap canary passed; continuing with ${TEST_FILTER}"
-          fi
-
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
@@ -1304,7 +1279,6 @@ jobs:
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/allure-report/**
             explorer/Tests/bin/Debug/net10.0/allure-results/**
-            ${{ runner.temp }}/mf-fixture-canary.log
             ${{ runner.temp }}/mf-test.log
             ${{ runner.temp }}/explorer-perf/**
             ~/Library/Logs/DiagnosticReports/Decentraland*

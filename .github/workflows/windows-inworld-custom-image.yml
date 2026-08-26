@@ -64,7 +64,7 @@ on:
         default: 'main'
         type: string
       fixture_canary:
-        description: 'Run the single in-world bootstrap canary before a fixture suite.'
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
         required: false
         default: true
         type: boolean
@@ -112,7 +112,7 @@ on:
         required: false
         default: 'main'
       fixture_canary:
-        description: 'Run the single in-world bootstrap canary before a fixture suite.'
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
         required: false
         default: true
         type: boolean
@@ -318,8 +318,7 @@ jobs:
       FIXTURE_MODE_INPUT: ${{ inputs.fixture_mode || 'org' }}
       FIXTURE_IMAGE_INPUT: ${{ inputs.fixture_image || '' }}
       FIXTURE_REF_INPUT: ${{ inputs.fixture_ref || 'main' }}
-      FIXTURE_CANARY: ${{ inputs.fixture_canary && 'true' || 'false' }}
-      EXPLORER_FAIL_FAST_INFRA: '1'
+      EXPLORER_FAIL_FAST_INFRA: ${{ inputs.fixture_canary && '1' || '0' }}
 
     steps:
       # `repository` is mandatory: a bare checkout inside a workflow_call run
@@ -766,20 +765,6 @@ jobs:
           # --report-type None for the same reason as the macOS leg: SingleFile inlines every
           # attachment as base64 and overruns allure's size cap on a full run. Generation is
           # ours, in the step below.
-          $canaryFilter = 'Name=TestExplorerIsInWorldFromTokenBridge'
-          if ($env:FIXTURE_CANARY -eq 'true' -and $env:FIXTURE_BASE_URL -and $env:TEST_FILTER -ne $canaryFilter) {
-            Write-Host "Running fixture bootstrap canary: $canaryFilter"
-            mf explorer test `
-              --non-interactive `
-              --filter $canaryFilter `
-              --report-type None | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "mf-fixture-canary.log")
-            $canaryExit = $LASTEXITCODE
-            if ($canaryExit -ne 0) {
-              throw "Fixture bootstrap canary failed with exit code $canaryExit; full InWorld suite was not started."
-            }
-            Write-Host "Fixture bootstrap canary passed; continuing with $env:TEST_FILTER"
-          }
-
           mf explorer test `
             --non-interactive `
             --filter "$env:TEST_FILTER" `
@@ -942,7 +927,6 @@ jobs:
           $diagnosticFiles = @(
             (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
             (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
-            (Join-Path $env:RUNNER_TEMP "mf-fixture-canary.log"),
             (Join-Path $env:RUNNER_TEMP "mf-test.log"),
             (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
           )

@@ -52,25 +52,27 @@ public abstract class BaseTest
             return;
         }
 
+        var inWorldBootstrapStarted = false;
         try
         {
             // Before the boot, not after: a viewport this can't clear fails every fixture anyway,
             // and the check costs one round trip against ~4 minutes of booting into a doomed run.
             Viewport.RequireUsable();
+            inWorldBootstrapStarted = true;
             EnsureInWorld();
         }
         catch (Exception ex)
         {
             NoteIfDriverLost(ex);
 
-            // A failed multiplayer bootstrap is a process-wide infrastructure failure, not a
+            // A failed in-world bootstrap is a process-wide infrastructure failure, not a
             // test-level assertion. Continuing would make every remaining fixture wait for the
-            // same UI object and turn a two-minute diagnosis into a 30-minute timeout.
-            if (InfrastructureFailFastEnabled() && IsInfrastructureStartupFailure(ex))
+            // same UI object and turn a few-minute diagnosis into a 30-minute timeout.
+            if (InfrastructureFailFastEnabled() && inWorldBootstrapStarted)
             {
-                const string marker = "INFRA_FAST_FAIL: Explorer never completed multiplayer startup";
+                const string marker = "INFRA_FAST_FAIL: Explorer never completed in-world startup";
                 Console.Error.WriteLine($"{marker}: {ex.Message}");
-                Reporter.Log($"{marker}. Aborting the NUnit process; inspect Player.log for the first LiveKit error.\n{ex}");
+                Reporter.Log($"{marker}. Aborting the NUnit process; inspect Player.log for the first infrastructure error.\n{ex}");
                 Environment.Exit(78);
                 return;
             }
@@ -283,16 +285,25 @@ public abstract class BaseTest
         // the loading screen asynchronously after JumpIntoWorld, so a 0ms check returns false
         // before it shows up. Instead, give it ~15s to appear; if it doesn't, assume world
         // was already loaded; if it does, wait up to 5 min for it to finish.
+        var loadingScreenAppeared = false;
         try
         {
             Views.LoadingScreen.WaitFor(15);
-            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
-            Views.LoadingScreen.WaitForGone(300);
-            Reporter.Log("Scene loading complete — HUD should now be interactable");
+            loadingScreenAppeared = true;
         }
         catch (Exception)
         {
             Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
+        }
+
+        if (loadingScreenAppeared)
+        {
+            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
+            // Keep this outside the appearance probe's catch. If streaming hangs because
+            // multiplayer startup failed, the outer OneTimeSetUp handler must see it and the
+            // fixture fail-fast guard can stop the process instead of repeating UI waits.
+            Views.LoadingScreen.WaitForGone(300);
+            Reporter.Log("Scene loading complete — HUD should now be interactable");
         }
 
         // 240s (was 120s): same reason as the SplashScreen bump above — bootstrap
@@ -345,20 +356,6 @@ public abstract class BaseTest
 
     private static bool InfrastructureFailFastEnabled() =>
         string.Equals(Environment.GetEnvironmentVariable(FAIL_FAST_INFRA_ENV), "1", StringComparison.Ordinal);
-
-    private static bool IsInfrastructureStartupFailure(Exception exception)
-    {
-        for (var current = exception; current != null; current = current.InnerException)
-        {
-            var text = current.ToString();
-            if (text.Contains("Multiplayer services are offline", StringComparison.OrdinalIgnoreCase)
-                || text.Contains("wait_pc_connection timed out", StringComparison.OrdinalIgnoreCase)
-                || text.Contains("livekit_ffi", StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
 
     [AllureStep("Dismiss the MinimumSpecs warning modal if present")]
     private void DismissMinimumSpecsModalIfPresent()
