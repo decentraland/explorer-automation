@@ -598,7 +598,7 @@ jobs:
           ./explorer/ci/configure-fixture.sh
 
       - name: Install LiveKit CLI for fixture preflight
-        if: env.FIXTURE_BASE_URL_INPUT != '' && (inputs.real_livekit_smoke || inputs.provision_fixture)
+        if: env.FIXTURE_BASE_URL_INPUT != '' && (inputs.real_livekit_smoke || inputs.provision_fixture || inputs.fixture_mode == 'external')
         run: |
           set -euo pipefail
           version='2.16.3'
@@ -623,7 +623,7 @@ jobs:
         if: env.FIXTURE_BASE_URL_INPUT != ''
         env:
           FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
-          FIXTURE_LIVEKIT_REAL_SMOKE: ${{ (inputs.real_livekit_smoke || inputs.provision_fixture) && '1' || '0' }}
+          FIXTURE_LIVEKIT_REAL_SMOKE: ${{ (inputs.real_livekit_smoke || inputs.provision_fixture || inputs.fixture_mode == 'external') && '1' || '0' }}
           FIXTURE_LIVEKIT_API_KEY: ${{ vars.FIXTURE_LIVEKIT_API_KEY || 'fixture-livekit-key' }}
           FIXTURE_LIVEKIT_API_SECRET: ${{ vars.FIXTURE_LIVEKIT_API_SECRET || 'fixture-livekit-secret-0123456789-0123456789' }}
           FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '20'
@@ -1496,7 +1496,7 @@ jobs:
       # explorer/ci to check out without it.
       tests_ref: ${{ inputs.tests_ref }}
       fixture_canary: ${{ inputs.fixture_canary }}
-      real_livekit_smoke: ${{ inputs.provision_fixture }}
+      real_livekit_smoke: ${{ inputs.real_livekit_smoke || inputs.provision_fixture || inputs.fixture_mode == 'external' }}
       fixture_base_url: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
       fixture_base_domain: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
       # A managed run is an external fixture from the Windows leg's point of view,
