@@ -24,8 +24,24 @@ public static class PerformanceIssuePrompt
             return;
 
         Reporter.Log("Performance issue prompt is up — opting out and closing it so it stops swallowing clicks");
-        DontShowAgainToggle.Click(settleMs: 0);
-        CloseButton.Click(settleMs: 0);
-        Root.WaitForGone(5, verificationShot: false);
+
+        // Best-effort: every caller of this is itself inside a click/retry loop that this modal
+        // was blocking, and the caller's own click + responded-check afterward is the
+        // authoritative signal. If the toggle/close click misses or the fade-out runs past the
+        // 5s WaitForGone — exactly the kind of slowness this suite's underpowered CI hardware
+        // produces — swallow it here rather than let it escape as an unrelated-looking
+        // AssertionException and fail the caller before its own retry logic ever runs. If the
+        // prompt is genuinely still up afterward, the caller's next click attempt hits it again
+        // and gets another chance to dismiss it.
+        try
+        {
+            DontShowAgainToggle.Click(settleMs: 0);
+            CloseButton.Click(settleMs: 0);
+            Root.WaitForGone(5, verificationShot: false);
+        }
+        catch (AssertionException ex)
+        {
+            Reporter.Log($"Could not fully dismiss the performance issue prompt, continuing anyway: {ex.Message}");
+        }
     }
 }
