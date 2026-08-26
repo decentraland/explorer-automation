@@ -45,6 +45,8 @@ check_livekit_data_plane() {
 
   echo "fixture-preflight: joining LiveKit room through ${livekit_url}"
   lk room join \
+    --verbose \
+    --yes \
     --url "${livekit_url}" \
     --api-key "${api_key}" \
     --api-secret "${api_secret}" \
