@@ -195,6 +195,11 @@ on:
         type: boolean
         required: false
         default: true
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        type: boolean
+        required: false
+        default: false
 
   workflow_dispatch:
     inputs:
@@ -241,6 +246,11 @@ on:
         type: boolean
         required: false
         default: true
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        type: boolean
+        required: false
+        default: false
       provision_fixture:
         description: 'Provision ephemeral fixture infrastructure for this run. When false, keep the existing fixture behavior.'
         type: boolean
@@ -587,10 +597,36 @@ jobs:
           chmod +x explorer/ci/configure-fixture.sh
           ./explorer/ci/configure-fixture.sh
 
+      - name: Install LiveKit CLI for fixture preflight
+        if: env.FIXTURE_BASE_URL_INPUT != '' && (inputs.real_livekit_smoke || inputs.provision_fixture)
+        run: |
+          set -euo pipefail
+          version='2.16.3'
+          archive="lk_${version}_darwin_arm64.tar.gz"
+          expected_sha='4024c4511dda1dc930dc1e133099c9fb39ff70596df110ae78c0268e0739bbd0'
+          install_dir="$RUNNER_TEMP/livekit-cli"
+          if ! command -v lk >/dev/null 2>&1; then
+            mkdir -p "$install_dir"
+            archive_path="$RUNNER_TEMP/$archive"
+            curl --fail --silent --show-error --location \
+              "https://github.com/livekit/livekit-cli/releases/download/v${version}/${archive}" \
+              --output "$archive_path"
+            printf '%s  %s\n' "$expected_sha" "$archive_path" | shasum -a 256 -c -
+            tar -xzf "$archive_path" -C "$install_dir"
+            chmod 0755 "$install_dir/lk"
+            echo "$install_dir" >> "$GITHUB_PATH"
+            export PATH="$install_dir:$PATH"
+          fi
+          lk --version
+
       - name: Preflight fixture control plane
         if: env.FIXTURE_BASE_URL_INPUT != ''
         env:
           FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
+          FIXTURE_LIVEKIT_REAL_SMOKE: ${{ (inputs.real_livekit_smoke || inputs.provision_fixture) && '1' || '0' }}
+          FIXTURE_LIVEKIT_API_KEY: ${{ vars.FIXTURE_LIVEKIT_API_KEY || 'fixture-livekit-key' }}
+          FIXTURE_LIVEKIT_API_SECRET: ${{ vars.FIXTURE_LIVEKIT_API_SECRET || 'fixture-livekit-secret-0123456789-0123456789' }}
+          FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '20'
         run: |
           set -euo pipefail
           chmod +x explorer/ci/fixture-preflight.sh
@@ -872,10 +908,10 @@ jobs:
       - name: Run InWorld suite
         id: test
         if: env.DRY_RUN != 'true'
-        # Fixture runs should never spend the full org-suite budget waiting for a
-        # broken multiplayer bootstrap. The client can surface useful Player.log
-        # evidence before this ceiling; org runs retain their original budget.
-        timeout-minutes: ${{ (inputs.provision_fixture || inputs.fixture_mode == 'external' || inputs.fixture_base_url != '') && 10 || 30 }}
+        # The fixture preflight now verifies a real LiveKit room join, so a
+        # multiplayer outage fails before this step. Keep enough time for the
+        # complete InWorld selection once startup succeeds.
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
@@ -1460,6 +1496,7 @@ jobs:
       # explorer/ci to check out without it.
       tests_ref: ${{ inputs.tests_ref }}
       fixture_canary: ${{ inputs.fixture_canary }}
+      real_livekit_smoke: ${{ inputs.provision_fixture }}
       fixture_base_url: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
       fixture_base_domain: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
       # A managed run is an external fixture from the Windows leg's point of view,
