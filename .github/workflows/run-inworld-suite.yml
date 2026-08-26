@@ -872,11 +872,10 @@ jobs:
       - name: Run InWorld suite
         id: test
         if: env.DRY_RUN != 'true'
-        # 17m59s measured over 49 tests; PR #47's 8 more put it near 21m, and
-        # paravirt variance near 25m. Must stay below the job cap: a step
-        # timeout still runs the failure log dump and artifact upload, a job
-        # timeout kills both.
-        timeout-minutes: 30
+        # Fixture runs should never spend the full org-suite budget waiting for a
+        # broken multiplayer bootstrap. The client can surface useful Player.log
+        # evidence before this ceiling; org runs retain their original budget.
+        timeout-minutes: ${{ (inputs.provision_fixture || inputs.fixture_mode == 'external' || inputs.fixture_base_url != '') && 10 || 30 }}
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
