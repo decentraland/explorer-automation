@@ -11,6 +11,65 @@ curl_fixture() {
     --connect-timeout 2 --max-time 10 "$@"
 }
 
+check_livekit_data_plane() {
+  local connection_url livekit_endpoint livekit_url probe_log probe_pid identity
+  local room_id="${room_id:-fixture-preflight-$(date +%s)-$$}"
+  local api_key="${FIXTURE_LIVEKIT_API_KEY:-fixture-livekit-key}"
+  local api_secret="${FIXTURE_LIVEKIT_API_SECRET:-fixture-livekit-secret-0123456789-0123456789}"
+  local timeout_seconds="${FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS:-20}"
+
+  connection_url="$(jq -er 'to_entries[0].value.connection_url' <<<"${credentials}")"
+  livekit_endpoint="${connection_url#livekit:}"
+  livekit_endpoint="${livekit_endpoint%%\?*}"
+  case "${livekit_endpoint}" in
+    ws://*|wss://*) livekit_url="${livekit_endpoint}" ;;
+    *) livekit_url="wss://${livekit_endpoint}" ;;
+  esac
+
+  if ! command -v lk >/dev/null 2>&1; then
+    echo "fixture-preflight: lk (LiveKit CLI) is required for the real LiveKit smoke test" >&2
+    return 1
+  fi
+
+  identity="fixture-preflight-${GITHUB_RUN_ID:-local}-$$"
+  probe_log="$(mktemp)"
+  probe_pid=""
+  cleanup_probe() {
+    if [[ -n "${probe_pid}" ]] && kill -0 "${probe_pid}" 2>/dev/null; then
+      kill "${probe_pid}" 2>/dev/null || true
+      wait "${probe_pid}" 2>/dev/null || true
+    fi
+    rm -f "${probe_log}"
+  }
+  trap cleanup_probe RETURN
+
+  echo "fixture-preflight: joining LiveKit room through ${livekit_url}"
+  lk room join \
+    --url "${livekit_url}" \
+    --api-key "${api_key}" \
+    --api-secret "${api_secret}" \
+    --identity "${identity}" \
+    "${room_id}" >"${probe_log}" 2>&1 &
+  probe_pid=$!
+
+  for _ in $(seq 1 "${timeout_seconds}"); do
+    if grep -qiE 'connected to room|connected.*room' "${probe_log}"; then
+      echo "fixture-preflight: LiveKit signaling and WebRTC connection passed"
+      return 0
+    fi
+    if ! kill -0 "${probe_pid}" 2>/dev/null; then
+      echo "fixture-preflight: LiveKit CLI exited before joining the room" >&2
+      cat "${probe_log}" >&2
+      return 1
+    fi
+    sleep 1
+  done
+
+  echo "fixture-preflight: LiveKit room join timed out after ${timeout_seconds}s" >&2
+  cat "${probe_log}" >&2
+  return 1
+}
+
 echo "fixture-preflight: checking Catalyst realm and gateway"
 about_json="$(curl_fixture "${base_url}/about")"
 jq -e '.healthy == true and .content.healthy == true and .lambdas.healthy == true' \
@@ -39,4 +98,8 @@ jq -e '
   ))
 ' <<<"${credentials}" >/dev/null
 
-echo "fixture-preflight: control plane passed; LiveKit connection URLs were issued"
+if [[ "${FIXTURE_LIVEKIT_REAL_SMOKE:-0}" == "1" ]]; then
+  check_livekit_data_plane
+else
+  echo "fixture-preflight: control plane passed; LiveKit connection URLs were issued (real data-plane smoke disabled)"
+fi

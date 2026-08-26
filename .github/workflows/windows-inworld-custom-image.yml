@@ -68,6 +68,11 @@ on:
         required: false
         default: true
         type: boolean
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       scope:
@@ -115,6 +120,11 @@ on:
         description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
         required: false
         default: true
+        type: boolean
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        required: false
+        default: false
         type: boolean
 permissions:
   contents: read
@@ -319,6 +329,10 @@ jobs:
       FIXTURE_IMAGE_INPUT: ${{ inputs.fixture_image || '' }}
       FIXTURE_REF_INPUT: ${{ inputs.fixture_ref || 'main' }}
       EXPLORER_FAIL_FAST_INFRA: ${{ inputs.fixture_canary && '1' || '0' }}
+      FIXTURE_LIVEKIT_REAL_SMOKE: ${{ inputs.real_livekit_smoke && '1' || '0' }}
+      FIXTURE_LIVEKIT_API_KEY: ${{ vars.FIXTURE_LIVEKIT_API_KEY || 'fixture-livekit-key' }}
+      FIXTURE_LIVEKIT_API_SECRET: ${{ vars.FIXTURE_LIVEKIT_API_SECRET || 'fixture-livekit-secret-0123456789-0123456789' }}
+      FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '20'
 
     steps:
       # `repository` is mandatory: a bare checkout inside a workflow_call run
@@ -498,6 +512,34 @@ jobs:
           "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain --realm $base --gateway $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --gatekeeper-url $base/comms-gatekeeper --friends-api-url $friendsApiUrl --accept-untrusted-realm" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Install LiveKit CLI for fixture preflight
+        if: (env.FIXTURE_BASE_URL_INPUT != '' || env.FIXTURE_IMAGE_INPUT != '') && inputs.real_livekit_smoke
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = '2.16.3'
+          $archive = "lk_${version}_windows_amd64.zip"
+          $expectedSha = 'e3b84d7ccd2c9e304835b113e6ade2b28d5fa78064bc4040f76c55ff73306686'
+          $archivePath = Join-Path $env:RUNNER_TEMP $archive
+          $installDir = Join-Path $env:RUNNER_TEMP 'livekit-cli'
+          $lkPath = Join-Path $installDir 'lk.exe'
+
+          if (-not (Test-Path $lkPath)) {
+            New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+            Invoke-WebRequest `
+              -Uri "https://github.com/livekit/livekit-cli/releases/download/v$version/$archive" `
+              -OutFile $archivePath
+            $actualSha = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
+            if ($actualSha -ne $expectedSha) {
+              throw "LiveKit CLI checksum mismatch: expected $expectedSha, got $actualSha"
+            }
+            Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
+          }
+
+          $installDir | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          $env:Path = "$installDir;$env:Path"
+          & $lkPath --version
+
       - name: Preflight fixture control plane
         if: env.FIXTURE_BASE_URL_INPUT != '' || env.FIXTURE_IMAGE_INPUT != ''
         shell: powershell
@@ -526,6 +568,58 @@ jobs:
             }
           }
           Write-Host "Fixture control-plane preflight passed; LiveKit connection URLs were issued"
+
+          if ($env:FIXTURE_LIVEKIT_REAL_SMOKE -eq '1') {
+            $connection = [string]$urls[0]
+            $endpoint = $connection.Substring('livekit:'.Length).Split('?')[0]
+            $livekitUrl = if ($endpoint.StartsWith('ws://') -or $endpoint.StartsWith('wss://')) {
+              $endpoint
+            } else {
+              "wss://$endpoint"
+            }
+            $roomId = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
+            $identity = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
+            $stdout = Join-Path $env:RUNNER_TEMP 'fixture-livekit-stdout.log'
+            $stderr = Join-Path $env:RUNNER_TEMP 'fixture-livekit-stderr.log'
+            $lk = (Get-Command lk.exe -ErrorAction Stop).Source
+            $arguments = @(
+              'room', 'join', '--url', $livekitUrl,
+              '--api-key', $env:FIXTURE_LIVEKIT_API_KEY,
+              '--api-secret', $env:FIXTURE_LIVEKIT_API_SECRET,
+              '--identity', $identity, $roomId
+            )
+            $probe = Start-Process -FilePath $lk -ArgumentList $arguments `
+              -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -NoNewWindow
+            $joined = $false
+            try {
+              $deadline = [DateTime]::UtcNow.AddSeconds([int]$env:FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS)
+              while ([DateTime]::UtcNow -lt $deadline) {
+                $connected = $false
+                if ((Test-Path $stdout) -and (Select-String -Path $stdout -Pattern 'connected.*room' -Quiet)) {
+                  $connected = $true
+                }
+                if ((Test-Path $stderr) -and (Select-String -Path $stderr -Pattern 'connected.*room' -Quiet)) {
+                  $connected = $true
+                }
+                if ($connected) {
+                  $joined = $true
+                  break
+                }
+                if ($probe.HasExited) { break }
+                Start-Sleep -Seconds 1
+              }
+              if (-not $joined) {
+                if (Test-Path $stdout) { Get-Content $stdout }
+                if (Test-Path $stderr) { Get-Content $stderr }
+                throw "LiveKit room join failed or timed out after $env:FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS seconds"
+              }
+              Write-Host "Fixture LiveKit signaling and WebRTC connection passed"
+            } finally {
+              if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+            }
+          } else {
+            Write-Host "Real LiveKit data-plane smoke disabled"
+          }
 
       - name: Record benchmark context
         shell: powershell
