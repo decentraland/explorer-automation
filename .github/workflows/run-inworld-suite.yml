@@ -675,7 +675,7 @@ jobs:
             --non-interactive \
             --filter "$TEST_FILTER" \
             --report-type None \
-            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen" \
+            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false" \
             2>&1 | tee "$RUNNER_TEMP/mf-test.log" \
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
@@ -701,7 +701,7 @@ jobs:
             --non-interactive \
             --filter "Category=SelfPreview" \
             --report-type None \
-            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --self-preview-wearables ${SELF_PREVIEW_WEARABLES}" \
+            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false --self-preview-wearables ${SELF_PREVIEW_WEARABLES}" \
             2>&1 | tee "$RUNNER_TEMP/mf-selfpreview.log" \
             || TEST_EXIT=$?
           [ "$TEST_EXIT" = 0 ] || exit "$TEST_EXIT"
