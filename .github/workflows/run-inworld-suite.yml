@@ -626,7 +626,9 @@ jobs:
           FIXTURE_LIVEKIT_REAL_SMOKE: ${{ (inputs.real_livekit_smoke || inputs.provision_fixture || inputs.fixture_mode == 'external') && '1' || '0' }}
           FIXTURE_LIVEKIT_API_KEY: ${{ vars.FIXTURE_LIVEKIT_API_KEY || 'fixture-livekit-key' }}
           FIXTURE_LIVEKIT_API_SECRET: ${{ vars.FIXTURE_LIVEKIT_API_SECRET || 'fixture-livekit-secret-0123456789-0123456789' }}
-          FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '20'
+          FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '60'
+          FIXTURE_LIVEKIT_SMOKE_ATTEMPTS: '3'
+          FIXTURE_LIVEKIT_SMOKE_RETRY_DELAY_SECONDS: '5'
         run: |
           set -euo pipefail
           chmod +x explorer/ci/fixture-preflight.sh

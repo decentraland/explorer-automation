@@ -13,10 +13,25 @@ curl_fixture() {
 
 check_livekit_data_plane() {
   local connection_url livekit_endpoint livekit_url probe_log probe_pid identity
-  local room_id="${room_id:-fixture-preflight-$(date +%s)-$$}"
+  local connected attempt
   local api_key="${FIXTURE_LIVEKIT_API_KEY:-fixture-livekit-key}"
   local api_secret="${FIXTURE_LIVEKIT_API_SECRET:-fixture-livekit-secret-0123456789-0123456789}"
-  local timeout_seconds="${FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS:-20}"
+  local timeout_seconds="${FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS:-60}"
+  local attempts="${FIXTURE_LIVEKIT_SMOKE_ATTEMPTS:-3}"
+  local retry_delay_seconds="${FIXTURE_LIVEKIT_SMOKE_RETRY_DELAY_SECONDS:-5}"
+
+  if [[ ! "${timeout_seconds}" =~ ^[0-9]+$ ]] || (( timeout_seconds < 1 )); then
+    echo "fixture-preflight: FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS must be a positive integer" >&2
+    return 1
+  fi
+  if [[ ! "${attempts}" =~ ^[0-9]+$ ]] || (( attempts < 1 )); then
+    echo "fixture-preflight: FIXTURE_LIVEKIT_SMOKE_ATTEMPTS must be a positive integer" >&2
+    return 1
+  fi
+  if [[ ! "${retry_delay_seconds}" =~ ^[0-9]+$ ]]; then
+    echo "fixture-preflight: FIXTURE_LIVEKIT_SMOKE_RETRY_DELAY_SECONDS must be a non-negative integer" >&2
+    return 1
+  fi
 
   connection_url="$(jq -er 'to_entries[0].value.connection_url' <<<"${credentials}")"
   livekit_endpoint="${connection_url#livekit:}"
@@ -31,44 +46,57 @@ check_livekit_data_plane() {
     return 1
   fi
 
-  identity="fixture-preflight-${GITHUB_RUN_ID:-local}-$$"
-  probe_log="$(mktemp)"
-  probe_pid=""
-  cleanup_probe() {
-    if [[ -n "${probe_pid}" ]] && kill -0 "${probe_pid}" 2>/dev/null; then
+  for attempt in $(seq 1 "${attempts}"); do
+    identity="fixture-preflight-${GITHUB_RUN_ID:-local}-$$-${attempt}"
+    probe_log="$(mktemp)"
+    probe_pid=""
+    connected=0
+
+    echo "fixture-preflight: joining LiveKit room through ${livekit_url} (attempt ${attempt}/${attempts}, timeout ${timeout_seconds}s)"
+    lk room join \
+      --verbose \
+      --yes \
+      --url "${livekit_url}" \
+      --api-key "${api_key}" \
+      --api-secret "${api_secret}" \
+      --identity "${identity}" \
+      "${room_id}" >"${probe_log}" 2>&1 &
+    probe_pid=$!
+
+    for _ in $(seq 1 "${timeout_seconds}"); do
+      if grep -qiE 'connected to room|connected.*room' "${probe_log}"; then
+        connected=1
+        break
+      fi
+      if ! kill -0 "${probe_pid}" 2>/dev/null; then
+        break
+      fi
+      sleep 1
+    done
+
+    if (( connected )); then
+      echo "fixture-preflight: LiveKit signaling and WebRTC connection passed"
       kill "${probe_pid}" 2>/dev/null || true
       wait "${probe_pid}" 2>/dev/null || true
-    fi
-    rm -f "${probe_log}"
-  }
-  trap cleanup_probe RETURN
-
-  echo "fixture-preflight: joining LiveKit room through ${livekit_url}"
-  lk room join \
-    --verbose \
-    --yes \
-    --url "${livekit_url}" \
-    --api-key "${api_key}" \
-    --api-secret "${api_secret}" \
-    --identity "${identity}" \
-    "${room_id}" >"${probe_log}" 2>&1 &
-  probe_pid=$!
-
-  for _ in $(seq 1 "${timeout_seconds}"); do
-    if grep -qiE 'connected to room|connected.*room' "${probe_log}"; then
-      echo "fixture-preflight: LiveKit signaling and WebRTC connection passed"
+      rm -f "${probe_log}"
       return 0
     fi
-    if ! kill -0 "${probe_pid}" 2>/dev/null; then
-      echo "fixture-preflight: LiveKit CLI exited before joining the room" >&2
-      cat "${probe_log}" >&2
-      return 1
+
+    if [[ -n "${probe_pid}" ]] && kill -0 "${probe_pid}" 2>/dev/null; then
+      kill "${probe_pid}" 2>/dev/null || true
     fi
-    sleep 1
+    wait "${probe_pid}" 2>/dev/null || true
+    echo "fixture-preflight: LiveKit attempt ${attempt}/${attempts} failed" >&2
+    cat "${probe_log}" >&2
+    rm -f "${probe_log}"
+
+    if (( attempt < attempts )); then
+      echo "fixture-preflight: retrying LiveKit data-plane check in ${retry_delay_seconds}s" >&2
+      sleep "${retry_delay_seconds}"
+    fi
   done
 
-  echo "fixture-preflight: LiveKit room join timed out after ${timeout_seconds}s" >&2
-  cat "${probe_log}" >&2
+  echo "fixture-preflight: LiveKit room join failed after ${attempts} attempts" >&2
   return 1
 }
 
