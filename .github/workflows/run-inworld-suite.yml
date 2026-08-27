@@ -670,6 +670,13 @@ jobs:
           # open.
           # Teed so the result step can read the count metaforge reports, the same way
           # the Windows shards do, and both rows of the unified table come from one source.
+          # --bug-report false is load-bearing, not cosmetic. It clears FeatureId.BugReport, so
+          # DynamicWorldContainer never adds BugReportPlugin and PerformanceIssuePromptSystem is
+          # never injected -- the only way to guarantee the "Performance issue detected" modal
+          # cannot appear mid-run. That modal has a full-screen raycast-blocking Backdrop, so it
+          # swallows every click anywhere on screen, not just under the card: it silently ate
+          # sidebar and chat clicks and read as flaky UI. Explicit "false" wins without --debug,
+          # because ResolveFeatureFlagArg short-circuits on it before the debug gate.
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
@@ -696,6 +703,7 @@ jobs:
           # A listening AltTester server makes MetaForge skip the relaunch, keeping the old args.
           pkill -9 -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null || true
           mf explorer server stop --non-interactive || true
+          # --bug-report false: same reason as the main leg above -- keep it.
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \

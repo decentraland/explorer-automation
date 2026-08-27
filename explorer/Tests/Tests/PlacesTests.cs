@@ -187,4 +187,3 @@ public class PlacesTests : BaseTest
         Views.ExplorePanel.Places.WaitFor();
     }
 }
-

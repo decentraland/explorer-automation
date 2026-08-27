@@ -117,7 +117,7 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
     [AllureStep("React to own chat message")]
     public void ReactToOwnMessage(string messageFragment)
     {
-        const int ATTEMPTS = 3;
+        const int ATTEMPTS = 2;
         for (var attempt = 1; attempt <= ATTEMPTS; attempt++)
         {
             var index = FindOwnMessageIndex(messageFragment);
@@ -127,15 +127,9 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
             var entryPath = $"{OWN_ENTRY_PATH}[{index}]";
             new Clickable(By.PATH, entryPath + "/MessageBubbleElement").WaitFor().PointerEnter();
             var emojiSelectorButton = new Clickable(By.PATH, entryPath + "//EmojiSelectorButton");
-            emojiSelectorButton.WaitFor(8);
+            emojiSelectorButton.WaitFor(5); // wait for the hover-revealed reaction button to enable
             emojiSelectorButton.Click();
-
-            if (!TryWaitForReactionSelector(10))
-            {
-                Reporter.Log($"Reaction selector did not appear (attempt {attempt}) — retrying hover+click");
-                continue;
-            }
-
+            ReactionSelector.WaitFor(10);
             FirstReactionOption.Click();
             Reporter.Log($"Picked the first quick reaction for entry {index} (attempt {attempt})");
 
@@ -150,17 +144,6 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
                 Reporter.Log("Reaction row did not appear — pool likely re-bound, retrying");
             }
         }
-    }
-
-    private bool TryWaitForReactionSelector(double seconds)
-    {
-        for (var elapsed = 0.0; elapsed < seconds; elapsed += 0.5)
-        {
-            if (ReactionSelector.IsPresent(verificationShot: false))
-                return true;
-            Thread.Sleep(500);
-        }
-        return false;
     }
 
     /// <summary>
