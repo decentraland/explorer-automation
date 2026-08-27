@@ -163,8 +163,8 @@ public class PlacesTests : BaseTest
             "Filter dropdown should contain the Compatible Only view toggle");
         Reporter.Log("Filter & Sort dropdown opened with all controls");
 
-        Views.ExplorePanel.Places.FilterSortButton.Click(settleMs: 500);
-        Views.ExplorePanel.Places.FiltersContent.WaitForGone(20);
+        PressKey(AltKeyCode.Escape);
+        Views.ExplorePanel.Places.FiltersContent.WaitForGone(10);
         Reporter.Log("Filter & Sort dropdown closed");
 
         Views.ExplorePanel.Close();
@@ -187,3 +187,4 @@ public class PlacesTests : BaseTest
         Views.ExplorePanel.Places.WaitFor();
     }
 }
+
