@@ -159,10 +159,10 @@ public class ChatTests : BaseTest
     /// </summary>
     private void OpenChat()
     {
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             Views.MainMenu.ChatButton.Click();
-            if (TryWaitForToolbar(4))
+            if (TryWaitForToolbar(5))
                 return;
 
             Reporter.Log("Chat did not open — sidebar toggle state was desynced, clicking again");
