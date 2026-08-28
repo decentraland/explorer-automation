@@ -154,10 +154,7 @@ public class PassportTests : BaseTest
     private void OpenOwnPassport()
     {
         Views.MainMenu.ProfileButton.Click(settleMs: 0);
-        // The menu runs its show animation with the raycaster off and eats clicks until it is
-        // back on, so wait on the raycaster rather than on the animation's length.
-        Views.ProfileMenu.WaitFor().WaitForComponentProperty(
-            "UnityEngine.UI.GraphicRaycaster", "enabled", true, "UnityEngine.UI", timeout: 15);
+        Views.ProfileMenu.WaitFor();
         Views.ProfileMenu.PreviewProfileButton.Click(settleMs: 0);
         Views.Passport.WaitUntilReady();
     }

@@ -6,39 +6,11 @@ namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 /// </summary>
 public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLocator)
 {
-    private static readonly Locatable PanelRoot = new(By.NAME, "ExplorePanelUI(Clone)");
-
-    /// <summary>
-    /// Waits for the section's root, plus the parent ExplorePanel's GraphicRaycaster to be
-    /// re-enabled. The MVC ViewBase disables the raycaster while the show animation plays;
-    /// without this guard, clicks on inner controls (CloseButton, tab buttons) right after
-    /// the section becomes findable get eaten because the raycaster ignores them.
-    /// Pass <c>verificationShot: false</c> when the section is a precondition the test acts
-    /// in rather than the thing under test.
-    /// </summary>
+    // Sections are not MVC views; the panel that hosts them is. Its signal is what the
+    // GraphicRaycaster guard approximated - the panel is interactable once it reports Shown.
     internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
-        // Suppress the intermediate shots (section root, panel root) — the section is only
-        // verified ready after the raycaster wait + settle, so the single "appeared" shot is
-        // taken at the end, showing the state the caller actually relies on.
-        var altObj = base.WaitFor(timeout, verificationShot: false);
-        try
-        {
-            var panel = PanelRoot.WaitFor(5, verificationShot: false);
-            panel.WaitForComponentProperty(
-                "UnityEngine.UI.GraphicRaycaster",
-                "enabled",
-                true,
-                "UnityEngine.UI",
-                timeout: 20);
-            // Some sections (Map, Gallery) load remote content after the section is shown,
-            // and the raycaster can flicker off again during that load. Brief settle pause
-            // lets the panel finalize its interactable state before tests touch it.
-            Thread.Sleep(750);
-        }
-        catch (AssertionException) { /* panel root may not be present in some sub-section flows */ }
-        if (verificationShot)
-            Reporter.TakeVerificationShot($"appeared_{ShotName}");
-        return altObj;
+        ViewSignal.WaitForShown("ExplorePanelView", timeout);
+        return base.WaitFor(timeout, verificationShot);
     }
 }

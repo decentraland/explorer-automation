@@ -34,10 +34,6 @@ internal static class PassportEditPress
         DisableSoftMasks("//Passport(Clone)/BackgroundContainer",
             "//Passport(Clone)/BackgroundContainer/Scroll View/Viewport");
 
-        PASSPORT_ROOT.WaitFor(AFFORDANCE_TIMEOUT, verificationShot: false)
-            .WaitForComponentProperty("UnityEngine.UI.GraphicRaycaster", "enabled", true,
-                "UnityEngine.UI", timeout: SlowChassis.SETTLE_TIMEOUT);
-
         // One press only. A second one is destructive here: the passport's backdrop is a
         // full-screen close Button, so any press it swallows takes the panel with it. No settle —
         // the poll below waits on the state the press produces.

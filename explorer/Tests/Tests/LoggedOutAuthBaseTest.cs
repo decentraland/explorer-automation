@@ -29,21 +29,10 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         }
 
         Reporter.Log("In-world detected — opening profile menu to sign out");
-        var profileMenu = OpenSidebarMenuWithRetry(
+        OpenSidebarMenuWithRetry(
             () => Views.MainMenu.ProfileButton.Click(settleMs: 0),
             Views.ProfileMenu,
             "profile menu");
-
-        // ViewBase.ShowAsync (in unity-explorer's MVC) disables the GraphicRaycaster on
-        // the root while the open animation plays, then re-enables it. WaitFor only checks
-        // GameObject existence, so without this guard our click can land on a modal whose
-        // raycaster eats the event. Wait for the raycaster to come back on.
-        profileMenu.WaitForComponentProperty(
-            "UnityEngine.UI.GraphicRaycaster",
-            "enabled",
-            true,
-            "UnityEngine.UI",
-            timeout: 15);
 
         Views.ProfileMenu.SignOutButton.Click();
         Reporter.Log("Sign Out clicked — waiting for auth flow");
