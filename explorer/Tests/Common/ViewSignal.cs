@@ -54,11 +54,18 @@ public static class ViewSignal
     public static void WaitForShown(string viewName, double timeout = 20D) =>
         WaitForState(viewName, timeout, state => state == SHOWN, "shown");
 
-    // Unknown counts as hidden: a view that has never been shown is not on screen. It never
-    // counts as shown, so a misspelled name fails instead of passing.
+    // A view the client has never reported cannot be asserted hidden: that state is
+    // indistinguishable from a misspelled name, and every view wait is built on this.
     [AllureStep("Wait for view to be hidden")]
-    public static void WaitForHidden(string viewName, double timeout = 20D) =>
-        WaitForState(viewName, timeout, state => state == HIDDEN || state == UNKNOWN, "hidden");
+    public static void WaitForHidden(string viewName, double timeout = 20D)
+    {
+        if (GetState(viewName) == UNKNOWN)
+            throw new AssertionException(
+                $"View '{viewName}' has never reported to the client this session, so it cannot "
+                + $"be asserted hidden. Check the name against: {KnownViews()}");
+
+        WaitForState(viewName, timeout, state => state == HIDDEN, "hidden");
+    }
 
     private static void WaitForState(string viewName, double timeout, Func<string, bool> satisfied, string what)
     {
