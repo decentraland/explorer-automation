@@ -32,6 +32,8 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
         return altObj;
     }
 
+    protected override string ViewName => "ExplorePanelView";
+
     #region Elements
 
     public readonly Clickable CloseButton          = new(By.PATH, "//ExplorePanelUI(Clone)//CloseButton");
