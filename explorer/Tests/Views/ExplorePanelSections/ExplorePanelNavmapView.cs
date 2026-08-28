@@ -6,12 +6,14 @@ namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 /// </summary>
 public class ExplorePanelNavmapView() : BaseSection(new(By.NAME, "Navmap"))
 {
-    // The map loads remote tiles after the section is shown, which can flicker the panel's
-    // raycaster off again; no Show/Hide fires for that flicker, so settle briefly for it.
+    // The map loads remote tiles after the section is shown, and no view-state signal covers
+    // that load, so wait for the panel to actually settle before treating it as ready.
     internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
-        var altObj = base.WaitFor(timeout, verificationShot);
-        Thread.Sleep(750);
+        var altObj = base.WaitFor(timeout, verificationShot: false);
+        WaitForPanelInteractive();
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"appeared_{ShotName}");
         return altObj;
     }
 

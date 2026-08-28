@@ -28,8 +28,8 @@ public abstract class BaseView(Locatable root)
     internal string ShotName => root.ShotName;
 
     // Shot-suppressed variants for WaitFor overrides that verify additional readiness state
-    // (e.g. GraphicRaycaster re-enabled) before taking the single "appeared" shot themselves,
-    // and for control-flow probes/retry loops that are not test verifications.
+    // before taking the single "appeared" shot themselves, and for control-flow probes/retry
+    // loops that are not test verifications.
     // Virtual so a subclass's readiness wait applies on the suppressed path too — a
     // non-virtual delegator would hand suppressed callers the bare root wait.
     internal virtual AltObject WaitFor(double timeout, bool verificationShot)

@@ -81,7 +81,7 @@ public static class ViewSignal
 
         throw new AssertionException(
             $"View '{viewName}' was not {what} within {timeout} seconds (last state: {last}). "
-            + $"Views known to the client: {KnownViews()}");
+            + $"Every view and its state: {Snapshot()}");
     }
 
     private static string KnownViews() =>

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 /// <summary>
@@ -6,11 +8,47 @@ namespace ExplorerAutomation.Tests.Views.ExplorePanelSections;
 /// </summary>
 public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLocator)
 {
-    // Sections are not MVC views; the panel that hosts them is. Its signal is what the
-    // GraphicRaycaster guard approximated - the panel is interactable once it reports Shown.
+    private static readonly Locatable PanelRoot = new(By.NAME, "ExplorePanelUI(Clone)");
+
+    // Gap between panel-raycaster reads while settling.
+    private const int RAYCASTER_POLL_MS = 250;
+
+    // Small on purpose: this only bounds how long the raycaster gets to settle, and a run
+    // that cannot clear that within a few seconds has a real problem worth failing on.
+    private const double RAYCASTER_SETTLE_CEILING = 4D;
+
+    // Sections are not MVC views; the panel that hosts them is, so a section's own readiness
+    // waits on the panel reporting Shown.
     internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
         ViewSignal.WaitForShown("ExplorePanelView", timeout);
         return base.WaitFor(timeout, verificationShot);
+    }
+
+    /// <summary>
+    /// Blocks until the panel's GraphicRaycaster reads enabled on
+    /// <see cref="SlowChassis.SETTLE_READS"/> consecutive samples, so a momentary flicker
+    /// while remote content loads isn't mistaken for the panel actually being interactive.
+    /// </summary>
+    protected static void WaitForPanelInteractive()
+    {
+        var deadline = Stopwatch.StartNew();
+        var panel = PanelRoot.WaitFor(RAYCASTER_SETTLE_CEILING, verificationShot: false);
+        var consecutive = 0;
+
+        while (deadline.Elapsed.TotalSeconds < RAYCASTER_SETTLE_CEILING)
+        {
+            var enabled = panel.GetComponentProperty<bool>(
+                "UnityEngine.UI.GraphicRaycaster", "enabled", "UnityEngine.UI");
+            consecutive = enabled ? consecutive + 1 : 0;
+            if (consecutive >= SlowChassis.SETTLE_READS)
+                return;
+
+            Thread.Sleep(RAYCASTER_POLL_MS);
+        }
+
+        throw new AssertionException(
+            $"Panel GraphicRaycaster never read enabled on {SlowChassis.SETTLE_READS} "
+            + $"consecutive reads within {RAYCASTER_SETTLE_CEILING}s.");
     }
 }
