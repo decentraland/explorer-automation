@@ -223,11 +223,6 @@ on:
         type: string
         required: false
         default: ''
-      branch_label:
-        description: 'Branch label shown in the result comment.'
-        type: string
-        required: false
-        default: ''
       filter:
         description: 'NUnit filter. Empty = Category=InWorld.'
         type: string
