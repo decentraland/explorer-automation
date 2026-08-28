@@ -40,8 +40,14 @@ check_livekit_data_plane() {
     ws://*|wss://*) livekit_url="${livekit_endpoint}" ;;
     *) livekit_url="wss://${livekit_endpoint}" ;;
   esac
-  livekit_api_url="${livekit_url/wss:\/\//https:\/\/}"
-  livekit_api_url="${livekit_api_url/ws:\/\//http:\/\/}"
+  case "${livekit_url}" in
+    wss://*) livekit_api_url="https://${livekit_url#wss://}" ;;
+    ws://*) livekit_api_url="http://${livekit_url#ws://}" ;;
+    *)
+      echo "fixture-preflight: unsupported LiveKit URL '${livekit_url}'" >&2
+      return 1
+      ;;
+  esac
 
   if ! command -v lk >/dev/null 2>&1; then
     echo "fixture-preflight: lk (LiveKit CLI) is required for the real LiveKit smoke test" >&2
