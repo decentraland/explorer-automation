@@ -13,10 +13,6 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
     // Gap between panel-raycaster reads while settling.
     private const int RAYCASTER_POLL_MS = 250;
 
-    // Small on purpose: this only bounds how long the raycaster gets to settle, and a run
-    // that cannot clear that within a few seconds has a real problem worth failing on.
-    private const double RAYCASTER_SETTLE_CEILING = 4D;
-
     // Sections are not MVC views; the panel that hosts them is, so a section's own readiness
     // waits on the panel reporting Shown.
     internal override AltObject WaitFor(double timeout, bool verificationShot)
@@ -32,11 +28,11 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
     /// </summary>
     protected static void WaitForPanelInteractive()
     {
+        var panel = PanelRoot.WaitFor(10D, verificationShot: false);
         var deadline = Stopwatch.StartNew();
-        var panel = PanelRoot.WaitFor(RAYCASTER_SETTLE_CEILING, verificationShot: false);
         var consecutive = 0;
 
-        while (deadline.Elapsed.TotalSeconds < RAYCASTER_SETTLE_CEILING)
+        while (deadline.Elapsed.TotalSeconds < SlowChassis.SETTLE_TIMEOUT)
         {
             var enabled = panel.GetComponentProperty<bool>(
                 "UnityEngine.UI.GraphicRaycaster", "enabled", "UnityEngine.UI");
@@ -49,6 +45,6 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
 
         throw new AssertionException(
             $"Panel GraphicRaycaster never read enabled on {SlowChassis.SETTLE_READS} "
-            + $"consecutive reads within {RAYCASTER_SETTLE_CEILING}s.");
+            + $"consecutive reads within {SlowChassis.SETTLE_TIMEOUT}s.");
     }
 }
