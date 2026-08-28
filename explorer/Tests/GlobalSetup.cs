@@ -11,6 +11,12 @@ public class GlobalSetup
         DotNetEnv.Env.TraversePath().Load();
         RegisterAllureTypeFormatters();
         StartDriver();
+        // Thrown here rather than inside StartDriver: the Allure aspect wraps whatever a decorated
+        // method throws, and NUnit then reports a bare TargetInvocationException with no message.
+        if (!ViewSignal.IsAvailable)
+            throw new InvalidOperationException(
+                "This Explorer build does not carry MVC.AltTesterViewProbe. Run against a branch "
+                + "build from a client that includes it (see the validate-paired-prs skill).");
         ViewContainer.Initialize();
         Reporter.SetupUnityLogListener();
     }
@@ -78,13 +84,6 @@ public class GlobalSetup
         Reporter.Log($"AltTester server Unity log level: {unityLogLevel}" + (verbose ? " (ALT_VERBOSE_LOGS=true)" : ""));
 
         Reporter.Log("Successfully connected to the game.");
-
-        // A build without the view probe cannot answer any view wait. Say so once, here, rather
-        // than once per wait for the rest of the run.
-        if (!ViewSignal.IsAvailable)
-            throw new InvalidOperationException(
-                "This Explorer build does not carry MVC.AltTesterViewProbe. Run against a branch "
-                + "build from a client that includes it (see the validate-paired-prs skill).");
     }
 
     [AllureAfter("Stop AltTester Driver")]
