@@ -7,6 +7,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class ProfileMenuView() : BaseView(new(By.NAME, "ProfileMenuView"))
 {
+    protected override string ViewName => "ProfileMenuView";
+
     #region Elements
 
     // "View PROFILE" — opens the own passport (Passport(Clone)).

@@ -8,6 +8,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class InWorldCameraView() : BaseView(new(By.NAME, "InWorldCamera.ScreencaptureHUD(Clone)"))
 {
+    protected override string ViewName => "InWorldCameraView";
+
     #region Elements
 
     // NOTE: Button_Close does not respond to AltTester's synthetic click on this build
