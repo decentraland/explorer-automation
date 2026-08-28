@@ -12,7 +12,7 @@ curl_fixture() {
 }
 
 check_livekit_data_plane() {
-  local connection_url livekit_endpoint livekit_url probe_log probe_pid identity
+  local connection_url livekit_endpoint livekit_url livekit_api_url probe_log probe_pid identity
   local connected attempt
   local api_key="${FIXTURE_LIVEKIT_API_KEY:-fixture-livekit-key}"
   local api_secret="${FIXTURE_LIVEKIT_API_SECRET:-fixture-livekit-secret-0123456789-0123456789}"
@@ -40,6 +40,8 @@ check_livekit_data_plane() {
     ws://*|wss://*) livekit_url="${livekit_endpoint}" ;;
     *) livekit_url="wss://${livekit_endpoint}" ;;
   esac
+  livekit_api_url="${livekit_url/wss:\/\//https:\/\/}"
+  livekit_api_url="${livekit_api_url/ws:\/\//http:\/\/}"
 
   if ! command -v lk >/dev/null 2>&1; then
     echo "fixture-preflight: lk (LiveKit CLI) is required for the real LiveKit smoke test" >&2
@@ -53,12 +55,15 @@ check_livekit_data_plane() {
     connected=0
 
     echo "fixture-preflight: joining LiveKit room through ${livekit_url} (attempt ${attempt}/${attempts}, timeout ${timeout_seconds}s)"
+    # LiveKit CLI 2.16.3 does not reliably parse the connection flags after
+    # `room join` on hosted runners. Its environment configuration is stable
+    # across the Linux and macOS builds, so use it for the real smoke probe.
+    LIVEKIT_URL="${livekit_api_url}" \
+    LIVEKIT_API_KEY="${api_key}" \
+    LIVEKIT_API_SECRET="${api_secret}" \
     lk room join \
       --verbose \
       --yes \
-      --url "${livekit_url}" \
-      --api-key "${api_key}" \
-      --api-secret "${api_secret}" \
       --identity "${identity}" \
       "${room_id}" >"${probe_log}" 2>&1 &
     probe_pid=$!

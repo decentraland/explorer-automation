@@ -577,17 +577,24 @@ jobs:
             } else {
               "wss://$endpoint"
             }
+            $livekitApiUrl = $livekitUrl -replace '^wss://', 'https://' -replace '^ws://', 'http://'
             $roomId = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
             $identity = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
             $stdout = Join-Path $env:RUNNER_TEMP 'fixture-livekit-stdout.log'
             $stderr = Join-Path $env:RUNNER_TEMP 'fixture-livekit-stderr.log'
             $lk = (Get-Command lk.exe -ErrorAction Stop).Source
             $arguments = @(
-              'room', 'join', '--url', $livekitUrl,
-              '--api-key', $env:FIXTURE_LIVEKIT_API_KEY,
-              '--api-secret', $env:FIXTURE_LIVEKIT_API_SECRET,
-              '--identity', $identity, $roomId
+              'room', 'join', '--verbose', '--yes', '--identity', $identity, $roomId
             )
+            # LiveKit CLI 2.16.3 does not reliably parse the connection flags
+            # after `room join` on the hosted Windows runner. Use its process
+            # environment configuration, matching the Unix preflight.
+            $previousLiveKitUrl = $env:LIVEKIT_URL
+            $previousLiveKitApiKey = $env:LIVEKIT_API_KEY
+            $previousLiveKitApiSecret = $env:LIVEKIT_API_SECRET
+            $env:LIVEKIT_URL = $livekitApiUrl
+            $env:LIVEKIT_API_KEY = $env:FIXTURE_LIVEKIT_API_KEY
+            $env:LIVEKIT_API_SECRET = $env:FIXTURE_LIVEKIT_API_SECRET
             $probe = Start-Process -FilePath $lk -ArgumentList $arguments `
               -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -NoNewWindow
             $joined = $false
@@ -616,6 +623,9 @@ jobs:
               Write-Host "Fixture LiveKit signaling and WebRTC connection passed"
             } finally {
               if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+              if ($null -eq $previousLiveKitUrl) { Remove-Item Env:LIVEKIT_URL -ErrorAction SilentlyContinue } else { $env:LIVEKIT_URL = $previousLiveKitUrl }
+              if ($null -eq $previousLiveKitApiKey) { Remove-Item Env:LIVEKIT_API_KEY -ErrorAction SilentlyContinue } else { $env:LIVEKIT_API_KEY = $previousLiveKitApiKey }
+              if ($null -eq $previousLiveKitApiSecret) { Remove-Item Env:LIVEKIT_API_SECRET -ErrorAction SilentlyContinue } else { $env:LIVEKIT_API_SECRET = $previousLiveKitApiSecret }
             }
           } else {
             Write-Host "Real LiveKit data-plane smoke disabled"
