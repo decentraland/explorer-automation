@@ -208,8 +208,33 @@ on:
         type: string
         required: false
         default: ''
+      pr_number:
+        description: 'PR number used for the result comment and artifact path.'
+        type: string
+        required: false
+        default: ''
+      tests_ref:
+        description: 'explorer-automation ref used by the test checkout and CI helpers.'
+        type: string
+        required: false
+        default: ''
+      commit_sha:
+        description: 'Commit label used in the result comment and artifact path.'
+        type: string
+        required: false
+        default: ''
+      branch_label:
+        description: 'Branch label shown in the result comment.'
+        type: string
+        required: false
+        default: ''
       filter:
         description: 'NUnit filter. Empty = Category=InWorld.'
+        type: string
+        required: false
+        default: ''
+      scope:
+        description: 'Windows split scope: ALL or an explicit FIXTURES list.'
         type: string
         required: false
         default: ''
