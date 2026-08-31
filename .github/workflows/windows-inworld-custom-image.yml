@@ -825,6 +825,13 @@ jobs:
             '--skip-version-check', '--alttester', '--position', '0,0', '--dclenv', 'org',
             '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
             '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
+            # Load-bearing, not cosmetic. Clears FeatureId.BugReport, so DynamicWorldContainer
+            # never adds BugReportPlugin and PerformanceIssuePromptSystem is never injected --
+            # the only way to guarantee the "Performance issue detected" modal cannot appear
+            # mid-run. Its full-screen raycast-blocking Backdrop swallows every click anywhere
+            # on screen, not just under the card, which silently ate sidebar and chat clicks
+            # and read as flaky UI.
+            '--bug-report', 'false',
             # The one that decides the viewport: the client re-applies its own windowed size
             # during startup and overwrites whatever -screen-* asked for.
             '--resolution', "$($env:EXPLORER_RENDER_WIDTH)x$($env:EXPLORER_RENDER_HEIGHT)"
