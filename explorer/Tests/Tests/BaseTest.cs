@@ -15,12 +15,10 @@ public abstract class BaseTest
     private string _perfSummaryPath;
     private bool _perfStarted;
 
-    // Explorer wires the sidebar listeners once per application session, not
-    // once per NUnit fixture. Keep the conservative 20-second stabilization
-    // delay for the first in-world fixture only. The suite is sequential today,
-    // but the lock also keeps this correct if fixture parallelism is enabled.
-    private static readonly object SidebarSettleLock = new();
-    private static bool _sidebarSettled;
+    // SidebarView is a persistent-layer view: it reports Shown once per client process and
+    // never hides again, so waiting on the signal is a startup gate — idempotent and
+    // near-free on every call after the first. See EnsureInWorld.
+    protected const double SIDEBAR_VIEW_SIGNAL_TIMEOUT = 30D;
 
     // A CommandResponseTimeoutException means the driver stopped hearing back from the client.
     // Nothing recovers from that mid-run, and every later command pays the full response ceiling
@@ -287,21 +285,12 @@ public abstract class BaseTest
         // hardware hits MainMenu in ~10-30s and never approaches this ceiling.
         Views.MainMenu.WaitFor(240);
 
-        // The SidebarController subscribes its onClick listeners in OnViewInstantiated,
-        // which fires asynchronously after the SidebarView GameObject appears in the scene.
-        // The first sidebar click / shortcut after EnsureInWorld returns can land in that
-        // gap and get silently dropped. There's no public signal for when subscriptions
-        // are wired, so we settle for a fixed wait. Empirically ~20s is enough for the
-        // first test method of the first in-world fixture; subsequent fixtures reuse the
-        // already-initialized sidebar and must not pay this cost again.
-        lock (SidebarSettleLock)
-        {
-            if (!_sidebarSettled)
-            {
-                Thread.Sleep(20_000);
-                _sidebarSettled = true;
-            }
-        }
+        // ControllerBase.LaunchViewLifeCycleAsync calls SidebarController.OnViewInstantiated
+        // (which wires every onClick via SubscribeToEvents) before it awaits ShowAsync, and
+        // ShowAsync only reports the view Shown at the very end, after the show animation and
+        // the raycaster re-enable. So SidebarView reporting Shown provably post-dates the
+        // listener wiring — a click right after this returns can no longer land in that gap.
+        ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         _bootedInWorld = true;
         Reporter.Log("Player is in-world and main menu is ready");
     }

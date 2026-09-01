@@ -109,20 +109,16 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
 
         Views.MainMenu.WaitFor(240);
 
-        // SidebarController subscribes its onClick listeners asynchronously after SidebarView
-        // appears; the first shortcut press immediately after can land in that gap and get
-        // dropped. Same ~20s settle as BaseTest.EnsureInWorld.
-        Thread.Sleep(20_000);
+        // Same signal wait as BaseTest.EnsureInWorld: SidebarView reporting Shown provably
+        // post-dates SidebarController wiring its onClick listeners, so a shortcut press
+        // right after this returns can no longer land in that gap.
+        ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
     /// <summary>
     /// Press the Explore panel shortcut (I) and wait for the panel to appear, retrying if
-    /// the first press is dropped. On macos-14 paravirt the wall-clock 20s settle in
-    /// <see cref="WaitForInWorldAfterJumpIn"/> can still elapse before SidebarController has
-    /// wired its OnClick listeners (the runtime ticks frames at GPU=0 only when work is
-    /// pending, so wall-clock time decouples from frame-time progress), so the very first
-    /// I-press post-login can silently no-op.
+    /// the first press is dropped.
     ///
     /// Each press is a toggle, so we wait a generous window before re-pressing — if the
     /// previous press worked, the panel will appear inside the window and we return early.
