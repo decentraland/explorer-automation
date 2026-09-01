@@ -13,12 +13,18 @@ public abstract class BaseSection(Locatable sectionLocator) : BaseView(sectionLo
     // Gap between panel-raycaster reads while settling.
     private const int RAYCASTER_POLL_MS = 250;
 
+    // Floor for the find's share of the budget once the signal wait has spent part of it.
+    private const double MIN_FIND_TIMEOUT = 1D;
+
     // Sections are not MVC views; the panel that hosts them is, so a section's own readiness
     // waits on the panel reporting Shown.
     internal override AltObject WaitFor(double timeout, bool verificationShot)
     {
+        var elapsed = Stopwatch.StartNew();
         ViewSignal.WaitForShown("ExplorePanelView", timeout);
-        return base.WaitFor(timeout, verificationShot);
+
+        var remaining = Math.Max(timeout - elapsed.Elapsed.TotalSeconds, MIN_FIND_TIMEOUT);
+        return base.WaitFor(remaining, verificationShot);
     }
 
     /// <summary>
