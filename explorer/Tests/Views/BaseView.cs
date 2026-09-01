@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace ExplorerAutomation.Tests.Views;
 
 /// <summary>
@@ -32,14 +34,24 @@ public abstract class BaseView(Locatable root)
     // loops that are not test verifications.
     // Virtual so a subclass's readiness wait applies on the suppressed path too — a
     // non-virtual delegator would hand suppressed callers the bare root wait.
+    //
+    // Floor for the find's share of the budget once the signal wait has spent part of it —
+    // keeps a near-exhausted timeout from reaching WaitForObject as zero or negative.
+    private const double MIN_FIND_TIMEOUT = 1D;
+
     internal virtual AltObject WaitFor(double timeout, bool verificationShot)
     {
         // The signal answers readiness; the find that follows only produces the object the
-        // caller acts on, and cannot block once the view reports Shown.
-        if (ViewName is not null)
-            ViewSignal.WaitForShown(ViewName, timeout);
+        // caller acts on, and cannot block once the view reports Shown — so it gets what is
+        // left of the caller's budget, not a second full copy of it.
+        if (ViewName is null)
+            return root.WaitFor(timeout, verificationShot);
 
-        return root.WaitFor(timeout, verificationShot);
+        var elapsed = Stopwatch.StartNew();
+        ViewSignal.WaitForShown(ViewName, timeout);
+
+        var remaining = Math.Max(timeout - elapsed.Elapsed.TotalSeconds, MIN_FIND_TIMEOUT);
+        return root.WaitFor(remaining, verificationShot);
     }
 
     internal bool IsPresent(bool verificationShot)

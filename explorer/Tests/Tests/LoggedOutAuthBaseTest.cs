@@ -16,9 +16,9 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         Views.SplashScreen.WaitForGone();
 
         // AuthenticationScreenView and VerificationOTPAuthView (ViewSignal-backed since Task 7)
-        // answer "are we on the auth screen" directly. SidebarView still has no signal — it
-        // persists all session — so the in-world branch below is inferred by negation, not by
-        // checking MainMenu.
+        // answer "are we on the auth screen" directly. SidebarView's signal reports Shown for
+        // the whole session — a persistent-layer view, not a discriminating one — so the
+        // in-world branch below is inferred by negation, not by checking MainMenu.
         if (IsOnAuthScreen())
         {
             EnsureLoggedOutFromAuthScreen();

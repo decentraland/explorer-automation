@@ -10,7 +10,7 @@ internal static class GoldenCases
     private const string EveryFixture = "<all>";
 
     /// <summary>A fixture quietly leaving the category must read as drift, not as narrower scope.</summary>
-    private const int ExpectedFixtureCount = 17;
+    private const int ExpectedFixtureCount = 18;
 
     private static readonly (string Changed, string[] Expected)[] Cases =
     [
