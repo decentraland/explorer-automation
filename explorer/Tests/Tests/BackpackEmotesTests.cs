@@ -97,7 +97,10 @@ public class BackpackEmotesTests : BaseTest
         Assert.That(WaitUntil(() => !emotes.HasFullGridPage(), timeoutSeconds: SlowChassis.SETTLE_TIMEOUT),
             Is.True, "Emote grid should refilter to the 'Fist Pump' search results");
 
-        emotes.UnequipEmoteIfPresent(0);
+        // The client seeds a default wheel that already equips Fist Pump (slot 6), so the
+        // searched tile offers Unequip, not the Equip this test drives. Clear every slot, not
+        // just slot 0, so the tile is unequipped wherever the default put it.
+        emotes.UnequipAll();
 
         // The leading LOADED tile, not GridItems[0]: on a one-result page index 0 is a blank cell
         // and clicks on it are no-ops. The equip double-click is droppable, so confirm the slot
