@@ -1,3 +1,5 @@
+using ExplorerAutomation.Tests.Views.ExplorePanelSections;
+
 namespace ExplorerAutomation.Tests.Tests;
 
 // Depth coverage for the explore panel's Communities section (the open-from-sidebar smoke
@@ -138,6 +140,79 @@ public class CommunitiesTests : BaseTest
         Views.ExplorePanel.Communities.CommunityDetail.WaitForGone();
 
         Views.ExplorePanel.Close();
+    }
+
+    [Test]
+    public void TestJoinAndLeaveCommunity()
+    {
+        OpenCommunities();
+
+        // Search for a specific, stable community instead of relying on the pooled grid's
+        // default order/index (see explorer/CLAUDE.md "Pooled Lists") — Decentraland
+        // Foundation is the official account and always the top result for this query.
+        Views.ExplorePanel.Communities.SearchBar.SetText("Decentraland Foundation");
+        Views.ExplorePanel.Communities.BrowseResultsTitle.WaitForText(
+            text => text == "Results for 'Decentraland Foundation'");
+
+        var card = Views.ExplorePanel.Communities.Cards[0];
+        var communityName = card.Title.GetText();
+
+        // Idempotent precondition: if an earlier aborted run left this joined, leave first so
+        // the join half below has a deterministic starting state.
+        if (card.ViewButton.IsPresent())
+        {
+            Reporter.Log($"'{communityName}' already joined from an earlier run — leaving first");
+            LeaveFromGrid(card);
+            // The grid card takes a beat to flip back from View to Join after the detail
+            // popup closes — same async gap as the header state noted below.
+            WaitUntil(() => card.JoinButton.IsPresent(verificationShot: false));
+        }
+
+        card.JoinButton.Click();
+        WaitUntil(() => card.ViewButton.IsPresent(verificationShot: false));
+        Assert.That(card.ViewButton.IsPresent(), Is.True,
+            $"'{communityName}' card should switch from Join to View after joining");
+        Reporter.Log($"Joined '{communityName}' from the browse grid");
+
+        card.ViewButton.Click();
+        Views.ExplorePanel.Communities.CommunityDetail.WaitFor();
+        // Header membership state resolves a beat after the popup itself appears (same shape
+        // as CommunityName loading asynchronously below) — wait for it rather than asserting
+        // on the frame the popup opened.
+        Views.ExplorePanel.Communities.CommunityDetail.JoinedButton.WaitFor(10);
+        Reporter.Log("Community detail confirms joined state");
+
+        Views.ExplorePanel.Communities.CommunityDetail.JoinedButton.Click();
+        Views.ConfirmationDialog.WaitFor();
+        Views.ConfirmationDialog.YesButton.Click();
+        Views.ConfirmationDialog.WaitForGone();
+        WaitUntil(() => Views.ExplorePanel.Communities.CommunityDetail.JoinButton.IsPresent(verificationShot: false));
+        Assert.That(Views.ExplorePanel.Communities.CommunityDetail.JoinButton.IsPresent(), Is.True,
+            "Community detail header should revert to Join after confirming leave");
+        Reporter.Log($"Left '{communityName}' via the detail header");
+
+        Views.ExplorePanel.Communities.CommunityDetail.CloseButton.Click();
+        Views.ExplorePanel.Communities.CommunityDetail.WaitForGone();
+
+        Views.ExplorePanel.Communities.BrowseBackButton.Click();
+        Views.ExplorePanel.Close();
+    }
+
+    /// <summary>
+    /// Leaves a community from the browse grid's own View state, for the precondition
+    /// cleanup in <see cref="TestJoinAndLeaveCommunity"/>.
+    /// </summary>
+    private void LeaveFromGrid(ExplorePanelCommunitiesView.CommunityResultCard card)
+    {
+        card.ViewButton.Click();
+        Views.ExplorePanel.Communities.CommunityDetail.WaitFor();
+        Views.ExplorePanel.Communities.CommunityDetail.JoinedButton.Click();
+        Views.ConfirmationDialog.WaitFor();
+        Views.ConfirmationDialog.YesButton.Click();
+        Views.ConfirmationDialog.WaitForGone();
+        WaitUntil(() => Views.ExplorePanel.Communities.CommunityDetail.JoinButton.IsPresent(verificationShot: false));
+        Views.ExplorePanel.Communities.CommunityDetail.CloseButton.Click();
+        Views.ExplorePanel.Communities.CommunityDetail.WaitForGone();
     }
 
     /// <summary>
