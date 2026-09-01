@@ -474,8 +474,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         /// <summary>
         /// Returns the loaded tile bound to <paramref name="urn"/>, polling while the grid streams in.
         /// </summary>
+        // GRID_PAGE_TIMEOUT, not CONTENT_TIMEOUT: the sought tile can be the last of sixteen to
+        // bind, the same multi-stream shape WaitForGridPageLoaded already sizes its ceiling for.
         [AllureStep("Find the grid item bound to a URN")]
-        public BackpackGridItem FindGridItemWithUrn(string urn, double timeoutSeconds = CONTENT_TIMEOUT)
+        public BackpackGridItem FindGridItemWithUrn(string urn, double timeoutSeconds = GRID_PAGE_TIMEOUT)
         {
             var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
             while (true)

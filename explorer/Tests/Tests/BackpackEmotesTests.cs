@@ -31,6 +31,10 @@ public class BackpackEmotesTests : BaseTest
     // after WaitForGridPageLoaded returns, because that wait sees sixteen bound tiles and
     // cannot see a catalogue still arriving behind them.
     private const double SETTLE_SAMPLE_INTERVAL = 5;
+    // Widened from SlowChassis.SETTLE_READS (3): EnsureInWorld's removed one-time 20s sidebar
+    // sleep used to give the catalogue a head start this loop no longer gets. Local, not shared —
+    // BackpackWearablesTests's settle loop is tuned differently (1s interval, no throw).
+    private const int CATALOG_SETTLE_READS = 7;
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
@@ -248,7 +252,7 @@ public class BackpackEmotesTests : BaseTest
     {
         var name = ReadFirstItemName(emotes, cell);
 
-        for (var attempt = 0; attempt < SlowChassis.SETTLE_READS; attempt++)
+        for (var attempt = 0; attempt < CATALOG_SETTLE_READS; attempt++)
         {
             // The one deliberate pause left in this fixture: it is the interval between two
             // samples, so it is the measurement, not padding around one.
@@ -264,7 +268,7 @@ public class BackpackEmotesTests : BaseTest
         // assertion and fail there as a pagination bug. This is the only place that asserts
         // the collection stopped changing, so it has to fail here instead.
         throw new AssertionException(
-            $"The emote grid never stopped changing: {SlowChassis.SETTLE_READS + 1} reads taken "
+            $"The emote grid never stopped changing: {CATALOG_SETTLE_READS + 1} reads taken "
             + $"{SETTLE_SAMPLE_INTERVAL}s apart each named a different item, the last '{name}'. "
             + "The catalogue is still arriving and re-sorting the page.");
     }

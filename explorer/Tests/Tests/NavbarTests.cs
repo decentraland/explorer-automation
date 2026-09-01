@@ -5,6 +5,18 @@ namespace ExplorerAutomation.Tests.Tests;
 [Order(18)]
 public class NavbarTests : BaseTest
 {
+    // Most gated buttons are deactivated synchronously inside OnViewInstantiated, so the
+    // SidebarView Shown signal (waited on in EnsureInWorld) already covers them. Marketplace
+    // Credits and Communities are the exception: SidebarController's
+    // CheckForMarketplaceCreditsFeatureAsync / CheckForCommunitiesFeatureAsync are
+    // fire-and-forget calls that keep running after OnViewInstantiated returns, so a Present
+    // expectation for those two can still lose the race against an instant probe. Generous
+    // relative to what they actually await (a cached-or-fresh own-profile read and a local
+    // flag/allowlist lookup — no chained network calls) and paid once per genuinely-missing
+    // button on a failing run, so even a fully-broken sidebar (every entry below wrong) stays
+    // well inside the job's timeout.
+    private const double SIDEBAR_BUTTON_PRESENT_TIMEOUT = 10D;
+
     // The navbar checklist lists 19 sidebar entries. Two of them do not exist as sidebar
     // buttons in this dev build (verified via UiDump `--all` dumps on build dev_b97439fc):
     //   - Map (SidebarMapButton) — the navmap is reachable via the M shortcut and the
@@ -59,7 +71,16 @@ public class NavbarTests : BaseTest
             }
 
             bool shouldBePresent = expected == FeatureFlags.Expected.Present;
-            bool present = element.IsPresent();
+
+            // Absent needs no wait: an inactive object is stably unfindable, and waiting
+            // would only spend the ceiling on every run. Present polls on a bounded timeout
+            // to cover the two buttons an async feature check can still be activating.
+            bool present = shouldBePresent
+                ? WaitUntil(() => element.IsPresent(verificationShot: false), timeoutSeconds: SIDEBAR_BUTTON_PRESENT_TIMEOUT)
+                : element.IsPresent();
+
+            if (shouldBePresent)
+                Reporter.TakeVerificationShot($"{(present ? "present" : "absent")}_{element.ShotName}");
 
             if (present == shouldBePresent)
                 Reporter.Log($"Sidebar button {(present ? "present" : "absent, as its flag is off")}: {label}");

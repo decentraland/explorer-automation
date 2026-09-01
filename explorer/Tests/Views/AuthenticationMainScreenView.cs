@@ -8,6 +8,8 @@ namespace ExplorerAutomation.Tests.Views;
 public class AuthenticationMainScreenView() :
     BaseView(new(By.NAME, "Authentication.MainScreen(Clone)"))
 {
+    protected override string ViewName => "AuthenticationScreenView";
+
     #region Elements
 
     // Cached-account state (visible when an account is already saved locally)

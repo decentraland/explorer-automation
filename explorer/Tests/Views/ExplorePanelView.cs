@@ -9,28 +9,7 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)"))
 {
-    /// <summary>
-    /// The MVC ViewBase disables the panel's GraphicRaycaster while the show animation is
-    /// playing. Without this guard, clicks on inner controls (CloseButton, tabs) right after
-    /// the panel becomes findable get eaten because the raycaster ignores them. Override
-    /// WaitFor to also wait for the raycaster to be re-enabled.
-    /// </summary>
-    internal override AltObject WaitFor(double timeout, bool verificationShot)
-    {
-        // Suppress the base "appeared" shot — the panel is only verified ready once the
-        // raycaster is re-enabled, so the single shot is taken after that wait completes
-        // (a mid-show-animation frame would misrepresent what was verified).
-        var altObj = base.WaitFor(timeout, verificationShot: false);
-        altObj.WaitForComponentProperty(
-            "UnityEngine.UI.GraphicRaycaster",
-            "enabled",
-            true,
-            "UnityEngine.UI",
-            timeout: 10);
-        if (verificationShot)
-            Reporter.TakeVerificationShot($"appeared_{ShotName}");
-        return altObj;
-    }
+    protected override string ViewName => "ExplorePanelView";
 
     #region Elements
 
