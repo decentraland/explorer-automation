@@ -10,6 +10,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
 {
+    protected override string ViewName => "PassportView";
+
     #region Elements
 
     public readonly Clickable BackgroundCloseButton = new(By.NAME, "Background_Close");
@@ -67,17 +69,13 @@ public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
     #region Helper methods
 
     /// <summary>
-    /// Waits until the passport has finished building — the popup, its raycaster, then the module
-    /// roots — so a press does not land on a half-built panel.
+    /// Waits until the passport has finished building — the popup, then the module roots —
+    /// so a press does not land on a half-built panel.
     /// </summary>
     [AllureStep("Wait for the passport to finish building")]
     public void WaitUntilReady()
     {
-        var passport = WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
-        // The MVC ViewBase disables the root's GraphicRaycaster while the show animation plays, and
-        // WaitFor only proves the GameObject exists — the same guard ExplorePanelView carries.
-        passport.WaitForComponentProperty("UnityEngine.UI.GraphicRaycaster", "enabled", true,
-            "UnityEngine.UI", timeout: SlowChassis.SETTLE_TIMEOUT);
+        WaitFor(SlowChassis.SETTLE_TIMEOUT, verificationShot: false);
         // Module roots only. Their contents are conditional — an empty badges row and links list
         // swap in placeholder labels — so waiting on a tile hangs for an account that has none.
         // Shots suppressed: one capture of the built panel replaces four near-identical frames.

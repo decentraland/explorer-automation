@@ -8,6 +8,8 @@ namespace ExplorerAutomation.Tests.Views;
 public class OtpVerificationScreenView() :
     BaseView(new(By.NAME, "Verification.OTP.Screen"))
 {
+    protected override string ViewName => "VerificationOTPAuthView";
+
     #region Elements
 
     public readonly Writable  OtpInput          = new(By.PATH, "//TextInput.OTP/Hidden.InputField");

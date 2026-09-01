@@ -63,13 +63,11 @@ public class DeeplinkLoginVerificationTests : BaseTest
 
         Views.MainMenu.WaitFor(120);
 
-        // Match BaseTest.EnsureInWorld(): SidebarController subscribes onClick
-        // listeners in OnViewInstantiated, which fires asynchronously after the
-        // SidebarView GameObject appears. Clicks during that gap are silently
-        // dropped. The subsequent tests immediately click sidebar buttons
-        // (ProfileButton, BackpackButton) so this settle wait is necessary
-        // to avoid flakes.
-        Thread.Sleep(20_000);
+        // Match BaseTest.EnsureInWorld(): SidebarView reporting Shown provably post-dates
+        // SidebarController wiring its onClick listeners (OnViewInstantiated runs to
+        // completion before ShowAsync is even awaited). The subsequent tests immediately
+        // click sidebar buttons (ProfileButton, BackpackButton), so wait on that signal.
+        ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 

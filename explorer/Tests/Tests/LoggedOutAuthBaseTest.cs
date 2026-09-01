@@ -15,13 +15,10 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     {
         Views.SplashScreen.WaitForGone();
 
-        // Detecting "are we on the auth screen or actually in-world?" is tricky on this
-        // build: BOTH Authentication.MainScreen(Clone) AND SidebarView are MVC view prefabs
-        // that get instantiated by the bootstrap and persist in the scene tree across state
-        // transitions. Their bare GameObject existence (what IsPresent() probes) returns
-        // true in either state. The reliable discriminator is the visible sub-screen: one
-        // of {JumpIntoWorldButton, LoginSelection.Screen, Verification.OTP.Screen} is
-        // findable iff the auth UI is actively showing.
+        // AuthenticationScreenView and VerificationOTPAuthView (ViewSignal-backed since Task 7)
+        // answer "are we on the auth screen" directly. SidebarView's signal reports Shown for
+        // the whole session — a persistent-layer view, not a discriminating one — so the
+        // in-world branch below is inferred by negation, not by checking MainMenu.
         if (IsOnAuthScreen())
         {
             EnsureLoggedOutFromAuthScreen();
@@ -29,21 +26,10 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
         }
 
         Reporter.Log("In-world detected — opening profile menu to sign out");
-        var profileMenu = OpenSidebarMenuWithRetry(
+        OpenSidebarMenuWithRetry(
             () => Views.MainMenu.ProfileButton.Click(settleMs: 0),
             Views.ProfileMenu,
             "profile menu");
-
-        // ViewBase.ShowAsync (in unity-explorer's MVC) disables the GraphicRaycaster on
-        // the root while the open animation plays, then re-enables it. WaitFor only checks
-        // GameObject existence, so without this guard our click can land on a modal whose
-        // raycaster eats the event. Wait for the raycaster to come back on.
-        profileMenu.WaitForComponentProperty(
-            "UnityEngine.UI.GraphicRaycaster",
-            "enabled",
-            true,
-            "UnityEngine.UI",
-            timeout: 15);
 
         Views.ProfileMenu.SignOutButton.Click();
         Reporter.Log("Sign Out clicked — waiting for auth flow");
@@ -55,13 +41,10 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     }
 
     /// <summary>
-    /// True iff one of the auth screen's three visible sub-states is currently showing.
-    /// See the comment in <see cref="EnsureInWorld"/> for why we can't use
-    /// <c>AuthenticationMainScreen.IsPresent()</c> or <c>MainMenu.IsPresent()</c> directly.
+    /// True iff the auth screen or the OTP screen is currently shown.
     /// </summary>
     private bool IsOnAuthScreen() =>
-        Views.AuthenticationMainScreen.JumpIntoWorldButton.IsPresent() ||
-        Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent() ||
+        Views.AuthenticationMainScreen.IsPresent() ||
         Views.OtpVerificationScreen.IsPresent();
 
     /// <summary>
@@ -73,6 +56,8 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     /// </summary>
     private void EnsureLoggedOutFromAuthScreen()
     {
+        // Both sub-states share AuthenticationScreenView, so only the child element tells
+        // LoginSelection apart from the cached-account state — the signal can't.
         if (Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent())
         {
             Reporter.Log("Already at logged-out auth screen — ready");
@@ -124,20 +109,16 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
 
         Views.MainMenu.WaitFor(240);
 
-        // SidebarController subscribes its onClick listeners asynchronously after SidebarView
-        // appears; the first shortcut press immediately after can land in that gap and get
-        // dropped. Same ~20s settle as BaseTest.EnsureInWorld.
-        Thread.Sleep(20_000);
+        // Same signal wait as BaseTest.EnsureInWorld: SidebarView reporting Shown provably
+        // post-dates SidebarController wiring its onClick listeners, so a shortcut press
+        // right after this returns can no longer land in that gap.
+        ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         Reporter.Log("Player is in-world and main menu is ready");
     }
 
     /// <summary>
     /// Press the Explore panel shortcut (I) and wait for the panel to appear, retrying if
-    /// the first press is dropped. On macos-14 paravirt the wall-clock 20s settle in
-    /// <see cref="WaitForInWorldAfterJumpIn"/> can still elapse before SidebarController has
-    /// wired its OnClick listeners (the runtime ticks frames at GPU=0 only when work is
-    /// pending, so wall-clock time decouples from frame-time progress), so the very first
-    /// I-press post-login can silently no-op.
+    /// the first press is dropped.
     ///
     /// Each press is a toggle, so we wait a generous window before re-pressing — if the
     /// previous press worked, the panel will appear inside the window and we return early.
@@ -219,6 +200,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
                 PressEscape();
                 Wait(1);
 
+                // Sub-state check, not Shown/Hidden — AuthenticationScreenView covers both.
                 if (!Views.AuthenticationMainScreen.LoginSelectionScreen.IsPresent())
                 {
                     PressEscape();

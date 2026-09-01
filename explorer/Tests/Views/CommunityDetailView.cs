@@ -8,6 +8,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class CommunityDetailView() : BaseView(new(By.NAME, "CommunityCard(Clone)"))
 {
+    protected override string ViewName => "CommunityCardView";
+
     #region Elements
 
     public readonly Clickable CloseButton   = new(By.PATH, "//CommunityCard(Clone)//Button_Close");
