@@ -2,7 +2,7 @@ name: InWorld Suite
 
 # Reusable workflow that owns the mechanics of the InWorld NUnit suite on
 # GitHub-hosted `macos-14`: prereq install, audio workarounds, AltTester
-# license, Explorer install, `mf explorer test`, Allure upload, PR comment.
+# license, Explorer install, `mf explorer test`, Allure upload, PR reporting.
 # Mirrors run-visual-suite.yml, which runs the same chassis.
 #
 # Callers:
@@ -20,7 +20,10 @@ name: InWorld Suite
 #   windows windows-inworld-custom-image.yml, the same selection split across
 #           runners — that leg plans its own split, from `scope` when a caller
 #           resolved one and from `filter` otherwise
-#   report  one table over every leg, to the job summary and one PR comment
+#   report  one table over every leg, to the job summary and the PR — folded
+#           into unity-explorer's unified CI status comment (inworld section)
+#           when that repo is the caller, a standalone comment otherwise or as
+#           fallback
 #
 # The Windows leg stays its own file — the install steps (bash/brew/dmg against
 # PowerShell/zip) and runner lifecycle (ephemeral GitHub-hosted against an
@@ -1694,11 +1697,88 @@ jobs:
             echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > comment.md
 
+          # The same result shaped as the inworld section of unity-explorer's
+          # unified CI status comment: a linked badge instead of the H2 header.
+          # The '## InWorld suite' header must not appear in this body — the
+          # standalone-comment finder below matches on it, and on a fallback
+          # run it would find the unified comment and overwrite it wholesale.
+          if [ "$FAILED" -eq 0 ]; then
+            BADGE="https://img.shields.io/badge/InWorld-Passed!-3fb950?logo=unity&logoColor=white&style=for-the-badge"
+          else
+            BADGE="https://img.shields.io/badge/InWorld-Failed!-ff0000?logo=unity&logoColor=white&style=for-the-badge"
+          fi
+          {
+            echo "[![InWorld]($BADGE)]($RUN_URL)"
+            echo
+            echo "$STATUS"
+            echo
+            cat table.md
+            echo
+            echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
+            echo
+            echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+          } > section-body.md
+
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
           echo "posted=true" >> "$GITHUB_OUTPUT"
 
+      # unity-explorer PRs carry a unified CI status comment (build / lint /
+      # tests / performance sections); fold the result into its inworld section
+      # so the suite adds no second bot comment there. Only that repo owns the
+      # comment format and the section name, so every other caller — this
+      # repo's own PRs included — keeps the standalone comment path below.
+      # Checked out from dev because the format is owned there: an older dev
+      # that predates the inworld section exits 2 from the allowlist, and a PR
+      # without the unified comment yet exits 3 under NO_CREATE — both simply
+      # fall back to the standalone comment.
+      - name: Fetch unity-explorer's CI status action
+        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != '' && github.repository == 'decentraland/unity-explorer'
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/unity-explorer
+          ref: dev
+          sparse-checkout: .github/actions/ci-status-comment
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          path: unity-explorer-ci
+
+      - name: Fold results into the unified CI status comment
+        id: section
+        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != '' && github.repository == 'decentraland/unity-explorer'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.run.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          WRITTEN=false
+          if REPO="$GITHUB_REPOSITORY" SECTION=inworld NO_CREATE=1 \
+             SECTION_BODY= SECTION_BODY_FILE=section-body.md \
+             bash unity-explorer-ci/.github/actions/ci-status-comment/upsert-ci-status.sh; then
+            WRITTEN=true
+            # Retire any standalone comment an earlier run (or a fallback)
+            # left behind — a stale second verdict next to the section is what
+            # this fold removes. Best-effort: a failed stub edit must not fail
+            # the report of a suite that already landed its result.
+            (gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              --jq '.[] | select(.user.login == "github-actions[bot]"
+                                 and (.body | contains("## InWorld suite"))
+                                 and ((.body | contains("<!-- ci-status -->")) | not)) | .id' \
+              || true) \
+            | while read -r id; do
+                gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" \
+                  -f body="_The InWorld suite now reports in the unified **CI Status** comment on this PR._" \
+                  >/dev/null || true
+              done
+          else
+            echo "::notice::CI status section not written; posting the standalone comment instead."
+          fi
+          echo "written=$WRITTEN" >> "$GITHUB_OUTPUT"
+
+      # The pre-fold reporting path, and the fallback when the section write
+      # exits non-zero. `written` is empty when the fold step was skipped
+      # (non-unity-explorer caller), which must also land here.
       - name: Find existing PR comment
-        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != ''
+        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != '' && steps.section.outputs.written != 'true'
         uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
         id: find-comment
         with:
@@ -1708,7 +1788,7 @@ jobs:
           body-includes: '## InWorld suite'
 
       - name: Comment results on PR
-        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != ''
+        if: steps.table.outputs.posted == 'true' && needs.run.outputs.pr_number != '' && steps.section.outputs.written != 'true'
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           repository: ${{ github.repository }}
