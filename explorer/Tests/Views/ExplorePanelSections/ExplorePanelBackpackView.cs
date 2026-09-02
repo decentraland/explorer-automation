@@ -645,15 +645,49 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Wait for the whole emote grid page to load")]
         public void WaitForGridPageLoaded()
         {
-            // One budget shared across the tiles, not one ceiling each.
-            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
-            foreach (var item in GridItems)
-                item.LoadedIndicator.WaitFor(
-                    Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
+            if (!TryWaitForGridPageLoaded())
+                throw new AssertionException(
+                    $"The emote grid stopped at {LoadedTileCount()} of {GRID_ITEM_COUNT} tiles after "
+                    + $"{GRID_PAGE_TIMEOUT}s. The client can abandon the base-emote catalogue under load "
+                    + "- check Player.log for \"Loading emotes timed out\".");
 
             Reporter.TakeVerificationShot("loaded_EmoteGridPage");
             Reporter.Log("Emote grid page finished loading");
         }
+
+        private const int PAGE_POLL_MS = 500;
+
+        /// <summary>
+        /// Waits for a full page, answering false rather than throwing when it never fills, so a
+        /// caller can retry the fetch instead of reporting a missing tile as the whole story.
+        /// </summary>
+        public bool TryWaitForGridPageLoaded(double timeout = GRID_PAGE_TIMEOUT)
+        {
+            // One budget for the page, not one ceiling per tile, and counted in one sweep: the
+            // per-tile wait spent the whole budget on the first missing index and then reported
+            // that index's 1s floor, naming neither the real budget nor how much of the page came up.
+            var deadline = DateTime.UtcNow.AddSeconds(timeout);
+
+            while (true)
+            {
+                if (LoadedTileCount() >= GRID_ITEM_COUNT)
+                    return true;
+
+                if (DateTime.UtcNow >= deadline)
+                    return false;
+
+                // Slower than POLL_MS deliberately: each sweep serializes every loaded tile, and
+                // this budget is spent precisely when the client is struggling to load them.
+                Thread.Sleep(PAGE_POLL_MS);
+            }
+        }
+
+        /// <summary>
+        /// How many tiles on the page currently hold content. FindObjects answers with enabled
+        /// objects only, which is the same "has content" filter the loaded path encodes.
+        /// </summary>
+        public int LoadedTileCount() =>
+            CommonStuff.AltDriver.FindObjects(By.PATH, LOADED_TILE_PATH).Count;
 
         /// <summary>
         /// Returns the loaded tile sitting left-top-most on screen. Use instead of
