@@ -1,9 +1,10 @@
 name: Validate Windows runtime image
 
+# Dispatch only. This answered its question on 2026-09-01: Docker Desktop cannot
+# start on win-gpu-t4-explorer (HCS_E_HYPERV_NOT_INSTALLED - the GPU runner is
+# itself a VM with nested virtualization off), so the fixture cannot be hosted
+# there. Kept for re-checking a new runner image, not as a PR gate it can only fail.
 on:
-  pull_request:
-    paths:
-      - .github/workflows/validate-windows-runtime.yml
   workflow_dispatch:
 
 permissions:

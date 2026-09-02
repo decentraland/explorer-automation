@@ -186,31 +186,44 @@ jobs:
     if: needs.resolve.outputs.should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
-      # Temporary validation pin for Unity Explorer PR #9868. The fixture realm
-      # requires its trusted-domain and gateway URL support; the normal path
-      # resolves the newest dev build when this value is empty.
-      build_url: 'https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/fix/e2e-fixture-gateway-routes/pr-25530-32f6db6/Decentraland_macos.zip'
+      # Empty build_url makes the reusable resolve the newest unity-explorer
+      # dev build. That must stay a branch build: release zips are compiled
+      # without the AltTester scripting define and hang at "Wait for
+      # connection: 0%".
+      #
+      # The fixture realm additionally needs --gateway and the trusted-domain
+      # policy from unity-explorer#9868, which is not on dev. Pin a build only
+      # once that branch carries MVC.AltTesterViewProbe too - the suite's
+      # GlobalSetup guard rejects any build without it, so a pin taken from a
+      # branch cut before the probe landed fails every fixture at OneTimeSetUp.
+      build_url: ''
       filter: ${{ needs.resolve.outputs.filter }}
-      windows: false
+      # The fixture is macOS-only, so its opt-in drops the Windows leg; the
+      # ordinary path keeps both legs, as on main.
+      windows: ${{ vars.E2E_FIXTURE_PROVISION != 'true' }}
       macos: true
       # What Windows splits. The filter says the same thing in vstest's vocabulary, but nothing
       # maps one back to the fixtures the packer weighs, so the scope travels as itself.
       scope: ${{ needs.resolve.outputs.scope }}
       pr_number: ${{ github.event.pull_request.number }}
       tests_ref: ${{ github.head_ref }}
-      # External is opt-in. The legacy local image is only passed when local mode
-      # is explicitly selected; hosted GPU runners cannot provide nested Docker.
+      # E2E_FIXTURE_PROVISION is the single opt-in. Everything else stays neutral
+      # while it is off: the reusable also treats fixture_mode == 'external' as a
+      # request to provision, so forwarding the org variable unconditionally would
+      # route every ordinary PR through the fixture. The legacy local image is only
+      # passed when local mode is explicitly selected; hosted GPU runners cannot
+      # provide nested Docker.
       provision_fixture: ${{ vars.E2E_FIXTURE_PROVISION == 'true' }}
-      fixture_mode: ${{ vars.E2E_FIXTURE_MODE || 'org' }}
-      fixture_base_url: ${{ vars.E2E_FIXTURE_BASE_URL || '' }}
-      fixture_base_domain: ${{ vars.E2E_FIXTURE_BASE_DOMAIN || '' }}
+      fixture_mode: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_MODE || 'org') || 'org' }}
+      fixture_base_url: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_BASE_URL || '') || '' }}
+      fixture_base_domain: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_BASE_DOMAIN || '') || '' }}
       fixture_manager_role_arn: ${{ vars.E2E_FIXTURE_MANAGER_ROLE_ARN || '' }}
       fixture_manager_function: ${{ vars.E2E_FIXTURE_MANAGER_FUNCTION_NAME || '' }}
       fixture_manager_region: ${{ vars.E2E_FIXTURE_MANAGER_AWS_REGION || 'us-east-1' }}
       fixture_manager_profile: ${{ vars.E2E_FIXTURE_PROFILE || 'core-v1' }}
       fixture_manager_ttl_minutes: ${{ vars.E2E_FIXTURE_TTL_MINUTES || '90' }}
       fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'avatar-assets' }}
-      fixture_image: ${{ (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
+      fixture_image: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
       real_livekit_smoke: true
     secrets: inherit

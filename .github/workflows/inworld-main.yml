@@ -57,18 +57,22 @@ jobs:
       # Windows leg splits it with the same tool, into the same number of shards,
       # as it splits a PR's narrower scope.
       scope: 'ALL'
-      # External is opt-in. The legacy local image is only passed when local mode
-      # is explicitly selected; hosted GPU runners cannot provide nested Docker.
+      # E2E_FIXTURE_PROVISION is the single opt-in. Everything else stays neutral
+      # while it is off: the reusable also treats fixture_mode == 'external' as a
+      # request to provision, so forwarding the org variable unconditionally would
+      # route every ordinary PR through the fixture. The legacy local image is only
+      # passed when local mode is explicitly selected; hosted GPU runners cannot
+      # provide nested Docker.
       provision_fixture: ${{ vars.E2E_FIXTURE_PROVISION == 'true' }}
-      fixture_mode: ${{ vars.E2E_FIXTURE_MODE || 'org' }}
-      fixture_base_url: ${{ vars.E2E_FIXTURE_BASE_URL || '' }}
-      fixture_base_domain: ${{ vars.E2E_FIXTURE_BASE_DOMAIN || '' }}
+      fixture_mode: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_MODE || 'org') || 'org' }}
+      fixture_base_url: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_BASE_URL || '') || '' }}
+      fixture_base_domain: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_BASE_DOMAIN || '') || '' }}
       fixture_manager_role_arn: ${{ vars.E2E_FIXTURE_MANAGER_ROLE_ARN || '' }}
       fixture_manager_function: ${{ vars.E2E_FIXTURE_MANAGER_FUNCTION_NAME || '' }}
       fixture_manager_region: ${{ vars.E2E_FIXTURE_MANAGER_AWS_REGION || 'us-east-1' }}
       fixture_manager_profile: ${{ vars.E2E_FIXTURE_PROFILE || 'core-v1' }}
       fixture_manager_ttl_minutes: ${{ vars.E2E_FIXTURE_TTL_MINUTES || '90' }}
       fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'avatar-assets' }}
-      fixture_image: ${{ (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
+      fixture_image: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
     secrets: inherit
