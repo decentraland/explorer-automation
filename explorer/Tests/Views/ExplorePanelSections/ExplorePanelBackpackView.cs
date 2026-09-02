@@ -655,39 +655,58 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
             Reporter.Log("Emote grid page finished loading");
         }
 
-        private const int PAGE_POLL_MS = 500;
-
         /// <summary>
         /// Waits for a full page, answering false rather than throwing when it never fills, so a
         /// caller can retry the fetch instead of reporting a missing tile as the whole story.
         /// </summary>
         public bool TryWaitForGridPageLoaded(double timeout = GRID_PAGE_TIMEOUT)
         {
-            // One budget for the page, not one ceiling per tile, and counted in one sweep: the
-            // per-tile wait spent the whole budget on the first missing index and then reported
-            // that index's 1s floor, naming neither the real budget nor how much of the page came up.
+            // Per index, not a total across the grid: callers address tiles by index, and a pooled
+            // grid can satisfy a count with a different set than the one they are about to read.
+            // One budget shared across the tiles, not one ceiling each.
             var deadline = DateTime.UtcNow.AddSeconds(timeout);
 
-            while (true)
-            {
-                if (LoadedTileCount() >= GRID_ITEM_COUNT)
-                    return true;
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
+                while (!TileLoaded(i))
+                {
+                    if (DateTime.UtcNow >= deadline)
+                        return false;
 
-                if (DateTime.UtcNow >= deadline)
-                    return false;
+                    Thread.Sleep(POLL_MS);
+                }
 
-                // Slower than POLL_MS deliberately: each sweep serializes every loaded tile, and
-                // this budget is spent precisely when the client is struggling to load them.
-                Thread.Sleep(PAGE_POLL_MS);
-            }
+            return true;
         }
 
         /// <summary>
-        /// How many tiles on the page currently hold content. FindObjects answers with enabled
-        /// objects only, which is the same "has content" filter the loaded path encodes.
+        /// How many of the page's addressable tiles currently hold content — for failure messages,
+        /// which otherwise name only the first index that never bound.
         /// </summary>
-        public int LoadedTileCount() =>
-            CommonStuff.AltDriver.FindObjects(By.PATH, LOADED_TILE_PATH).Count;
+        public int LoadedTileCount()
+        {
+            var loaded = 0;
+
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
+                if (TileLoaded(i))
+                    loaded++;
+
+            return loaded;
+        }
+
+        // Read off the same locator the callers address, so the two can never drift apart. Driver
+        // call rather than Locatable.IsPresent: this runs on every poll, and that overload is an
+        // [AllureStep] whose per-call entry would bury the report it is meant to explain.
+        private bool TileLoaded(int index)
+        {
+            Locatable loaded = GridItems[index].LoadedIndicator;
+
+            try
+            {
+                CommonStuff.AltDriver.FindObject(loaded.by, loaded.name);
+                return true;
+            }
+            catch (NotFoundException) { return false; }
+        }
 
         /// <summary>
         /// Returns the loaded tile sitting left-top-most on screen. Use instead of
