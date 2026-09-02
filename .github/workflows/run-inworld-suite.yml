@@ -35,6 +35,10 @@ name: InWorld Suite
 #   - ALTTESTER_LICENSE                    AltTester Pro license key
 #   - REPOS_READ_ONLY_TOKEN                PAT — read on decentraland/MetaForge + decentraland/unity-explorer (the build-URL probe queries unity-explorer's Actions API)
 #
+# Required repository/environment variables for managed fixture infrastructure:
+#   - E2E_FIXTURE_MANAGER_ROLE_ARN         IAM role assumed through GitHub OIDC
+#   - E2E_FIXTURE_MANAGER_FUNCTION_NAME    Lambda function name or ARN
+#
 # The S3 upload credentials come in two org-level families, each granted to a
 # different repo and pointing at a different bucket. `secrets: inherit` passes
 # only what the caller was actually granted, and an ungranted secret resolves
@@ -112,6 +116,11 @@ on:
         type: boolean
         required: false
         default: true
+      macos:
+        description: 'Run the macOS leg.'
+        type: boolean
+        required: false
+        default: true
       windows_build_url:
         description: >-
           Direct URL to a Decentraland_windows64.zip. Empty makes the Windows leg
@@ -121,6 +130,76 @@ on:
         type: string
         required: false
         default: ''
+      fixture_base_url:
+        description: 'Optional reachable URL for offline E2E fixture infrastructure. Empty keeps the org environment.'
+        type: string
+        required: false
+        default: ''
+      provision_fixture:
+        description: 'Provision ephemeral fixture infrastructure for this run. When false, keep the existing fixture behavior.'
+        type: boolean
+        required: false
+        default: false
+      fixture_mode:
+        description: 'Fixture mode for compatibility: org, external, or local. Use provision_fixture to control the managed lifecycle.'
+        type: string
+        required: false
+        default: 'org'
+      fixture_base_domain:
+        description: 'Optional fixture hostname. The Unity client receives it as --base-domain.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_role_arn:
+        description: 'IAM role ARN assumed through GitHub Actions OIDC for the fixture manager.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_function:
+        description: 'E2E fixture manager Lambda name or ARN.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_region:
+        description: 'AWS region containing the fixture manager Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      fixture_manager_profile:
+        description: 'Fixture profile to provision through the manager Lambda.'
+        type: string
+        required: false
+        default: 'core-v1'
+      fixture_manager_ttl_minutes:
+        description: 'Lease duration for the external fixture.'
+        type: string
+        required: false
+        default: '90'
+      fixture_seed_version:
+        description: 'Immutable fixture seed version requested by the manager.'
+        type: string
+        required: false
+        default: 'avatar-assets'
+      fixture_image:
+        description: 'Optional Catalyrst image started locally by the Windows runner.'
+        type: string
+        required: false
+        default: ''
+      fixture_ref:
+        description: 'explorer-e2e-infra ref used when fixture_image is set.'
+        type: string
+        required: false
+        default: 'main'
+      fixture_canary:
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
+        type: boolean
+        required: false
+        default: true
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        type: boolean
+        required: false
+        default: false
 
   workflow_dispatch:
     inputs:
@@ -129,8 +208,28 @@ on:
         type: string
         required: false
         default: ''
+      pr_number:
+        description: 'PR number used for the result comment and artifact path.'
+        type: string
+        required: false
+        default: ''
+      tests_ref:
+        description: 'explorer-automation ref used by the test checkout and CI helpers.'
+        type: string
+        required: false
+        default: ''
+      commit_sha:
+        description: 'Commit label used in the result comment and artifact path.'
+        type: string
+        required: false
+        default: ''
       filter:
         description: 'NUnit filter. Empty = Category=InWorld.'
+        type: string
+        required: false
+        default: ''
+      scope:
+        description: 'Windows split scope: ALL or an explicit FIXTURES list.'
         type: string
         required: false
         default: ''
@@ -147,11 +246,87 @@ on:
         type: boolean
         required: false
         default: true
+      macos:
+        description: 'Run the macOS leg.'
+        type: boolean
+        required: false
+        default: true
       windows_build_url:
         description: 'Direct URL to a Decentraland_windows64.zip. Empty = latest unity-explorer dev build.'
         type: string
         required: false
         default: ''
+      fixture_base_url:
+        description: 'Optional reachable URL for offline E2E fixture infrastructure.'
+        type: string
+        required: false
+        default: ''
+      fixture_canary:
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
+        type: boolean
+        required: false
+        default: true
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        type: boolean
+        required: false
+        default: false
+      provision_fixture:
+        description: 'Provision ephemeral fixture infrastructure for this run. When false, keep the existing fixture behavior.'
+        type: boolean
+        required: false
+        default: false
+      fixture_mode:
+        description: 'Compatibility mode: org, external, or local. Use provision_fixture for the managed lifecycle.'
+        type: choice
+        options: [org, external, local]
+        required: false
+        default: org
+      fixture_base_domain:
+        description: 'Optional fixture hostname. The Unity client receives it as --base-domain.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_role_arn:
+        description: 'IAM role ARN assumed through GitHub Actions OIDC for the fixture manager.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_function:
+        description: 'E2E fixture manager Lambda name or ARN.'
+        type: string
+        required: false
+        default: ''
+      fixture_manager_region:
+        description: 'AWS region containing the fixture manager Lambda.'
+        type: string
+        required: false
+        default: 'us-east-1'
+      fixture_manager_profile:
+        description: 'Fixture profile to provision through the manager Lambda.'
+        type: string
+        required: false
+        default: 'core-v1'
+      fixture_manager_ttl_minutes:
+        description: 'Lease duration for the external fixture.'
+        type: string
+        required: false
+        default: '90'
+      fixture_seed_version:
+        description: 'Immutable fixture seed version requested by the manager.'
+        type: string
+        required: false
+        default: 'avatar-assets'
+      fixture_image:
+        description: 'Optional Catalyrst image started locally by the Windows runner.'
+        type: string
+        required: false
+        default: ''
+      fixture_ref:
+        description: 'explorer-e2e-infra ref used when fixture_image is set.'
+        type: string
+        required: false
+        default: 'main'
 
 # macos-14 runners are ephemeral, but serializing keeps concurrent runs for
 # the same caller PR from racing on the S3 path. cancel-in-progress is safe:
@@ -166,10 +341,112 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
 
 jobs:
+  # Fixture infrastructure is provisioned outside the macOS and Windows runners. The Windows
+  # GPU image intentionally does not start Docker: GitHub's hosted pool does
+  # not expose the nested virtualization required by Docker Desktop/WSL2.
+  #
+  # A caller can still pass fixture_base_url for a manually managed fixture.
+  # In that case this job is skipped and the supplied URL is used unchanged.
+  fixture:
+    name: Provision fixture infrastructure
+    # `fixture_mode=external` remains an implicit compatibility path for callers
+    # that predate `provision_fixture`. New callers should use the explicit input.
+    if: >-
+      (inputs.provision_fixture || inputs.fixture_mode == 'external') &&
+      inputs.fixture_base_url == ''
+    runs-on: ubuntu-latest
+    environment: e2e
+    timeout-minutes: 15
+    outputs:
+      base_url: ${{ steps.provision.outputs.base_url }}
+      base_domain: ${{ steps.provision.outputs.base_domain }}
+      fixture_id: ${{ steps.provision.outputs.fixture_id }}
+      seed: ${{ steps.provision.outputs.seed }}
+    steps:
+      - name: Check out automation helpers
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      - name: Validate fixture manager configuration
+        env:
+          FIXTURE_MANAGER_ROLE_ARN: ${{ inputs.fixture_manager_role_arn }}
+          FIXTURE_MANAGER_FUNCTION: ${{ inputs.fixture_manager_function }}
+        run: |
+          set -euo pipefail
+          for name in FIXTURE_MANAGER_ROLE_ARN FIXTURE_MANAGER_FUNCTION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name must be configured for managed fixture provisioning"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ inputs.fixture_manager_role_arn }}
+          aws-region: ${{ inputs.fixture_manager_region }}
+          role-session-name: e2e-fixture-${{ github.run_id }}
+
+      - name: Provision fixture infrastructure through manager Lambda
+        id: provision
+        env:
+          E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
+          AWS_REGION: ${{ inputs.fixture_manager_region }}
+          FIXTURE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          FIXTURE_PROFILE: ${{ inputs.fixture_manager_profile }}
+          FIXTURE_TTL_MINUTES: ${{ inputs.fixture_manager_ttl_minutes }}
+          FIXTURE_SEED_VERSION: ${{ inputs.fixture_seed_version }}
+          FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain }}
+        run: |
+          set -euo pipefail
+
+          for name in E2E_FIXTURE_MANAGER_FUNCTION_NAME FIXTURE_PROFILE \
+                      FIXTURE_TTL_MINUTES FIXTURE_SEED_VERSION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name must be configured for managed fixture provisioning"
+              exit 1
+            fi
+          done
+          result="$(bash explorer/ci/invoke-fixture-manager.sh create)"
+          endpoint="$(jq -r '.endpoint // empty' <<<"$result")"
+          fixture_id="$(jq -r '.fixtureId // .runId // empty' <<<"$result")"
+          seed="$(jq -r '.seedVersion // "unknown"' <<<"$result")"
+
+          if [[ "$endpoint" != https://* ]]; then
+            echo "::error::The manager Lambda returned '$endpoint'. Explorer E2E requires a trusted HTTPS edge with a hostname; direct HTTP task IPs are only a lifecycle smoke test."
+            exit 1
+          fi
+          base_domain="${FIXTURE_BASE_DOMAIN_INPUT}"
+          if [ -z "$base_domain" ]; then
+            base_domain="$(python3 -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).hostname or "")' "$endpoint")"
+          fi
+          if [ -z "$base_domain" ]; then
+            echo "::error::Could not derive fixture base domain from $endpoint"
+            exit 1
+          fi
+          echo "base_url=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "base_domain=$base_domain" >> "$GITHUB_OUTPUT"
+          echo "fixture_id=$fixture_id" >> "$GITHUB_OUTPUT"
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Fixture infrastructure"
+            echo
+            echo "- Fixture: \`$fixture_id\`"
+            echo "- Base URL: \`$endpoint\`"
+            echo "- Seed: \`$seed\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   run:
     name: InWorld suite (macOS)
+    needs: fixture
+    if: >-
+      always() && inputs.macos &&
+      (needs.fixture.result == 'success' || needs.fixture.result == 'skipped')
     runs-on: macos-14
     # Shared context for the report job. Per-column results cannot travel this way
     # (the Windows matrix would overwrite them), so those come back as artifacts.
@@ -189,6 +466,8 @@ jobs:
       TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       TESTS_REF: ${{ inputs.tests_ref || '' }}
+      FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
+      FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
       # Same-repo runs (push / dispatch) carry a real commit and ref, so prefer
       # those over the run-id placeholder — the S3 path and PR comment name the
       # actual code under test. Cross-repo callers pass both explicitly.
@@ -201,6 +480,7 @@ jobs:
       # 'true' only when triaging AltTester issues — Debug level adds ~30 MB of
       # polling chatter per run.
       ALT_VERBOSE_LOGS: 'false'
+      EXPLORER_FAIL_FAST_INFRA: ${{ inputs.fixture_canary && '1' || '0' }}
 
     steps:
       - name: Validate inputs
@@ -268,9 +548,26 @@ jobs:
           # (see the event→prefix table in unity-explorer's
           # visual-regression.yml / build-unitycloud.yml).
           ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
-          CANDIDATES_JSON=$(gh api \
-            "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10" \
-            --jq '[.workflow_runs[] | {head_sha, run_number}]')
+          # The runs API has answered identical queries with different pages inside a
+          # single run: 33616155055 resolved its three legs to three builds, the oldest
+          # from May. Union a few attempts and keep the highest run_number, so one thin
+          # page cannot decide the client under test.
+          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
+          CANDIDATES_JSON='[]'
+          for attempt in 1 2 3; do
+            PAGE=$(gh api "$RUNS_QUERY" \
+              --jq '[.workflow_runs[] | {head_sha, run_number, created_at}]' || echo '[]')
+            CANDIDATES_JSON=$(jq -c -n --argjson a "$CANDIDATES_JSON" --argjson b "$PAGE" \
+              '$a + $b | unique_by(.run_number) | sort_by(.run_number) | reverse')
+          done
+          # A stale page installs a months-old client, and the suite then fails in ways
+          # that read as client regressions. Refuse it by age instead.
+          AGE_DAYS=$(echo "$CANDIDATES_JSON" | jq -r \
+            'if length == 0 then 9999 else ((now - (.[0].created_at | fromdateiso8601)) / 86400 | floor) end')
+          if [ "$AGE_DAYS" -gt 7 ]; then
+            echo "::error::Newest dev build offered by the runs API is ${AGE_DAYS} days old (pu-$(echo "$CANDIDATES_JSON" | jq -r '.[0].run_number // "none"')). Refusing to test a stale client."
+            exit 1
+          fi
           BUILD_URL=""
           for i in 0 1 2 3 4; do
             CAND=$(echo "$CANDIDATES_JSON" | jq -r ".[$i]")
@@ -326,6 +623,56 @@ jobs:
         with:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      - name: Configure fixture infrastructure
+        if: env.FIXTURE_BASE_URL_INPUT != ''
+        env:
+          FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
+          FIXTURE_BASE_DOMAIN: ${{ env.FIXTURE_BASE_DOMAIN_INPUT }}
+        run: |
+          set -euo pipefail
+          chmod +x explorer/ci/configure-fixture.sh
+          ./explorer/ci/configure-fixture.sh
+
+      - name: Install LiveKit CLI for fixture preflight
+        if: env.FIXTURE_BASE_URL_INPUT != '' && inputs.real_livekit_smoke
+        run: |
+          set -euo pipefail
+          version='2.16.3'
+          archive="lk_${version}_darwin_arm64.tar.gz"
+          expected_sha='4024c4511dda1dc930dc1e133099c9fb39ff70596df110ae78c0268e0739bbd0'
+          install_dir="$RUNNER_TEMP/livekit-cli"
+          if ! command -v lk >/dev/null 2>&1; then
+            mkdir -p "$install_dir"
+            archive_path="$RUNNER_TEMP/$archive"
+            curl --fail --silent --show-error --location \
+              "https://github.com/livekit/livekit-cli/releases/download/v${version}/${archive}" \
+              --output "$archive_path"
+            printf '%s  %s\n' "$expected_sha" "$archive_path" | shasum -a 256 -c -
+            tar -xzf "$archive_path" -C "$install_dir"
+            chmod 0755 "$install_dir/lk"
+            echo "$install_dir" >> "$GITHUB_PATH"
+            export PATH="$install_dir:$PATH"
+          fi
+          lk --version
+
+      - name: Preflight fixture control plane
+        if: env.FIXTURE_BASE_URL_INPUT != ''
+        env:
+          FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
+          # Signalling/control-plane checks stay enabled for every fixture run.
+          # The direct UDP/TCP media check is opt-in because hosted CI runners
+          # cannot reliably reach an ephemeral task ENI without TURN.
+          FIXTURE_LIVEKIT_REAL_SMOKE: ${{ inputs.real_livekit_smoke && '1' || '0' }}
+          FIXTURE_LIVEKIT_API_KEY: ${{ vars.FIXTURE_LIVEKIT_API_KEY || 'fixture-livekit-key' }}
+          FIXTURE_LIVEKIT_API_SECRET: ${{ vars.FIXTURE_LIVEKIT_API_SECRET || 'fixture-livekit-secret-0123456789-0123456789' }}
+          FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '60'
+          FIXTURE_LIVEKIT_SMOKE_ATTEMPTS: '3'
+          FIXTURE_LIVEKIT_SMOKE_RETRY_DELAY_SECONDS: '5'
+        run: |
+          set -euo pipefail
+          chmod +x explorer/ci/fixture-preflight.sh
+          ./explorer/ci/fixture-preflight.sh
 
       - name: Compute identifiers
         id: ids
@@ -588,7 +935,11 @@ jobs:
           mkdir -p "$HOME/Library/Application Support/Decentraland/Explorer"
           ACCOUNT="ci-inworld-${GITHUB_RUN_ID}"
           mf account create "$ACCOUNT" --env org
-          mf account login "$ACCOUNT" --env org
+          # The token bridge is what lets the Explorer restore this account at
+          # startup. A regular account login only writes the cached identity;
+          # without --auto-login the client falls back to LoginSelection and
+          # every InWorld fixture fails before its first assertion.
+          mf account login "$ACCOUNT" --env org --auto-login
           echo "MF_ACCOUNT=${ACCOUNT}" >> "$GITHUB_ENV"
 
       - name: Clear Explorer Player.log
@@ -599,10 +950,9 @@ jobs:
       - name: Run InWorld suite
         id: test
         if: env.DRY_RUN != 'true'
-        # 17m59s measured over 49 tests; PR #47's 8 more put it near 21m, and
-        # paravirt variance near 25m. Must stay below the job cap: a step
-        # timeout still runs the failure log dump and artifact upload, a job
-        # timeout kills both.
+        # The fixture preflight now verifies a real LiveKit room join, so a
+        # multiplayer outage fails before this step. Keep enough time for the
+        # complete InWorld selection once startup succeeds.
         timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
@@ -678,11 +1028,17 @@ jobs:
           # sidebar and chat clicks and read as flaky UI. Explicit "false" wins without --debug,
           # because ResolveFeatureFlagArg short-circuits on it before the debug gate.
           TEST_EXIT=0
+          APP_ARGS="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false"
+          if [ -n "${FIXTURE_APP_ARGS:-}" ]; then
+            APP_ARGS="${APP_ARGS} ${FIXTURE_APP_ARGS}"
+          fi
+          echo "Launching Explorer with app args: ${APP_ARGS}"
+
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "$TEST_FILTER" \
             --report-type None \
-            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false" \
+            --app-args="${APP_ARGS}" \
             2>&1 | tee "$RUNNER_TEMP/mf-test.log" \
             || TEST_EXIT=$?
           exit "$TEST_EXIT"
@@ -1008,6 +1364,7 @@ jobs:
             ~/Library/Application Support/Decentraland/Explorer/AltTester-Server.log
             ~/Library/Application Support/Decentraland/MetaForge/allure-report/**
             explorer/Tests/bin/Debug/net10.0/allure-results/**
+            ${{ runner.temp }}/mf-test.log
             ${{ runner.temp }}/explorer-perf/**
             ~/Library/Logs/DiagnosticReports/Decentraland*
             ~/Library/Logs/DiagnosticReports/Explorer*
@@ -1167,7 +1524,10 @@ jobs:
   # job, and so under one fold, instead of the two the callers used to show.
   windows:
     name: Windows
-    if: inputs.windows
+    needs: fixture
+    if: >-
+      always() && inputs.windows &&
+      (needs.fixture.result == 'success' || needs.fixture.result == 'skipped')
     uses: ./.github/workflows/windows-inworld-custom-image.yml
     with:
       scope: ${{ inputs.scope }}
@@ -1185,7 +1545,65 @@ jobs:
       # Both legs from one ref, and — as on macOS — a cross-repo caller has no
       # explorer/ci to check out without it.
       tests_ref: ${{ inputs.tests_ref }}
+      fixture_canary: ${{ inputs.fixture_canary }}
+      real_livekit_smoke: ${{ inputs.real_livekit_smoke }}
+      fixture_base_url: ${{ inputs.fixture_base_url || needs.fixture.outputs.base_url || '' }}
+      fixture_base_domain: ${{ inputs.fixture_base_domain || needs.fixture.outputs.base_domain || '' }}
+      # A managed run is an external fixture from the Windows leg's point of view,
+      # even when the dispatch left the compatibility mode at its default `org`.
+      fixture_mode: ${{ inputs.provision_fixture && 'external' || inputs.fixture_mode }}
+      fixture_image: ${{ inputs.fixture_image }}
+      fixture_ref: ${{ inputs.fixture_ref }}
     secrets: inherit
+
+  # Cleanup owns the lease through the same OIDC role. It runs after both test
+  # legs, including when one of them failed. The Lambda's scheduled sweep is
+  # the backstop for a workflow cancellation before this job starts.
+  fixture-cleanup:
+    name: Destroy fixture infrastructure
+    needs: [fixture, run, windows]
+    if: >-
+      always() &&
+      (inputs.provision_fixture || inputs.fixture_mode == 'external') &&
+      inputs.fixture_base_url == '' && needs.fixture.result != 'skipped'
+    runs-on: ubuntu-latest
+    environment: e2e
+    timeout-minutes: 10
+    steps:
+      - name: Check out automation helpers
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
+
+      - name: Validate fixture manager configuration
+        env:
+          FIXTURE_MANAGER_ROLE_ARN: ${{ inputs.fixture_manager_role_arn }}
+          FIXTURE_MANAGER_FUNCTION: ${{ inputs.fixture_manager_function }}
+        run: |
+          set -euo pipefail
+          for name in FIXTURE_MANAGER_ROLE_ARN FIXTURE_MANAGER_FUNCTION; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name must be configured for managed fixture cleanup"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ inputs.fixture_manager_role_arn }}
+          aws-region: ${{ inputs.fixture_manager_region }}
+          role-session-name: e2e-fixture-cleanup-${{ github.run_id }}
+
+      - name: Destroy fixture infrastructure
+        env:
+          E2E_FIXTURE_MANAGER_FUNCTION_NAME: ${{ inputs.fixture_manager_function }}
+          AWS_REGION: ${{ inputs.fixture_manager_region }}
+          FIXTURE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          bash explorer/ci/invoke-fixture-manager.sh destroy
 
   # One table for every leg. Each leg posts its own row as an artifact because a
   # matrix job cannot carry per-instance outputs, and shared context (commit, PR,

@@ -6,6 +6,7 @@ public abstract class BaseTest
 {
     private const string PERF_ENV = "EXPLORER_PERF_RECORD";
     private const string PERF_DIR_ENV = "EXPLORER_PERF_DIR";
+    private const string FAIL_FAST_INFRA_ENV = "EXPLORER_FAIL_FAST_INFRA";
 
     private static bool _bootedInWorld;
 
@@ -49,16 +50,31 @@ public abstract class BaseTest
             return;
         }
 
+        var inWorldBootstrapStarted = false;
         try
         {
             // Before the boot, not after: a viewport this can't clear fails every fixture anyway,
             // and the check costs one round trip against ~4 minutes of booting into a doomed run.
             Viewport.RequireUsable();
+            inWorldBootstrapStarted = true;
             EnsureInWorld();
         }
         catch (Exception ex)
         {
             NoteIfDriverLost(ex);
+
+            // A failed in-world bootstrap is a process-wide infrastructure failure, not a
+            // test-level assertion. Continuing would make every remaining fixture wait for the
+            // same UI object and turn a few-minute diagnosis into a 30-minute timeout.
+            if (InfrastructureFailFastEnabled() && inWorldBootstrapStarted)
+            {
+                const string marker = "INFRA_FAST_FAIL: Explorer never completed in-world startup";
+                Console.Error.WriteLine($"{marker}: {ex.Message}");
+                Reporter.Log($"{marker}. Aborting the NUnit process; inspect Player.log for the first infrastructure error.\n{ex}");
+                Environment.Exit(78);
+                return;
+            }
+
             // Capture and re-fail per-test in [SetUp]. NUnit reports OneTimeSetUp failures
             // at the fixture level, which Allure doesn't render as test entries — so all
             // tests in this fixture would be invisible in the report. Do NOT rethrow here:
@@ -267,16 +283,25 @@ public abstract class BaseTest
         // the loading screen asynchronously after JumpIntoWorld, so a 0ms check returns false
         // before it shows up. Instead, give it ~15s to appear; if it doesn't, assume world
         // was already loaded; if it does, wait up to 5 min for it to finish.
+        var loadingScreenAppeared = false;
         try
         {
             Views.LoadingScreen.WaitFor(15);
-            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
-            Views.LoadingScreen.WaitForGone(300);
-            Reporter.Log("Scene loading complete — HUD should now be interactable");
+            loadingScreenAppeared = true;
         }
         catch (Exception)
         {
             Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
+        }
+
+        if (loadingScreenAppeared)
+        {
+            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
+            // Keep this outside the appearance probe's catch. If streaming hangs because
+            // multiplayer startup failed, the outer OneTimeSetUp handler must see it and the
+            // fixture fail-fast guard can stop the process instead of repeating UI waits.
+            Views.LoadingScreen.WaitForGone(300);
+            Reporter.Log("Scene loading complete — HUD should now be interactable");
         }
 
         // 240s (was 120s): same reason as the SplashScreen bump above — bootstrap
@@ -317,6 +342,9 @@ public abstract class BaseTest
         Reporter.Log("AltTester stopped responding — abandoning the rest of the run rather than "
                      + "spending the command ceiling per remaining test. The first failure is the real one.");
     }
+
+    private static bool InfrastructureFailFastEnabled() =>
+        string.Equals(Environment.GetEnvironmentVariable(FAIL_FAST_INFRA_ENV), "1", StringComparison.Ordinal);
 
     [AllureStep("Dismiss the MinimumSpecs warning modal if present")]
     private void DismissMinimumSpecsModalIfPresent()
