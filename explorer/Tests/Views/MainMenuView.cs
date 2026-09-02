@@ -45,6 +45,7 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
     public NotificationsPanel Notifications { get; } = new();
     public HelpMenu Help { get; } = new();
     public SkyboxMenu Skybox { get; } = new();
+    public FriendsPanelView Friends { get; } = new();
 
     #endregion
 
@@ -151,6 +152,26 @@ public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
                 "UnityEngine.UI.Slider", "value", normalizedTime, "UnityEngine.UI");
             Reporter.Log($"Skybox time slider set to {normalizedTime:F2}");
         }
+
+        #endregion
+    }
+
+    /// <summary>
+    /// Social panel opened by the sidebar friends button. Not nested under
+    /// SidebarFriendsButton in the hierarchy (unlike Notifications/Help/Skybox) — its root
+    /// and tab buttons are found by name alone. Holds Friends/Requests/Blocked tabs; the
+    /// Friends tab's empty state shows MainTitle ("Time To Make Some Friends!") when the
+    /// account has no friends yet.
+    /// </summary>
+    public class FriendsPanelView() : BaseView(new(By.NAME, "FriendsPanel"))
+    {
+        #region Elements
+
+        public readonly Clickable FriendsTabButton   = new(By.NAME, "FriendsButton");
+        public readonly Clickable RequestsTabButton  = new(By.NAME, "RequestsButton");
+        public readonly Clickable BlockedTabButton   = new(By.NAME, "BlockedButton");
+        public readonly Clickable CloseButton        = new(By.NAME, "Button_Close");
+        public readonly Readable  EmptyStateTitle    = new(By.NAME, "MainTitle");
 
         #endregion
     }
