@@ -231,9 +231,12 @@ jobs:
           # strip it, so a release zip installs but never accepts the AltTester
           # connection and recording hangs until the job timeout.
           ARTIFACT_BASE="${PUBLIC_URL_PREFIX}/@dcl/unity-explorer/branch"
+          # Sorted, not taken in API order: the runs list carries no ordering guarantee,
+          # and a page that came back oldest-first installed a 26-day-old build that
+          # predated a client probe the suite requires (run 33614151723).
           CANDIDATES_JSON=$(gh api \
             "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10" \
-            --jq '[.workflow_runs[] | {head_sha, run_number}]')
+            --jq '[.workflow_runs[] | {head_sha, run_number}] | sort_by(.run_number) | reverse')
           BUILD_URL=""
           for i in 0 1 2 3 4; do
             CAND=$(echo "$CANDIDATES_JSON" | jq -r ".[$i]")

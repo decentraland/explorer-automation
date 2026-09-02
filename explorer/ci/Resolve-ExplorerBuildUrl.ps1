@@ -45,7 +45,10 @@ $base = "https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/
 # jq filter needs, and gh then sees the filter as a second positional argument.
 $json = gh api "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
 if ($LASTEXITCODE -ne 0) { throw "Could not list unity-explorer dev builds" }
-$runs = ($json | ConvertFrom-Json).workflow_runs
+# Sorted, not taken in API order: the runs list carries no ordering guarantee, and the
+# artifact path is built from run_number, so an oldest-first page silently installs a stale
+# build that can predate what the suite requires of the client.
+$runs = ($json | ConvertFrom-Json).workflow_runs | Sort-Object -Property run_number -Descending
 
 $tried = 0
 foreach ($run in $runs) {
