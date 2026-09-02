@@ -43,12 +43,29 @@ if ($BuildUrl) {
 $base = "https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch/dev"
 # Parsed here rather than with --jq: PowerShell 5.1 mangles the double quotes an interpolating
 # jq filter needs, and gh then sees the filter as a second positional argument.
-$json = gh api "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
-if ($LASTEXITCODE -ne 0) { throw "Could not list unity-explorer dev builds" }
-# Sorted, not taken in API order: the runs list carries no ordering guarantee, and the
-# artifact path is built from run_number, so an oldest-first page silently installs a stale
-# build that can predate what the suite requires of the client.
-$runs = ($json | ConvertFrom-Json).workflow_runs | Sort-Object -Property run_number -Descending
+# The runs API has answered identical queries with different pages inside a single run:
+# 33616155055 resolved its three legs to three builds, the oldest from May. Union a few
+# attempts and keep the highest run_number, so one thin page cannot decide the client.
+$query = "repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
+$seen = @{}
+foreach ($attempt in 1..3) {
+    $json = gh api $query
+    if ($LASTEXITCODE -ne 0) { continue }
+    foreach ($r in ($json | ConvertFrom-Json).workflow_runs) {
+        if (-not $seen.ContainsKey($r.run_number)) { $seen[$r.run_number] = $r }
+    }
+}
+if ($seen.Count -eq 0) { throw "Could not list unity-explorer dev builds" }
+$runs = $seen.Values | Sort-Object -Property run_number -Descending
+
+# A stale page installs a months-old client, and the suite then fails in ways that read as
+# client regressions. Refuse it by age instead.
+# ConvertFrom-Json hands back a local-kind DateTime, so normalize before subtracting.
+$newestUtc = ([datetime]$runs[0].created_at).ToUniversalTime()
+$ageDays = ([datetime]::UtcNow - $newestUtc).TotalDays
+if ($ageDays -gt 7) {
+    throw ("Newest dev build offered by the runs API is {0:N0} days old (pu-{1}). Refusing to test a stale client." -f $ageDays, $runs[0].run_number)
+}
 
 $tried = 0
 foreach ($run in $runs) {
