@@ -46,6 +46,7 @@ public class GlobalSetup
     [AllureBefore("Start AltTester Driver")]
     public void StartDriver()
     {
+        DriverSession.Reset();
         Reporter.Log($"Connecting to AltTester at 127.0.0.1:13000");
 
         CommonStuff.AltDriver = new AltDriver(

@@ -33,6 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Harness.Tests" />
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 
