@@ -1,3 +1,6 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+
 namespace ExplorerAutomation.Ci.ScopeInWorldTests;
 
 /// <summary>
@@ -8,9 +11,6 @@ internal static class GoldenCases
 {
     /// <summary>Stands in for "every InWorld fixture", so adding a fixture does not edit the table.</summary>
     private const string EveryFixture = "<all>";
-
-    /// <summary>A fixture quietly leaving the category must read as drift, not as narrower scope.</summary>
-    private const int ExpectedFixtureCount = 18;
 
     private static readonly (string Changed, string[] Expected)[] Cases =
     [
@@ -53,7 +53,42 @@ internal static class GoldenCases
         "explorer/Tests/Views/WelcomeNewAccountScreenView.cs",
     ];
 
-    public static int Run(ReachabilityGraph graph)
+    public static int Run(ReachabilityGraph graph, Compilation compilation, string repoRoot)
+    {
+        var failed = Verify(graph);
+
+        // Adding an InWorld fixture must pass the same gate CI uses before publishing a split.
+        const string addedFixture = "ShardGrowthRegressionTests";
+        var source = CSharpSyntaxTree.ParseText("""
+            namespace ExplorerAutomation.Tests.Tests;
+
+            [NUnit.Framework.Category("InWorld")]
+            public class ShardGrowthRegressionTests : BaseTest
+            {
+                [NUnit.Framework.Test]
+                public void NewTest() { }
+            }
+            """, (CSharpParseOptions)compilation.SyntaxTrees.First().Options,
+            path: Path.Combine(repoRoot, "explorer/Tests/Tests/ShardGrowthRegressionTests.cs"));
+        var expanded = compilation.AddSyntaxTrees(source);
+        var errors = expanded.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        failed += Check("fixture growth sample compiles", errors.Count == 0, string.Join(Environment.NewLine, errors));
+        if (errors.Count > 0)
+            return 1;
+
+        var grown = ReachabilityGraph.Build(expanded, repoRoot);
+        failed += Check("an added fixture is discovered without changing existing fixtures",
+            grown.Fixtures.SequenceEqual(Sorted(graph.Fixtures.Append(addedFixture)), StringComparer.Ordinal),
+            $"got [{string.Join(" ", grown.Fixtures)}]");
+        failed += Check("fixture growth keeps the graph trusted",
+            grown.Untrusted is null, grown.Untrusted ?? string.Empty);
+
+        Console.WriteLine("Checking the CI gate after adding an InWorld fixture:");
+        failed += Verify(grown);
+        return failed == 0 ? 0 : 1;
+    }
+
+    private static int Verify(ReachabilityGraph graph)
     {
         Console.WriteLine($"InWorld fixtures ({graph.Fixtures.Count}): {string.Join(" ", graph.Fixtures)}");
         Console.WriteLine();
@@ -74,10 +109,6 @@ internal static class GoldenCases
             if (!ok)
                 Console.WriteLine($"        expected [{string.Join(" ", want)}]");
         }
-
-        failed += Check($"fixture count is {ExpectedFixtureCount}",
-            graph.Fixtures.Count == ExpectedFixtureCount,
-            $"found {graph.Fixtures.Count}");
 
         // Stated separately from the Places case above so the canary survives a fixture rename.
         var places = Program.Resolve(graph, ["explorer/Tests/Views/ExplorePanelSections/ExplorePanelPlacesView.cs"]);
@@ -127,6 +158,10 @@ internal static class GoldenCases
         {
             var plan = Shards.Plan(graph, graph.Fixtures, bins);
             var covered = Sorted(plan.SelectMany(s => s.Fixtures));
+
+            if (declared > Shards.MinTestsToSplit)
+                failed += Check($"the full suite plans {bins} shard(s)",
+                    plan.Count == Math.Min(bins, graph.Fixtures.Count), $"planned {plan.Count}");
 
             failed += Check($"{bins} shard(s) cover every fixture exactly once",
                 covered.SequenceEqual(graph.Fixtures, StringComparer.Ordinal)
