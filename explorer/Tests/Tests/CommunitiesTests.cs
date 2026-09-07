@@ -2,7 +2,8 @@ using ExplorerAutomation.Tests.Views.ExplorePanelSections;
 
 namespace ExplorerAutomation.Tests.Tests;
 
-// Depth coverage for the explore panel's Communities section (the open-from-sidebar smoke
+// test lives in ExplorePanelTests). Mostly read-only; TestJoinAndLeaveCommunity joins and
+// leaves a stable community but does not create one.
 // test lives in ExplorePanelTests). Read-only: no community is created, joined or left.
 // The in-world Order band 10-19 is full, so this fixture shares Order 11 with
 // ExplorePanelTests (duplicate Orders have precedent at 16 and 19).
