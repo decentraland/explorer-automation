@@ -11,6 +11,12 @@ public class GlobalSetup
         DotNetEnv.Env.TraversePath().Load();
         RegisterAllureTypeFormatters();
         StartDriver();
+        // Thrown here rather than inside StartDriver: the Allure aspect wraps whatever a decorated
+        // method throws, and NUnit then reports a bare TargetInvocationException with no message.
+        if (!ViewSignal.IsAvailable)
+            throw new InvalidOperationException(
+                "This Explorer build does not carry MVC.AltTesterViewProbe. Run against a branch "
+                + "build from a client that includes it (see the validate-paired-prs skill).");
         ViewContainer.Initialize();
         Reporter.SetupUnityLogListener();
     }

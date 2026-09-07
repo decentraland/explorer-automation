@@ -5,6 +5,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class PlaceDetailView() : BaseView(new(By.NAME, "PlaceDetailPanel(Clone)"))
 {
+    protected override string ViewName => "PlaceDetailPanelView";
+
     #region Elements
 
     public readonly Clickable CloseButton           = new(By.PATH, "//PlaceDetailPanel(Clone)//Button_Close");

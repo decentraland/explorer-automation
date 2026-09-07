@@ -38,6 +38,41 @@ on:
         required: false
         default: ''
         type: string
+      fixture_base_url:
+        description: 'Optional reachable URL for an offline E2E Catalyst fixture.'
+        required: false
+        default: ''
+        type: string
+      fixture_base_domain:
+        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
+        required: false
+        default: ''
+        type: string
+      fixture_mode:
+        description: 'Fixture mode: org, external, or local.'
+        required: false
+        default: 'org'
+        type: string
+      fixture_image:
+        description: 'Optional Catalyrst image. When set, the workflow starts explorer-e2e-infra locally on this Windows runner.'
+        required: false
+        default: ''
+        type: string
+      fixture_ref:
+        description: 'explorer-e2e-infra ref to check out when fixture_image is set.'
+        required: false
+        default: 'main'
+        type: string
+      fixture_canary:
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
+        required: false
+        default: true
+        type: boolean
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       scope:
@@ -57,9 +92,40 @@ on:
         type: boolean
       build_url:
         description: 'Windows Explorer artifact to test. Empty resolves the newest reachable dev build.'
+      fixture_base_url:
+        description: 'Optional reachable URL for an offline E2E Catalyst fixture.'
         required: false
         default: ''
         type: string
+      fixture_base_domain:
+        description: 'Optional hostname override used to validate the fixture endpoint. The Unity client receives fixture_base_url as --realm.'
+        required: false
+        default: ''
+        type: string
+      fixture_mode:
+        description: 'Fixture mode: org, external, or local.'
+        required: false
+        default: org
+        type: choice
+        options: [org, external, local]
+      fixture_image:
+        description: 'Catalyrst image. Set this to run explorer-e2e-infra locally on the Windows runner.'
+        required: false
+        default: ''
+      fixture_ref:
+        description: 'explorer-e2e-infra ref to check out when fixture_image is set.'
+        required: false
+        default: 'main'
+      fixture_canary:
+        description: 'Enable fail-fast handling for fixture in-world bootstrap failures.'
+        required: false
+        default: true
+        type: boolean
+      real_livekit_smoke:
+        description: 'Join a real LiveKit room during fixture preflight before launching Explorer.'
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 
@@ -257,6 +323,16 @@ jobs:
       ALT_VERBOSE_LOGS: 'false'
       EXPLORER_PERF_RECORD: '0'
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
+      FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
+      FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
+      FIXTURE_MODE_INPUT: ${{ inputs.fixture_mode || 'org' }}
+      FIXTURE_IMAGE_INPUT: ${{ inputs.fixture_image || '' }}
+      FIXTURE_REF_INPUT: ${{ inputs.fixture_ref || 'main' }}
+      EXPLORER_FAIL_FAST_INFRA: ${{ inputs.fixture_canary && '1' || '0' }}
+      FIXTURE_LIVEKIT_REAL_SMOKE: ${{ inputs.real_livekit_smoke && '1' || '0' }}
+      FIXTURE_LIVEKIT_API_KEY: ${{ vars.FIXTURE_LIVEKIT_API_KEY || 'fixture-livekit-key' }}
+      FIXTURE_LIVEKIT_API_SECRET: ${{ vars.FIXTURE_LIVEKIT_API_SECRET || 'fixture-livekit-secret-0123456789-0123456789' }}
+      FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS: '20'
 
     steps:
       # `repository` is mandatory: a bare checkout inside a workflow_call run
@@ -269,6 +345,134 @@ jobs:
           repository: decentraland/explorer-automation
           ref: ${{ inputs.tests_ref != '' && inputs.tests_ref || (github.repository == 'decentraland/explorer-automation' && github.sha || 'main') }}
 
+      - name: Check out Catalyst fixture
+        if: env.FIXTURE_IMAGE_INPUT != '' && env.FIXTURE_MODE_INPUT != 'external'
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-e2e-infra
+          ref: ${{ inputs.fixture_ref || 'main' }}
+          path: .e2e-infra
+
+      - name: Verify fixture container runtime
+        if: env.FIXTURE_IMAGE_INPUT != '' && env.FIXTURE_MODE_INPUT != 'external'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dockerDir = "C:\Program Files\Docker\Docker\resources\bin"
+          $docker = Join-Path $dockerDir "docker.exe"
+          $desktop = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+          if (-not (Test-Path $docker)) {
+            throw "Docker CLI was not found at $docker"
+          }
+          $dockerDir | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          $env:Path = "$dockerDir;$env:Path"
+
+          function Test-DockerEngine {
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+              & $docker version 1>$null 2>$null
+              return $LASTEXITCODE -eq 0
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+          }
+
+          if (-not (Test-DockerEngine)) {
+            Write-Host "Starting Docker Desktop through its CLI"
+            $previousErrorActionPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+              & $docker desktop start --timeout 120 1>$null 2>$null
+              $startExitCode = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+
+            if ($startExitCode -ne 0) {
+              Write-Warning "docker desktop start exited with code $startExitCode; falling back to the service and desktop process"
+              if (-not (Test-Path $desktop)) {
+                throw "Docker Desktop is not installed at $desktop"
+              }
+              $dockerService = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
+              if ($dockerService -and $dockerService.Status -ne "Running") {
+                Start-Service -Name "com.docker.service"
+              }
+              Start-Process -FilePath $desktop | Out-Null
+            }
+
+            $deadline = [DateTime]::UtcNow.AddSeconds(120)
+            do {
+              Start-Sleep -Seconds 3
+            } while (-not (Test-DockerEngine) -and [DateTime]::UtcNow -lt $deadline)
+          }
+
+          if (-not (Test-DockerEngine)) { throw "Docker daemon is not reachable after starting Docker Desktop" }
+          & $docker compose version
+          if ($LASTEXITCODE -ne 0) { throw "Docker Compose is not available" }
+          $osType = & $docker info --format '{{.OSType}}'
+          if ($LASTEXITCODE -ne 0 -or $osType.Trim() -ne "linux") {
+            throw "Catalyst fixture requires a Linux container engine; Docker reported '$osType'"
+          }
+
+      # GHCR packages can remain private while the first fixture is being proven.
+      # Public packages need no login; a caller may provide a read-only token through
+      # secrets: inherit when the package is private. The token is inspected in the
+      # shell because the secrets context is not available in an if expression.
+      - name: Log in to GHCR for private fixture image
+        if: env.FIXTURE_IMAGE_INPUT != '' && env.FIXTURE_MODE_INPUT != 'external'
+        shell: powershell
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+        run: |
+          if ($env:GHCR_READ_TOKEN) {
+            $env:GHCR_READ_TOKEN | docker login ghcr.io --username $env:GHCR_USERNAME --password-stdin
+            if ($LASTEXITCODE -ne 0) { throw "GHCR login failed" }
+          } else {
+            Write-Host "GHCR_READ_TOKEN is not configured; attempting public image pull."
+          }
+
+      - name: Start local Catalyst fixture
+        if: env.FIXTURE_IMAGE_INPUT != '' && env.FIXTURE_MODE_INPUT != 'external'
+        shell: powershell
+        env:
+          CATALYRST_IMAGE: ${{ env.FIXTURE_IMAGE_INPUT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $fixture = Join-Path $env:GITHUB_WORKSPACE ".e2e-infra"
+          $httpPort = 18080
+          & (Join-Path $fixture "scripts\fixture-up.ps1") -Image $env:CATALYRST_IMAGE -HttpsPort 443 -HttpPort $httpPort -Domain localhost
+          if ($LASTEXITCODE -ne 0) { throw "Catalyst fixture failed to start" }
+
+          $base = "https://localhost"
+          $domain = "localhost"
+          $baseUri = [Uri]$base
+          $friendsApiScheme = if ($baseUri.Scheme -eq 'https') { 'wss' } else { 'ws' }
+          $friendsApiUrl = "${friendsApiScheme}://$($baseUri.Authority)/social-rpc"
+          "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain --realm $base --gateway $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --gatekeeper-url $base/comms-gatekeeper --friends-api-url $friendsApiUrl --accept-untrusted-realm" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_COMPOSE_DIR=$fixture" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Validate external Catalyst fixture inputs
+        if: env.FIXTURE_MODE_INPUT == 'external'
+        shell: powershell
+        run: |
+          if (-not $env:FIXTURE_BASE_URL_INPUT) { throw "fixture_mode=external requires fixture_base_url" }
+
+      - name: Validate local Catalyst fixture inputs
+        if: env.FIXTURE_MODE_INPUT == 'local'
+        shell: powershell
+        run: |
+          if (-not $env:FIXTURE_IMAGE_INPUT) { throw "fixture_mode=local requires fixture_image" }
+
+      - name: Reject conflicting Catalyst fixture modes
+        if: env.FIXTURE_IMAGE_INPUT != '' && env.FIXTURE_BASE_URL_INPUT != ''
+        shell: powershell
+        run: |
+          throw "fixture_image and fixture_base_url are mutually exclusive"
+
       - name: Resolve build URL
         shell: powershell
         env:
@@ -277,6 +481,155 @@ jobs:
           $ErrorActionPreference = "Stop"
           & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerBuildUrl.ps1") `
             -BuildUrl $env:BUILD_URL_INPUT
+
+      - name: Configure external Catalyst fixture
+        if: env.FIXTURE_IMAGE_INPUT == '' && env.FIXTURE_BASE_URL_INPUT != ''
+        shell: powershell
+        env:
+          FIXTURE_BASE_URL: ${{ env.FIXTURE_BASE_URL_INPUT }}
+          FIXTURE_BASE_DOMAIN: ${{ env.FIXTURE_BASE_DOMAIN_INPUT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $base = $env:FIXTURE_BASE_URL.TrimEnd('/')
+          if (-not $base.StartsWith('https://')) {
+            throw "FIXTURE_BASE_URL must use HTTPS because the Unity realm URL is fetched directly"
+          }
+          $about = Invoke-RestMethod "$base/about"
+          if (-not $about.healthy -or -not $about.content.healthy -or -not $about.lambdas.healthy) {
+            throw "Catalyst fixture is not healthy: $base/about"
+          }
+          Invoke-RestMethod "$base/content/status" | Out-Null
+          Invoke-RestMethod "$base/lambdas/status" | Out-Null
+          $domain = $env:FIXTURE_BASE_DOMAIN
+          if (-not $domain) { $domain = ([Uri]$base).Authority }
+          if ($domain.Contains(':') -or $domain.Contains('/')) {
+            throw "FIXTURE_BASE_DOMAIN must be a hostname without a port or path"
+          }
+          $baseUri = [Uri]$base
+          $friendsApiScheme = if ($baseUri.Scheme -eq 'https') { 'wss' } else { 'ws' }
+          $friendsApiUrl = "${friendsApiScheme}://$($baseUri.Authority)/social-rpc"
+          "FIXTURE_BASE_URL=$base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_BASE_DOMAIN=$domain" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "FIXTURE_APP_ARGS=--dclenv org --base-domain $domain --realm $base --gateway $base --position 0,0 --optimized-assets-url $base --dcl-lists-url $base --feature-flags-url $base/__fixture/feature-flags --gatekeeper-url $base/comms-gatekeeper --friends-api-url $friendsApiUrl --accept-untrusted-realm" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install LiveKit CLI for fixture preflight
+        if: (env.FIXTURE_BASE_URL_INPUT != '' || env.FIXTURE_IMAGE_INPUT != '') && inputs.real_livekit_smoke
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = '2.16.3'
+          $archive = "lk_${version}_windows_amd64.zip"
+          $expectedSha = 'e3b84d7ccd2c9e304835b113e6ade2b28d5fa78064bc4040f76c55ff73306686'
+          $archivePath = Join-Path $env:RUNNER_TEMP $archive
+          $installDir = Join-Path $env:RUNNER_TEMP 'livekit-cli'
+          $lkPath = Join-Path $installDir 'lk.exe'
+
+          if (-not (Test-Path $lkPath)) {
+            New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+            Invoke-WebRequest `
+              -Uri "https://github.com/livekit/livekit-cli/releases/download/v$version/$archive" `
+              -OutFile $archivePath
+            $actualSha = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
+            if ($actualSha -ne $expectedSha) {
+              throw "LiveKit CLI checksum mismatch: expected $expectedSha, got $actualSha"
+            }
+            Expand-Archive -Path $archivePath -DestinationPath $installDir -Force
+          }
+
+          $installDir | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          $env:Path = "$installDir;$env:Path"
+          & $lkPath --version
+
+      - name: Preflight fixture control plane
+        if: env.FIXTURE_BASE_URL_INPUT != '' || env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $base = $env:FIXTURE_BASE_URL.TrimEnd('/')
+          if (-not $base) { throw "Fixture base URL was not configured" }
+          $about = Invoke-RestMethod "$base/about"
+          if (-not $about.healthy -or -not $about.content.healthy -or -not $about.lambdas.healthy) {
+            throw "Fixture realm is not healthy: $base/about"
+          }
+          $manifest = Invoke-RestMethod "$base/__fixture/gateway/manifest"
+          if (-not $manifest.services.comms.enabled) { throw "Fixture gateway has Comms disabled" }
+          Invoke-RestMethod "$base/comms-gatekeeper/status" | Out-Null
+          $headers = @{ Authorization = "Bearer fixture-comms-token" }
+          $body = @{ room_id = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"; user_addresses = @(
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002"
+          ) } | ConvertTo-Json -Compress
+          $credentials = Invoke-RestMethod "$base/comms-gatekeeper/private-voice-chat" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+          $urls = @($credentials.PSObject.Properties | ForEach-Object { $_.Value.connection_url })
+          if ($urls.Count -ne 2) { throw "Gatekeeper returned $($urls.Count) LiveKit credentials instead of 2" }
+          foreach ($url in $urls) {
+            if (-not $url.StartsWith('livekit:') -or -not $url.Contains('access_token=') -or $url.Contains('fixture-livekit.invalid')) {
+              throw "Gatekeeper returned an invalid LiveKit connection URL"
+            }
+          }
+          Write-Host "Fixture control-plane preflight passed; LiveKit connection URLs were issued"
+
+          if ($env:FIXTURE_LIVEKIT_REAL_SMOKE -eq '1') {
+            $connection = [string]$urls[0]
+            $endpoint = $connection.Substring('livekit:'.Length).Split('?')[0]
+            $livekitUrl = if ($endpoint.StartsWith('ws://') -or $endpoint.StartsWith('wss://')) {
+              $endpoint
+            } else {
+              "wss://$endpoint"
+            }
+            $livekitApiUrl = $livekitUrl -replace '^wss://', 'https://' -replace '^ws://', 'http://'
+            $roomId = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
+            $identity = "fixture-preflight-$env:GITHUB_RUN_ID-$env:SHARD_INDEX"
+            $stdout = Join-Path $env:RUNNER_TEMP 'fixture-livekit-stdout.log'
+            $stderr = Join-Path $env:RUNNER_TEMP 'fixture-livekit-stderr.log'
+            $lk = (Get-Command lk.exe -ErrorAction Stop).Source
+            $arguments = @(
+              'room', 'join', '--verbose', '--yes', '--identity', $identity, $roomId
+            )
+            # LiveKit CLI 2.16.3 does not reliably parse the connection flags
+            # after `room join` on the hosted Windows runner. Use its process
+            # environment configuration, matching the Unix preflight.
+            $previousLiveKitUrl = $env:LIVEKIT_URL
+            $previousLiveKitApiKey = $env:LIVEKIT_API_KEY
+            $previousLiveKitApiSecret = $env:LIVEKIT_API_SECRET
+            $env:LIVEKIT_URL = $livekitApiUrl
+            $env:LIVEKIT_API_KEY = $env:FIXTURE_LIVEKIT_API_KEY
+            $env:LIVEKIT_API_SECRET = $env:FIXTURE_LIVEKIT_API_SECRET
+            $probe = Start-Process -FilePath $lk -ArgumentList $arguments `
+              -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -NoNewWindow
+            $joined = $false
+            try {
+              $deadline = [DateTime]::UtcNow.AddSeconds([int]$env:FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS)
+              while ([DateTime]::UtcNow -lt $deadline) {
+                $connected = $false
+                if ((Test-Path $stdout) -and (Select-String -Path $stdout -Pattern 'connected.*room' -Quiet)) {
+                  $connected = $true
+                }
+                if ((Test-Path $stderr) -and (Select-String -Path $stderr -Pattern 'connected.*room' -Quiet)) {
+                  $connected = $true
+                }
+                if ($connected) {
+                  $joined = $true
+                  break
+                }
+                if ($probe.HasExited) { break }
+                Start-Sleep -Seconds 1
+              }
+              if (-not $joined) {
+                if (Test-Path $stdout) { Get-Content $stdout }
+                if (Test-Path $stderr) { Get-Content $stderr }
+                throw "LiveKit room join failed or timed out after $env:FIXTURE_LIVEKIT_SMOKE_TIMEOUT_SECONDS seconds"
+              }
+              Write-Host "Fixture LiveKit signaling and WebRTC connection passed"
+            } finally {
+              if (-not $probe.HasExited) { Stop-Process -Id $probe.Id -Force -ErrorAction SilentlyContinue }
+              if ($null -eq $previousLiveKitUrl) { Remove-Item Env:LIVEKIT_URL -ErrorAction SilentlyContinue } else { $env:LIVEKIT_URL = $previousLiveKitUrl }
+              if ($null -eq $previousLiveKitApiKey) { Remove-Item Env:LIVEKIT_API_KEY -ErrorAction SilentlyContinue } else { $env:LIVEKIT_API_KEY = $previousLiveKitApiKey }
+              if ($null -eq $previousLiveKitApiSecret) { Remove-Item Env:LIVEKIT_API_SECRET -ErrorAction SilentlyContinue } else { $env:LIVEKIT_API_SECRET = $previousLiveKitApiSecret }
+            }
+          } else {
+            Write-Host "Real LiveKit data-plane smoke disabled"
+          }
 
       - name: Record benchmark context
         shell: powershell
@@ -370,7 +723,10 @@ jobs:
           # its output so ephemeral test credentials never reach Actions logs.
           $createOutput = & mf account create $account --env org 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "MetaForge account creation failed" }
-          $loginOutput = & mf account login $account --env org 2>&1 | Out-String
+          # The token bridge is required for the Explorer to restore this
+          # account at startup. Without --auto-login it stops at LoginSelection
+          # and every InWorld fixture fails before its first assertion.
+          $loginOutput = & mf account login $account --env org --auto-login 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "MetaForge account login failed" }
           Write-Host "Provisioned ephemeral MetaForge account $account for org"
           "MF_ACCOUNT=$account" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -466,7 +822,7 @@ jobs:
             '-screen-width', $env:EXPLORER_RENDER_WIDTH,
             '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
             '-screen-fullscreen', '0',
-            '--skip-version-check', '--alttester', '--position', '100,100', '--dclenv', 'org',
+            '--skip-version-check', '--alttester', '--position', '0,0', '--dclenv', 'org',
             '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
             '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
             # Load-bearing, not cosmetic. Clears FeatureId.BugReport, so DynamicWorldContainer
@@ -484,6 +840,17 @@ jobs:
           # Echoed the way MetaForge echoes its own launch on the macOS leg. This leg launches
           # the client itself, so without this the log shows only MetaForge's "No target
           # specified" - which reads like a misconfiguration and says nothing about what ran.
+          if ($env:FIXTURE_BASE_URL) {
+            $fixtureUri = [Uri]$env:FIXTURE_BASE_URL
+            $friendsApiScheme = if ($fixtureUri.Scheme -eq 'https') { 'wss' } else { 'ws' }
+            $friendsApiUrl = "${friendsApiScheme}://$($fixtureUri.Authority)/social-rpc"
+            $explorerArgs += @('--base-domain', $env:FIXTURE_BASE_DOMAIN, '--realm', $env:FIXTURE_BASE_URL, '--gateway', $env:FIXTURE_BASE_URL, '--position', '0,0', '--optimized-assets-url', $env:FIXTURE_BASE_URL, '--dcl-lists-url', $env:FIXTURE_BASE_URL, '--feature-flags-url', "$($env:FIXTURE_BASE_URL)/__fixture/feature-flags", '--gatekeeper-url', "$($env:FIXTURE_BASE_URL)/comms-gatekeeper", '--friends-api-url', $friendsApiUrl, '--accept-untrusted-realm')
+            Write-Host "Using Catalyst fixture realm: $($env:FIXTURE_BASE_URL)"
+            Write-Host "Using Catalyst fixture optimized assets: $($env:FIXTURE_BASE_URL)"
+            Write-Host "Using fixture gateway: $($env:FIXTURE_BASE_URL)"
+            Write-Host "Using Comms Gatekeeper: $($env:FIXTURE_BASE_URL)/comms-gatekeeper"
+            Write-Host "Using Social RPC: $friendsApiUrl"
+          }
           Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
           $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -671,6 +1038,7 @@ jobs:
           $diagnosticFiles = @(
             (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
             (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
+            (Join-Path $env:RUNNER_TEMP "mf-test.log"),
             (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
           )
           foreach ($file in $diagnosticFiles) {
@@ -824,3 +1192,31 @@ jobs:
           if ($env:MF_ACCOUNT) {
             try { mf account remove $env:MF_ACCOUNT --yes --non-interactive } catch { Write-Host "account remove: $_" }
           }
+
+      - name: Collect Catalyst fixture logs
+        if: always() && env.FIXTURE_IMAGE_INPUT != ''
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $fixture = if ($env:FIXTURE_COMPOSE_DIR) { $env:FIXTURE_COMPOSE_DIR } else { Join-Path $env:GITHUB_WORKSPACE ".e2e-infra" }
+          $log = Join-Path $env:RUNNER_TEMP "catalyst-fixture.log"
+          docker compose --project-directory $fixture logs --no-color *> $log
+          Write-Host "Catalyst fixture logs: $log"
+
+      - name: Upload Catalyst fixture logs
+        if: always() && env.FIXTURE_IMAGE_INPUT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalyst-fixture-logs-${{ matrix.index }}
+          path: ${{ runner.temp }}/catalyst-fixture.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup Catalyst fixture
+        if: always() && env.FIXTURE_IMAGE_INPUT != ''
+        timeout-minutes: 5
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $fixture = if ($env:FIXTURE_COMPOSE_DIR) { $env:FIXTURE_COMPOSE_DIR } else { Join-Path $env:GITHUB_WORKSPACE ".e2e-infra" }
+          & (Join-Path $fixture "scripts\fixture-down.ps1") -Volumes

@@ -65,6 +65,45 @@ Two workflows run the desktop (C#) InWorld suite, both delegating to the reusabl
 
 macOS runs the whole selection on its one runner; Windows splits it across shards, planned in one place for every origin — see [explorer/ci/CLAUDE.md](explorer/ci/CLAUDE.md).
 
+### Fixture infrastructure
+
+The InWorld workflows can run against ephemeral fixture infrastructure managed by
+[`explorer-e2e-infra`](https://github.com/decentraland/explorer-e2e-infra). The
+The default remains `.org`. For automatic PR/main runs, set these Actions
+repository or `e2e` environment variables:
+
+```text
+E2E_FIXTURE_PROVISION=true
+E2E_FIXTURE_MODE=org
+E2E_FIXTURE_MANAGER_ROLE_ARN=<IAM role ARN trusted for this repository/environment>
+E2E_FIXTURE_MANAGER_FUNCTION_NAME=<e2e-fixture-manager Lambda name or ARN>
+E2E_FIXTURE_MANAGER_AWS_REGION=us-east-1
+E2E_FIXTURE_PROFILE=core-v1
+E2E_FIXTURE_TTL_MINUTES=90
+E2E_FIXTURE_SEED_VERSION=empty-bootstrap
+```
+
+For a manual run, use the `provision_fixture` checkbox in the **InWorld Suite**
+workflow. When it is unchecked, the existing `org`/`local` behavior is kept;
+when checked, the workflow provisions and destroys the fixture infrastructure
+around the test legs. `fixture_mode=external` remains supported as a
+compatibility alias for existing callers.
+
+The reusable workflow assumes that role through GitHub Actions OIDC from the
+`e2e` environment. Its trust policy should match
+`repo:decentraland/explorer-automation:environment:e2e`, and the role should
+only be able to invoke the fixture-manager Lambda. No SSH key or long-lived
+AWS credential is needed in the repository. The Lambda creates the run-scoped
+ECS task from the requested seed, polls it until ready, and destroys it after
+the macOS and Windows legs finish; its scheduled sweep is the cleanup backstop
+for canceled jobs.
+
+The manager returns the run-scoped HTTPS fixture URL. The workflow passes it to
+Explorer as `--realm <fixture-url>` and `--gateway <fixture-url>`; the same
+origin exposes the realm `/about`, Catalyst content/lambdas, and the registry
+gateway. `--base-domain` is not a Unity Explorer argument. Communications stay
+offline because the first stack does not provision Archipelago or LiveKit.
+
 The visual regression suite has its own reusable (`run-visual-suite.yml`), driven by **Manual Visual Tests** from the Actions tab and by the `/generate-baselines` PR comment. A Windows counterpart for *that* suite still needs the same GPU runner image wired up.
 
 ## Layout

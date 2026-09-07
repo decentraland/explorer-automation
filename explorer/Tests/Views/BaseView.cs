@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace ExplorerAutomation.Tests.Views;
 
 /// <summary>
@@ -7,6 +9,13 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public abstract class BaseView(Locatable root)
 {
+    /// <summary>
+    /// The client's MVC view type name, when this page object maps to one. Overriding it routes
+    /// this view's waits to the lifecycle signal; leaving it null keeps object-presence waits,
+    /// which is correct for page objects that wrap an element rather than an MVC view.
+    /// </summary>
+    protected virtual string? ViewName => null;
+
     /// <summary>
     /// Waits for the view's root element to appear in the scene.
     /// </summary>
@@ -21,26 +30,67 @@ public abstract class BaseView(Locatable root)
     internal string ShotName => root.ShotName;
 
     // Shot-suppressed variants for WaitFor overrides that verify additional readiness state
-    // (e.g. GraphicRaycaster re-enabled) before taking the single "appeared" shot themselves,
-    // and for control-flow probes/retry loops that are not test verifications.
+    // before taking the single "appeared" shot themselves, and for control-flow probes/retry
+    // loops that are not test verifications.
     // Virtual so a subclass's readiness wait applies on the suppressed path too — a
     // non-virtual delegator would hand suppressed callers the bare root wait.
-    internal virtual AltObject WaitFor(double timeout, bool verificationShot) => root.WaitFor(timeout, verificationShot);
-    internal bool IsPresent(bool verificationShot) => root.IsPresent(verificationShot);
-    internal void WaitForGone(double timeout, bool verificationShot) => root.WaitForGone(timeout, verificationShot);
+    //
+    // Floor for the find's share of the budget once the signal wait has spent part of it —
+    // keeps a near-exhausted timeout from reaching WaitForObject as zero or negative.
+    private const double MIN_FIND_TIMEOUT = 1D;
+
+    internal virtual AltObject WaitFor(double timeout, bool verificationShot)
+    {
+        // The signal answers readiness; the find that follows only produces the object the
+        // caller acts on, and cannot block once the view reports Shown — so it gets what is
+        // left of the caller's budget, not a second full copy of it.
+        if (ViewName is null)
+            return root.WaitFor(timeout, verificationShot);
+
+        var elapsed = Stopwatch.StartNew();
+        ViewSignal.WaitForShown(ViewName, timeout);
+
+        var remaining = Math.Max(timeout - elapsed.Elapsed.TotalSeconds, MIN_FIND_TIMEOUT);
+        return root.WaitFor(remaining, verificationShot);
+    }
+
+    internal bool IsPresent(bool verificationShot)
+    {
+        if (ViewName is null) return root.IsPresent(verificationShot);
+
+        bool shown = ViewSignal.IsShown(ViewName);
+        if (verificationShot)
+            Reporter.TakeVerificationShot($"{(shown ? "present" : "absent")}_{ShotName}");
+        return shown;
+    }
+
+    internal virtual void WaitForGone(double timeout, bool verificationShot)
+    {
+        // Deliberately not falling through to the root wait: a view whose GameObject never
+        // toggles (persistent layer, collapsed panels) would never satisfy it.
+        if (ViewName is not null)
+        {
+            ViewSignal.WaitForHidden(ViewName, timeout);
+            if (verificationShot)
+                Reporter.TakeVerificationShot($"gone_{ShotName}");
+            return;
+        }
+
+        root.WaitForGone(timeout, verificationShot);
+    }
 
     /// <summary>
     /// Waits for the view's root element to disappear from the scene.
     /// </summary>
     /// <param name="timeout">Maximum seconds to wait before throwing.</param>
-    public virtual void WaitForGone(double timeout = 20D) => root.WaitForGone(timeout);
+    public virtual void WaitForGone(double timeout = 20D) => WaitForGone(timeout, verificationShot: true);
 
     /// <summary>
     /// Checks whether the view's root element is currently present in the scene.
     /// Does not wait or throw — returns immediately.
     /// </summary>
     /// <returns><c>true</c> if the root element exists; otherwise <c>false</c>.</returns>
-    public virtual bool IsPresent() => root.IsPresent();
+    public virtual bool IsPresent() => IsPresent(verificationShot: true);
 }
 
 /// <summary>

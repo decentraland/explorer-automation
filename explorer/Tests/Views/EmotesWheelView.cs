@@ -8,6 +8,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class EmotesWheelView : BaseView
 {
+    protected override string ViewName => "EmotesWheelView";
+
     #region Elements
 
     public const int SLOT_COUNT = 10;

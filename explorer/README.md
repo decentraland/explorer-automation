@@ -86,6 +86,28 @@ metaforge explorer run -- --alttester              # NOTE: no --clear
 metaforge explorer test --filter "Category=InWorld"
 ```
 
+### Local Catalyst fixture
+
+The [`explorer-e2e-infra`](https://github.com/decentraland/explorer-e2e-infra) fixture provides a deterministic, read-only Catalyst edge. `explorer-automation` can own the complete local lifecycle: it starts the Rust Catalyst plus PostgreSQL, waits for the health contract, runs the Unity build against it, and tears the fixture down afterwards.
+
+```bash
+./explorer/ci/run-local-catalyst.sh \
+  --no-build \
+  --build-url "URL_OR_METAFORGE_REF" \
+  --filter "Category=InWorld"
+```
+
+The script expects `explorer-e2e-infra` next to this repository and reuses `explorer-e2e-infra-catalyrst:latest` by default. Set `CATALYRST_IMAGE` to use another tag, or pass `FIXTURE_BUILD_IMAGE=1` when the image must be rebuilt. Override the repository path with `--infra-dir /path/to/explorer-e2e-infra`; use `--keep-fixture` for iterative runs or `--health-only` to validate the fixture without launching Unity.
+
+The helper checks `/about`, `/content/status`, and `/lambdas/status`, and
+passes `--dclenv org --realm https://localhost --gateway https://localhost
+--accept-untrusted-realm --comms-adapter offline:offline` to Explorer. The
+fixture terminates HTTPS on port 443 with a locally trusted `mkcert` certificate;
+install `mkcert` and run its CA setup before the first local run. The current
+fixture intentionally has no Auth, Social, Places, or world snapshot; it is the
+first Catalyst/service-plane bootstrap and will not make fixtures that require
+those services pass yet.
+
 ### Targeted filters
 
 NUnit's `--filter` syntax works with `Category=…`, `FullyQualifiedName~…`, `Name=…`, and boolean OR with `|`:

@@ -6,6 +6,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class ConfirmationDialogView() : BaseView(new(By.NAME, "ConfirmationDialog(Clone)"))
 {
+    protected override string ViewName => "ConfirmationDialogView";
+
     #region Elements
 
     public readonly Clickable YesButton    = new(By.PATH, "//ConfirmationDialog(Clone)//YesButton");

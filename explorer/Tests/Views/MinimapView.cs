@@ -5,6 +5,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// Shows the circular map render with compass letters, the current place name and
 /// parcel coordinates, the favorite heart, the context-menu (kebab) button and the
 /// collapse/expand chevrons. Lives at //BodyUI/Minimap on build dev_b97439fc.
+/// Persistent-layer client view (Shown for the whole session) — carries no ViewName;
+/// this view's own waits stay on object presence.
 /// </summary>
 public class MinimapView() : BaseView(new(By.PATH, "//BodyUI/Minimap"))
 {
@@ -104,6 +106,10 @@ public class MinimapView() : BaseView(new(By.PATH, "//BodyUI/Minimap"))
     /// pooled entry rows (ToggleWithText / ButtonWithTextAndIcon clones) are rebuilt per open,
     /// so all locators are scoped under the popup root and match enabled objects only.
     /// Escape closes it.
+    /// Its client ViewBase, GenericContextMenuView, is one preallocated instance the client
+    /// reuses for chat, avatar/community, camera-reel and passport context menus too — Shown/
+    /// Hidden there can't identify this popup specifically, so it carries no ViewName; waits
+    /// stay on object presence and OpenContextMenu keeps its tap-retry.
     /// </summary>
     public class ContextMenuPopup : BaseView
     {

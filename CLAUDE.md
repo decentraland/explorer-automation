@@ -12,7 +12,7 @@ This repo hosts **two independent test stacks** that share a single test identit
 ### Shared at the root
 
 - **`.env`** — IMAP credentials for OTP retrieval; loaded by both stacks. Template in `.env.example`.
-- **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`. The `dcl-testing-playwright`, `playwright-best-practices`, and `dcl-testing` skills apply inside `web/` (auth + marketplace).
+- **`.claude/`** — agents and skills shared across both stacks. The `view-writer` and `test-writer` skills are C#-specific and apply only inside `explorer/`. The `dcl-testing-playwright`, `playwright-best-practices`, and `dcl-testing` skills apply inside `web/` (auth + marketplace). The `validate-paired-prs` skill runs the desktop InWorld suite against the build of a paired unity-explorer PR instead of dev.
 - **`Makefile`** — repo-wide entry points (install, build, test wrappers). `make help` lists them.
 
 To provision the BIP39 wallet identity used by all in-world tests, use `metaforge account create <name>` directly. See each stack's README for details.

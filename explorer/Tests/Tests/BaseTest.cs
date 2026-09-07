@@ -6,6 +6,7 @@ public abstract class BaseTest
 {
     private const string PERF_ENV = "EXPLORER_PERF_RECORD";
     private const string PERF_DIR_ENV = "EXPLORER_PERF_DIR";
+    private const string FAIL_FAST_INFRA_ENV = "EXPLORER_FAIL_FAST_INFRA";
 
     private static bool _bootedInWorld;
 
@@ -15,12 +16,10 @@ public abstract class BaseTest
     private string _perfSummaryPath;
     private bool _perfStarted;
 
-    // Explorer wires the sidebar listeners once per application session, not
-    // once per NUnit fixture. Keep the conservative 20-second stabilization
-    // delay for the first in-world fixture only. The suite is sequential today,
-    // but the lock also keeps this correct if fixture parallelism is enabled.
-    private static readonly object SidebarSettleLock = new();
-    private static bool _sidebarSettled;
+    // SidebarView is a persistent-layer view: it reports Shown once per client process and
+    // never hides again, so waiting on the signal is a startup gate — idempotent and
+    // near-free on every call after the first. See EnsureInWorld.
+    protected const double SIDEBAR_VIEW_SIGNAL_TIMEOUT = 30D;
 
     // A CommandResponseTimeoutException means the driver stopped hearing back from the client.
     // Nothing recovers from that mid-run, and every later command pays the full response ceiling
@@ -51,16 +50,31 @@ public abstract class BaseTest
             return;
         }
 
+        var inWorldBootstrapStarted = false;
         try
         {
             // Before the boot, not after: a viewport this can't clear fails every fixture anyway,
             // and the check costs one round trip against ~4 minutes of booting into a doomed run.
             Viewport.RequireUsable();
+            inWorldBootstrapStarted = true;
             EnsureInWorld();
         }
         catch (Exception ex)
         {
             NoteIfDriverLost(ex);
+
+            // A failed in-world bootstrap is a process-wide infrastructure failure, not a
+            // test-level assertion. Continuing would make every remaining fixture wait for the
+            // same UI object and turn a few-minute diagnosis into a 30-minute timeout.
+            if (InfrastructureFailFastEnabled() && inWorldBootstrapStarted)
+            {
+                const string marker = "INFRA_FAST_FAIL: Explorer never completed in-world startup";
+                Console.Error.WriteLine($"{marker}: {ex.Message}");
+                Reporter.Log($"{marker}. Aborting the NUnit process; inspect Player.log for the first infrastructure error.\n{ex}");
+                Environment.Exit(78);
+                return;
+            }
+
             // Capture and re-fail per-test in [SetUp]. NUnit reports OneTimeSetUp failures
             // at the fixture level, which Allure doesn't render as test entries — so all
             // tests in this fixture would be invisible in the report. Do NOT rethrow here:
@@ -269,16 +283,25 @@ public abstract class BaseTest
         // the loading screen asynchronously after JumpIntoWorld, so a 0ms check returns false
         // before it shows up. Instead, give it ~15s to appear; if it doesn't, assume world
         // was already loaded; if it does, wait up to 5 min for it to finish.
+        var loadingScreenAppeared = false;
         try
         {
             Views.LoadingScreen.WaitFor(15);
-            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
-            Views.LoadingScreen.WaitForGone(300);
-            Reporter.Log("Scene loading complete — HUD should now be interactable");
+            loadingScreenAppeared = true;
         }
         catch (Exception)
         {
             Reporter.Log("Scene loading screen never appeared — assuming world was already loaded");
+        }
+
+        if (loadingScreenAppeared)
+        {
+            Reporter.Log("Scene loading screen visible — waiting for world streaming to finish (up to 5 min)");
+            // Keep this outside the appearance probe's catch. If streaming hangs because
+            // multiplayer startup failed, the outer OneTimeSetUp handler must see it and the
+            // fixture fail-fast guard can stop the process instead of repeating UI waits.
+            Views.LoadingScreen.WaitForGone(300);
+            Reporter.Log("Scene loading complete — HUD should now be interactable");
         }
 
         // 240s (was 120s): same reason as the SplashScreen bump above — bootstrap
@@ -287,21 +310,12 @@ public abstract class BaseTest
         // hardware hits MainMenu in ~10-30s and never approaches this ceiling.
         Views.MainMenu.WaitFor(240);
 
-        // The SidebarController subscribes its onClick listeners in OnViewInstantiated,
-        // which fires asynchronously after the SidebarView GameObject appears in the scene.
-        // The first sidebar click / shortcut after EnsureInWorld returns can land in that
-        // gap and get silently dropped. There's no public signal for when subscriptions
-        // are wired, so we settle for a fixed wait. Empirically ~20s is enough for the
-        // first test method of the first in-world fixture; subsequent fixtures reuse the
-        // already-initialized sidebar and must not pay this cost again.
-        lock (SidebarSettleLock)
-        {
-            if (!_sidebarSettled)
-            {
-                Thread.Sleep(20_000);
-                _sidebarSettled = true;
-            }
-        }
+        // ControllerBase.LaunchViewLifeCycleAsync calls SidebarController.OnViewInstantiated
+        // (which wires every onClick via SubscribeToEvents) before it awaits ShowAsync, and
+        // ShowAsync only reports the view Shown at the very end, after the show animation and
+        // the raycaster re-enable. So SidebarView reporting Shown provably post-dates the
+        // listener wiring — a click right after this returns can no longer land in that gap.
+        ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         _bootedInWorld = true;
         Reporter.Log("Player is in-world and main menu is ready");
     }
@@ -328,6 +342,9 @@ public abstract class BaseTest
         Reporter.Log("AltTester stopped responding — abandoning the rest of the run rather than "
                      + "spending the command ceiling per remaining test. The first failure is the real one.");
     }
+
+    private static bool InfrastructureFailFastEnabled() =>
+        string.Equals(Environment.GetEnvironmentVariable(FAIL_FAST_INFRA_ENV), "1", StringComparison.Ordinal);
 
     [AllureStep("Dismiss the MinimumSpecs warning modal if present")]
     private void DismissMinimumSpecsModalIfPresent()

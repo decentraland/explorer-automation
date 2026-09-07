@@ -8,6 +8,8 @@ namespace ExplorerAutomation.Tests.Views;
 public class WelcomeNewAccountScreenView() :
     BaseView(new(By.NAME, "Lobby.NewAccount.Screen"))
 {
+    protected override string ViewName => "LobbyForNewAccountAuthView";
+
     #region Elements
 
     public readonly Writable  UsernameInput            = new(By.PATH, "//Lobby.NewAccount.Screen//TextInput.Name/Input");

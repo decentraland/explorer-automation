@@ -7,6 +7,8 @@ namespace ExplorerAutomation.Tests.Views;
 /// </summary>
 public class ControlsPanelView() : BaseView(new(By.NAME, "ControlsPanel(Clone)"))
 {
+    protected override string ViewName => "ControlsPanelView";
+
     #region Elements
 
     public readonly Clickable ExitButton  = new(By.PATH, "//ControlsPanel(Clone)//ExitButton");
