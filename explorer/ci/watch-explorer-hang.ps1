@@ -20,9 +20,16 @@ function Save-EncryptedDump($process, [string]$stem) {
     try {
         Write-Output "Starting dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         # Capture a clone so writing the dump does not hold the live player's threads.
-        & $ProcDumpPath -accepteula -r 1 -a -at 20 -mc 1020 $process.Id $rawPath | Out-Null
-        if ($LASTEXITCODE -notin @(0, 1) -or -not (Test-Path -LiteralPath $rawPath)) {
-            throw "Clone dump capture failed with exit code $LASTEXITCODE"
+        $stdoutPath = Join-Path $OutputDirectory ($stem + '-procdump.log')
+        $stderrPath = Join-Path $OutputDirectory ($stem + '-procdump-error.log')
+        $capture = Start-Process -FilePath $ProcDumpPath -WindowStyle Hidden -Wait -PassThru -ArgumentList @(
+            '-accepteula', '-r', '1', '-a', '-at', '20', '-mc', '1020', $process.Id, "`"$rawPath`""
+        ) -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        try { $exitCode = $capture.ExitCode } finally { $capture.Dispose() }
+        $dumpExists = Test-Path -LiteralPath $rawPath
+        Write-Output "ProcDump exited at $([DateTime]::UtcNow.ToString('o')): exit=$exitCode dumpExists=$dumpExists"
+        if ($exitCode -notin @(0, 1) -or -not $dumpExists) {
+            throw "Clone dump capture failed with exit code $exitCode; see $stdoutPath and $stderrPath"
         }
         Write-Output "Finished dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         $aes = [Security.Cryptography.Aes]::Create()
@@ -77,8 +84,9 @@ while ([DateTime]::UtcNow -lt $deadline -and $count -lt $MaxDumps) {
     [IO.File]::AppendAllText($csv, "$($now.ToString('o')),$cpu,$($target.WorkingSet64),$($target.PrivateMemorySize64),$($target.Threads.Count),$length,$([int]$idle)`n")
     if ($idle -ge $StallSeconds -and ($now - $lastDump).TotalSeconds -ge $StallSeconds) {
         $count++
-        Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count)
-        $lastDump = $now
+        try { Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count) }
+        catch { Write-Warning "Dump attempt $count failed: $($_.Exception.Message)" }
+        $lastDump = [DateTime]::UtcNow
     }
     Start-Sleep -Seconds 2
 }
