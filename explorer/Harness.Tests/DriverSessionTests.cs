@@ -85,7 +85,7 @@ public class DriverSessionTests
         var fixture = new ChatTests();
         Assert.DoesNotThrow(fixture.OneTimeSetUp);
         var failure = Assert.Catch(fixture.SetUp);
-        Assert.That(DriverSession.Unwrap(failure), Is.TypeOf<IgnoreException>());
+        Assert.That(failure, Is.TypeOf<IgnoreException>(), "NUnit must receive IgnoreException directly, outside the Allure wrapper");
         Assert.DoesNotThrow(fixture.NormalizeChatState);
         Assert.DoesNotThrow(fixture.TearDown);
         Assert.DoesNotThrow(() => Reporter.TakeScreenshot("unavailable"));

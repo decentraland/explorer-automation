@@ -11,6 +11,7 @@ public abstract class BaseTest
     private static bool _bootedInWorld;
 
     protected Exception ExceptionFromOneTimeSetUp;
+    private Exception _terminalBootstrapFailure;
 
     private string _perfCsvPath;
     private string _perfSummaryPath;
@@ -43,7 +44,12 @@ public abstract class BaseTest
         }
         catch (Exception ex)
         {
-            if (DriverSession.Record(ex)) throw;
+            if (DriverSession.Record(ex))
+            {
+                // Report one test failure through SetUp; a fixture-level failure hides it in Allure.
+                _terminalBootstrapFailure = ex;
+                return;
+            }
 
             // A failed in-world bootstrap is a process-wide infrastructure failure, not a
             // test-level assertion. Continuing would make every remaining fixture wait for the
@@ -154,10 +160,20 @@ public abstract class BaseTest
     }
 
     [SetUp]
-    [AllureBefore("Set up before each test")]
     public void SetUp()
     {
+        var bootstrapFailure = Interlocked.Exchange(ref _terminalBootstrapFailure, null);
+        if (bootstrapFailure != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(bootstrapFailure).Throw();
+
+        // Allure wraps exceptions, but NUnit only treats a direct IgnoreException as a skip.
         DriverSession.SkipIfLost();
+        SetUpWithReporting();
+    }
+
+    [AllureBefore("Set up before each test")]
+    private void SetUpWithReporting()
+    {
         if (ExceptionFromOneTimeSetUp != null)
         {
             Reporter.Log($"Fixture OneTimeSetUp failed earlier: {ExceptionFromOneTimeSetUp.Message}");

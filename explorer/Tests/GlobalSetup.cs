@@ -53,7 +53,8 @@ public class GlobalSetup
             host: "127.0.0.1",
             port: 13000,
             appName: "__default__",
-            enableLogging: false,
+            enableLogging: string.Equals(Environment.GetEnvironmentVariable("ALT_DRIVER_LOGS"),
+                "true", StringComparison.OrdinalIgnoreCase),
             connectTimeout: 5
         );
 

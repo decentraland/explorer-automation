@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      hang_dump_public_key:
+        description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
+        required: false
+        default: ''
+        type: string
       spawn_position:
         description: 'Public-world spawn parcel. Ignored when a fixture URL is configured.'
         required: false
@@ -89,6 +94,11 @@ on:
         description: 'NUnit filter. Use Category=InWorld for the complete suite.'
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
+        type: string
+      hang_dump_public_key:
+        description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
+        required: false
+        default: ''
         type: string
       spawn_position:
         description: 'Public-world spawn parcel. Ignored when a fixture URL is configured.'
@@ -315,6 +325,8 @@ jobs:
       # writes to GITHUB_ENV.
       BUILD_URL_INPUT: ${{ inputs.build_url }}
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
+      HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
+      ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       WINDOWS_SHARD: ${{ matrix.name }}
       SHARD_INDEX: ${{ matrix.index }}
@@ -883,6 +895,18 @@ jobs:
           if (-not $appConnected) { throw "Explorer did not connect to AltTester within 120 seconds" }
           Write-Host "Explorer exchanged commands with AltTester; starting NUnit suite"
 
+          if ($env:HANG_DUMP_PUBLIC_KEY) {
+            $watchScript = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\watch-explorer-hang.ps1"
+            $watchOutput = Join-Path $env:GITHUB_WORKSPACE "benchmark-diagnostics"
+            [IO.Directory]::CreateDirectory($watchOutput) | Out-Null
+            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+              '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchScript`"",
+              '-ExplorerProcessId', $explorerProcess.Id, '-LogPath', "`"$appLog`"",
+              '-OutputDirectory', "`"$watchOutput`"", '-PublicKey', $env:HANG_DUMP_PUBLIC_KEY
+            ) -RedirectStandardOutput (Join-Path $watchOutput 'hang-monitor.log') `
+              -RedirectStandardError (Join-Path $watchOutput 'hang-monitor-error.log') | Out-Null
+          }
+
           # No target: run against the explicitly launched Explorer session.
           $ErrorActionPreference = "Continue"
           # Teed so the next step can read the count MetaForge reports. A pipe does not
@@ -1057,6 +1081,15 @@ jobs:
           )
           foreach ($file in $diagnosticFiles) {
             if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
+          }
+          if ($env:HANG_DUMP_PUBLIC_KEY) {
+            $localLow = Join-Path $env:USERPROFILE "AppData\LocalLow"
+            Get-ChildItem $localLow -Filter Player.log -File -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'AltTester' } |
+              ForEach-Object {
+                $name = 'desktop-' + ($_.Directory.Name -replace '[^a-zA-Z0-9.-]', '_') + '.log'
+                Copy-Item $_.FullName (Join-Path $diagnostics $name) -Force
+              }
           }
 
       # Kept alongside the S3 publish, same as the macOS leg: artifact-url backs this leg's

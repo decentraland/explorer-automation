@@ -36,13 +36,16 @@ public class ChatTransportTests
     }
 
     [Test]
-    public void InitialBootstrapTransportFailureFailsInsteadOfSkippingTheWholeRun()
+    public void BootstrapTransportFailureFailsOnceThenSkips()
     {
         var transport = InstallTransport();
         transport.FailImmediately = true;
-        var failure = Assert.Catch(new ChatTests().OneTimeSetUp);
+        var fixture = new ChatTests();
+        Assert.DoesNotThrow(fixture.OneTimeSetUp);
+        var failure = Assert.Catch(fixture.SetUp);
         Assert.That(DriverSession.Unwrap(failure), Is.SameAs(transport.Timeout));
         Assert.That(DriverSession.IsLost, Is.True);
+        Assert.Throws<IgnoreException>(fixture.SetUp);
     }
 
     private static Transport InstallTransport()
