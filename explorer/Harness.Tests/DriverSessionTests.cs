@@ -106,4 +106,19 @@ public class DriverSessionTests
         Assert.That(DriverSession.IsLost, Is.False);
         Assert.DoesNotThrow(DriverSession.SkipIfLost);
     }
+    [Test]
+    public void SkippedTestDoesNotReusePreviousPerformanceCapture()
+    {
+        var fixture = new ViewSignalSmokeTests();
+        var field = typeof(BaseTest).GetField("_testPerformance", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var root = Path.Combine(Path.GetTempPath(), "skipped-perf-" + Guid.NewGuid().ToString("N"));
+        var capture = new PerformanceCapture(root, "previous test");
+        field.SetValue(fixture, capture);
+        var metadata = File.ReadAllText(capture.MetadataPath);
+        DriverSession.Record(new CommandResponseTimeoutException());
+        Assert.Throws<IgnoreException>(fixture.SetUp);
+        Assert.That(field.GetValue(fixture), Is.Null);
+        Assert.That(File.ReadAllText(capture.MetadataPath), Is.EqualTo(metadata));
+    }
+
 }

@@ -24,7 +24,8 @@ its existing opt-in fixture capture.
 The existing `PerfSampler.Begin/End` API requires no new client build when that
 API is present. It adds two driver commands per test and client CSV writing.
 The host window includes capture startup and test setup; capture ends before
-screenshot cleanup. A sampler error disables subsequent captures. A known
+screenshot cleanup. A sampler error disables subsequent captures; a transport timeout also fails the
+current test and activates the shared session guard. A known
 transport failure skips End and preserves readable partial data without another
 command. Missing samples are never interpreted as fast frames.
 

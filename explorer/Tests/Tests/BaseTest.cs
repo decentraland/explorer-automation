@@ -165,6 +165,7 @@ public abstract class BaseTest
     [SetUp]
     public void SetUp()
     {
+        _testPerformance = null;
         var bootstrapFailure = Interlocked.Exchange(ref _terminalBootstrapFailure, null);
         if (bootstrapFailure != null)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(bootstrapFailure).Throw();
@@ -241,20 +242,30 @@ public abstract class BaseTest
         {
             _testPerformanceUnavailable = true;
             Reporter.Log($"WARNING: per-test performance capture unavailable: {ex}");
+            if (DriverSession.Record(ex)) throw;
         }
     }
 
     private void FinishTestPerformance()
     {
         if (_testPerformance == null) return;
+        Exception terminalFailure = null;
         try
         {
-            var message = TestContext.CurrentContext.Result.Message ?? "";
-            var transportFailed = DriverSession.IsLost || message.Contains("DriverDisconnectedException")
-                || message.Contains("CommandResponseTimeoutException") || message.Contains("NoAppConnectedException");
             var summary = _testPerformance.Finish(TestContext.CurrentContext.Result.Outcome.ToString(),
-                transportFailed, () => AltDriver.CallStaticMethod<string>(
-                    "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "End", "DCL.Diagnostics.AutoPilot", new object[] { }));
+                DriverSession.IsLost, () =>
+                {
+                    try
+                    {
+                        AltDriver.CallStaticMethod<string>("DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler",
+                            "End", "DCL.Diagnostics.AutoPilot", new object[] { });
+                    }
+                    catch (Exception ex)
+                    {
+                        if (DriverSession.Record(ex)) terminalFailure = ex;
+                        throw;
+                    }
+                });
             _testPerformanceUnavailable |= !_testPerformance.Complete;
             Reporter.Log($"PERF: {summary}");
             AllureApi.AddAttachment("Performance diagnostics", "text/plain", System.Text.Encoding.UTF8.GetBytes(summary));
@@ -267,6 +278,9 @@ public abstract class BaseTest
             _testPerformanceUnavailable = true;
             Reporter.Log($"WARNING: performance report unavailable: {ex}");
         }
+        finally { _testPerformance = null; }
+        if (terminalFailure != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(terminalFailure).Throw();
     }
 
     #endregion
