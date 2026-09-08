@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      unity_log_notifications:
+        description: 'Forward Unity logs over AltTester for per-test attachments.'
+        required: false
+        default: true
+        type: boolean
       hang_dump_public_key:
         description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
         required: false
@@ -95,6 +100,11 @@ on:
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
         type: string
+      unity_log_notifications:
+        description: 'Forward Unity logs over AltTester for per-test attachments.'
+        required: false
+        default: true
+        type: boolean
       hang_dump_public_key:
         description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
         required: false
@@ -326,6 +336,7 @@ jobs:
       BUILD_URL_INPUT: ${{ inputs.build_url }}
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
+      UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
       ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       WINDOWS_SHARD: ${{ matrix.name }}
@@ -1083,6 +1094,8 @@ jobs:
             if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
           }
           if ($env:HANG_DUMP_PUBLIC_KEY) {
+            Get-ChildItem $env:GITHUB_WORKSPACE -Filter AltTester.log -File -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName $diagnostics -Force }
             $localLow = Join-Path $env:USERPROFILE "AppData\LocalLow"
             Get-ChildItem $localLow -Filter Player.log -File -Recurse -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match 'AltTester' } |

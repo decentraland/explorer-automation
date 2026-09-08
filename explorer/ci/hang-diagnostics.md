@@ -21,3 +21,6 @@ Download the diagnostic artifact and decrypt locally:
 
 Inspect all thread stacks in WinDbg with the matching client and Unity symbols.
 A capture is evidence of a progress gap; it does not by itself establish a deadlock.
+
+For a controlled comparison, set `unity_log_notifications` to false. The normal
+Player.log artifact remains available; per-test forwarded log attachments stop.
