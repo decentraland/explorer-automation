@@ -71,6 +71,10 @@ public class ExplorePanelCommunitiesView : BaseSection
         public readonly Readable OwnerName;
         public readonly Readable MembersCountText;
         public readonly Readable PrivacyText;
+        // Swap pair: JoinButton (or "Request to join" for private communities) before
+        // joining, ViewButton once a member — only one present at a time.
+        public readonly Clickable JoinButton;
+        public readonly Clickable ViewButton;
 
         #endregion
 
@@ -83,6 +87,8 @@ public class ExplorePanelCommunitiesView : BaseSection
             OwnerName        = new(By.PATH, $"{basePath}/Footer/OwnerName");
             MembersCountText = new(By.PATH, $"{basePath}/Footer/SecondLineContainer/MembersCountText");
             PrivacyText      = new(By.PATH, $"{basePath}/Footer/SecondLineContainer/PrivacyText");
+            JoinButton       = new(By.PATH, $"{basePath}//JoinButton");
+            ViewButton       = new(By.PATH, $"{basePath}//ViewButton");
         }
 
         #endregion
