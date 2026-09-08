@@ -378,7 +378,6 @@ jobs:
       ALT_VERBOSE_LOGS: 'false'
       EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
       EXPLORER_PERF_PER_TEST: '1'
-      EXPLORER_PERF_DIR: ${{ runner.temp }}/explorer-perf
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
       FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
       FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
@@ -814,6 +813,7 @@ jobs:
         timeout-minutes: 45
         shell: powershell
         env:
+          EXPLORER_PERF_DIR: ${{ runner.temp }}/explorer-perf
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           # Keep the server and test command in the same Actions step. The
