@@ -12,6 +12,9 @@ $target = Get-Process -Id $ExplorerProcessId
 if ($target.ProcessName -ne 'Decentraland') { throw 'Expected the owned Explorer process' }
 $started = $target.StartTime
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+$toolFile = Get-Item -LiteralPath $ProcDumpPath
+if ($toolFile.PSIsContainer) { throw 'Expected a ProcDump executable file' }
+Write-Output "Capture tool: $($toolFile.FullName), $($toolFile.Length) bytes; user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
 $rsa = New-Object Security.Cryptography.RSACryptoServiceProvider
 $rsa.FromXmlString([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($PublicKey)))
 function Save-EncryptedDump($process, [string]$stem) {
