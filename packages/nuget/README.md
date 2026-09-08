@@ -1,11 +1,11 @@
 # Local AltTester .NET driver
 
-`AltTester-Driver.2.3.3-dcl.transport.3b2540f5.nupkg` is built from
-[mikhail-dcl/AltTester-Unity-SDK, commit 3b2540f5](https://github.com/mikhail-dcl/AltTester-Unity-SDK/commit/3b2540f507264eeb675bc7787400af485f7e6986).
+`AltTester-Driver.2.3.3-dcl.transport.1edf7a82.nupkg` is built from
+[mikhail-dcl/AltTester-Unity-SDK, commit 1edf7a82](https://github.com/mikhail-dcl/AltTester-Unity-SDK/commit/1edf7a829661f6e15c4c9cdf281c4fed0c241ff5).
 The .NET project is `Bindings~/dotnet/AltDriver/AltDriver.csproj`; it compiles
 `Assets/AltTester/Runtime/AltDriver`. There is no separate .NET source repository.
 
-The transport commit follows the Unity compatibility base `3c644489` without
+The transport branch follows the Unity compatibility base `3c644489` without
 changing upstream PR #1984. Relative to that base it changes only the two driver
 communication files and their tests. Compared with the formerly consumed NuGet
 2.3.0, this package also includes the fork's existing 2.3.3 baseline; it is not a
@@ -14,6 +14,7 @@ netstandard2.0 targets are retained.
 
 The patch requires registration before declaring a connection ready, prevents
 old close events from invalidating a replacement session, fails closed sends,
+aborts cancelled registration without waiting for a peer close reply,
 and isolates responses by connection/command without replaying interrupted
 commands. It does not fix a stalled Unity process.
 
@@ -32,7 +33,7 @@ assembly and SHA-256 before connection, making live consumption verifiable.
 Build from a clean checkout at the recorded source commit with .NET SDK 10.0.303:
 
 ```powershell
-dotnet pack 'Bindings~/dotnet/AltDriver/AltDriver.csproj' --configuration Release --output <output-directory> -p:PACKAGE_VERSION=2.3.3-dcl.transport.3b2540f5 -p:Version=2.3.3-dcl.transport.3b2540f5 -p:RepositoryCommit=3b2540f507264eeb675bc7787400af485f7e6986 -p:RepositoryUrl=https://github.com/mikhail-dcl/AltTester-Unity-SDK -p:ContinuousIntegrationBuild=true -p:PackageLicenseUrl=
+dotnet pack 'Bindings~/dotnet/AltDriver/AltDriver.csproj' --configuration Release --output <output-directory> -p:PACKAGE_VERSION=2.3.3-dcl.transport.1edf7a82 -p:Version=2.3.3-dcl.transport.1edf7a82 -p:RepositoryCommit=1edf7a829661f6e15c4c9cdf281c4fed0c241ff5 -p:RepositoryUrl=https://github.com/mikhail-dcl/AltTester-Unity-SDK -p:ContinuousIntegrationBuild=true -p:PackageLicenseUrl=
 ```
 
 Clearing the legacy license URL avoids NU5035; the upstream LICENSE remains

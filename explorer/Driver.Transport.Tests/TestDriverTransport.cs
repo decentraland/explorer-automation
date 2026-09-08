@@ -127,6 +127,30 @@ namespace AltTester.AltTesterSDK.Driver.Tests
         }
 
         [Test]
+        public void CancelRegistrationDoesNotWaitForCloseHandshake()
+        {
+            using var server = new LoopbackServer(registerReplacement: false, ignoreClose: true);
+            var handler = Handler(server.Port, 10);
+            try
+            {
+                handler.Connect();
+                server.GetPeer(0).Abort();
+                server.GetPeer(1);
+                Assert.That(SpinWait.SpinUntil(() =>
+                {
+                    var socket = (AltWebSocketSharp.ClientWebSocket)typeof(DriverWebSocketClient)
+                        .GetField("wsClient", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(Client(handler));
+                    return socket != null && socket.ReadyState == AltWebSocketSharp.WebSocketState.Open;
+                }, TimeSpan.FromSeconds(2)), Is.True);
+                var elapsed = Stopwatch.StartNew();
+                handler.Close();
+                Assert.That(elapsed.Elapsed.TotalSeconds, Is.LessThan(1), "Cancellation waited for an unregistered peer's close reply");
+                Assert.Throws<AltException>(() => handler.Send(new CommandParams("echo", null)));
+            }
+            finally { handler.Close(); }
+        }
+
+        [Test]
         public void ExplicitFreshConnectAfterCloseWorks()
         {
             using var server = new LoopbackServer();
@@ -280,14 +304,16 @@ namespace AltTester.AltTesterSDK.Driver.Tests
             private readonly bool register;
             private readonly bool registerReplacement;
             private readonly bool abortUnregistered;
+            private readonly bool ignoreClose;
             internal int AcceptedCount => peers.Count;
             internal int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
 
-            internal LoopbackServer(bool register = true, bool registerReplacement = true, bool abortUnregistered = false)
+            internal LoopbackServer(bool register = true, bool registerReplacement = true, bool abortUnregistered = false, bool ignoreClose = false)
             {
                 this.register = register;
                 this.registerReplacement = registerReplacement;
                 this.abortUnregistered = abortUnregistered;
+                this.ignoreClose = ignoreClose;
                 listener.Start();
                 accepting = Task.Run(Accept);
             }
@@ -331,6 +357,7 @@ namespace AltTester.AltTesterSDK.Driver.Tests
                         var message = await peer.Socket.ReceiveAsync(new ArraySegment<byte>(bytes), stop.Token);
                         if (message.MessageType == WebSocketMessageType.Close)
                         {
+                            if (ignoreClose) await Task.Delay(Timeout.Infinite, stop.Token);
                             await peer.Socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", stop.Token);
                             return;
                         }

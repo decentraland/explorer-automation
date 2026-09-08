@@ -1,13 +1,13 @@
 {
-  "package": "AltTester-Driver.2.3.3-dcl.transport.3b2540f5.nupkg",
-  "version": "2.3.3-dcl.transport.3b2540f5",
-  "sha256": "e5df157c0fe21b723efb00286585faae98f8846b5629fee99f78272b47f86813",
+  "package": "AltTester-Driver.2.3.3-dcl.transport.1edf7a82.nupkg",
+  "version": "2.3.3-dcl.transport.1edf7a82",
+  "sha256": "64ee4274d100ecaed72acb1b09f0fb98708c0c265e343c1f32df3f0adbf9e303",
   "source_repository": "https://github.com/mikhail-dcl/AltTester-Unity-SDK",
-  "source_commit": "3b2540f507264eeb675bc7787400af485f7e6986",
+  "source_commit": "1edf7a829661f6e15c4c9cdf281c4fed0c241ff5",
   "unity_compatibility_base": "3c644489030a026eaf49c02eade0127ee975dbd0",
   "sdk": "10.0.303",
   "dll_sha256": {
-    "lib/net5.0/AltDriver.dll": "bbaf37be2b7010e4545e4001b6081ab7d6e42130b90aadc97fd5e144e36079e9",
-    "lib/netstandard2.0/AltDriver.dll": "78ee0f714a1713df9e5e3a182b07c1031c07da7adaf4bfb3219ccd31a426ce1b"
+    "lib/net5.0/AltDriver.dll": "973669f09fa3f6c68da3085687fe700c7d255254ca1d848bb9834a4a876e4d9e",
+    "lib/netstandard2.0/AltDriver.dll": "90346d53821b421137783c73c80dd25ebefbc50bd99613f591418ba471a88c17"
   }
 }
