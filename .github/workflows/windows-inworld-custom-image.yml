@@ -3,6 +3,11 @@ name: Windows InWorld custom-image benchmark
 on:
   workflow_call:
     inputs:
+      record_perf:
+        description: 'Capture per-test frame times and independent process progress (diagnostic only).'
+        required: false
+        default: false
+        type: boolean
       scope:
         description: 'What to split, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
@@ -95,6 +100,11 @@ on:
         type: boolean
   workflow_dispatch:
     inputs:
+      record_perf:
+        description: 'Capture per-test frame times and independent process progress (diagnostic only).'
+        required: false
+        default: false
+        type: boolean
       scope:
         description: 'What to split: ALL, or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
@@ -366,7 +376,9 @@ jobs:
       # with the bucket secret selected below, same as the macOS leg.
       PUBLIC_URL_PREFIX: ${{ github.repository == 'decentraland/explorer-automation' && vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL || vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
       ALT_VERBOSE_LOGS: 'false'
-      EXPLORER_PERF_RECORD: '0'
+      EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
+      EXPLORER_PERF_PER_TEST: '1'
+      EXPLORER_PERF_DIR: ${{ runner.temp }}/explorer-perf
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
       FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
       FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
@@ -919,6 +931,18 @@ jobs:
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Explorer started with PID $($explorerProcess.Id)"
 
+          if ($env:EXPLORER_PERF_RECORD -eq '1') {
+            try {
+              New-Item -ItemType Directory -Force -Path $env:EXPLORER_PERF_DIR | Out-Null
+              $monitorArgs = @('-NoProfile', '-File', "`"$env:GITHUB_WORKSPACE\explorer\ci\watch-explorer-performance.ps1`"",
+                '-ExplorerProcessId', $explorerProcess.Id, '-OwnerProcessId', $PID,
+                '-OutputDirectory', "`"$env:EXPLORER_PERF_DIR`"")
+              Start-Process powershell.exe -WindowStyle Hidden -ArgumentList $monitorArgs `
+                -RedirectStandardOutput (Join-Path $env:EXPLORER_PERF_DIR 'monitor.log') `
+                -RedirectStandardError (Join-Path $env:EXPLORER_PERF_DIR 'monitor-error.log') | Out-Null
+            } catch { Write-Host "::warning::Performance monitor unavailable: $_" }
+          }
+
           $appLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"
           if ($env:HANG_DUMP_PUBLIC_KEY) {
             $watchScript = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\watch-explorer-hang.ps1"
@@ -1149,6 +1173,15 @@ jobs:
         with:
           name: windows-custom-image-player-log-shard${{ matrix.index }}-${{ github.run_id }}
           path: ${{ steps.outputs.outputs.player_log }}
+          retention-days: 7
+
+      - name: Upload Windows performance diagnostics
+        if: always() && inputs.record_perf
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-inworld-perf-shard${{ matrix.index }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/explorer-perf
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Upload benchmark diagnostics

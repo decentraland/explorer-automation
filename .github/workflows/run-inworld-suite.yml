@@ -100,7 +100,7 @@ on:
         required: false
         default: ''
       record_perf:
-        description: 'Record fixture-level perf samples (PerfSampler). Off by default: paravirt numbers are unreliable.'
+        description: 'Capture diagnostic frame times: per test on Windows, per fixture on macOS.'
         type: boolean
         required: false
         default: false
@@ -1536,6 +1536,7 @@ jobs:
       scope: ${{ inputs.scope }}
       test_filter: ${{ inputs.filter != '' && inputs.filter || 'Category=InWorld' }}
       verification_screenshots: false
+      record_perf: ${{ inputs.record_perf }}
       # Same expression the macOS leg resolves COMMIT_SHA with, so both legs publish under
       # one commit prefix. Inlined rather than taken from that job's outputs, which would
       # serialize the two legs behind each other.

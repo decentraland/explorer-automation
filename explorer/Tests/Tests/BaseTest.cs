@@ -16,6 +16,8 @@ public abstract class BaseTest
     private string _perfCsvPath;
     private string _perfSummaryPath;
     private bool _perfStarted;
+    private PerformanceCapture _testPerformance;
+    private static bool _testPerformanceUnavailable;
 
     // SidebarView is a persistent-layer view: it reports Shown once per client process and
     // never hides again, so waiting on the signal is a startup gate — idempotent and
@@ -80,7 +82,8 @@ public abstract class BaseTest
         // chassis workflow only sets when explicitly asked (Windows runs, or a macOS run
         // dispatched with record_perf). Unset means the AutoPilot PerfSampler call is
         // skipped entirely, so builds without the perf module loaded don't blow up.
-        if (Environment.GetEnvironmentVariable(PERF_ENV) != "1") return;
+        if (Environment.GetEnvironmentVariable(PERF_ENV) != "1"
+            || Environment.GetEnvironmentVariable("EXPLORER_PERF_PER_TEST") == "1") return;
 
         var fixtureName = TestContext.CurrentContext.Test.ClassName ?? "unknown-fixture";
         // EXPLORER_PERF_DIR (set by chassis workflow) anchors output to a stable,
@@ -174,6 +177,7 @@ public abstract class BaseTest
     [AllureBefore("Set up before each test")]
     private void SetUpWithReporting()
     {
+        StartTestPerformance();
         if (ExceptionFromOneTimeSetUp != null)
         {
             Reporter.Log($"Fixture OneTimeSetUp failed earlier: {ExceptionFromOneTimeSetUp.Message}");
@@ -205,7 +209,9 @@ public abstract class BaseTest
         var testResult = TestContext.CurrentContext.Result.Outcome.Status;
         Reporter.Log($"Test {TestContext.CurrentContext.Test.Name} completed with status: {testResult}");
 
-        if (DriverSession.CheckCurrentResult())
+        DriverSession.CheckCurrentResult();
+        FinishTestPerformance();
+        if (DriverSession.IsLost)
         {
             Reporter.Log("Skipping cleanup: the AltTester session is unavailable");
             return;
@@ -214,6 +220,53 @@ public abstract class BaseTest
         // Screenshot every outcome (not just failures) so the Allure report carries the
         // final frame of each test for visual pass/skip/fail validation.
         Reporter.TakeScreenshot($"{TestContext.CurrentContext.Test.Name}_{testResult}");
+    }
+
+    private void StartTestPerformance()
+    {
+        _testPerformance = null;
+        if (Environment.GetEnvironmentVariable(PERF_ENV) != "1"
+            || Environment.GetEnvironmentVariable("EXPLORER_PERF_PER_TEST") != "1"
+            || _testPerformanceUnavailable || DriverSession.IsLost || ExceptionFromOneTimeSetUp != null) return;
+        try
+        {
+            _testPerformance = new PerformanceCapture(
+                Environment.GetEnvironmentVariable(PERF_DIR_ENV) ?? Path.Combine(Path.GetTempPath(), "explorer-perf"),
+                TestContext.CurrentContext.Test.FullName);
+            _testPerformance.Begin((csv, summary) => AltDriver.CallStaticMethod<string>(
+                "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "Begin", "DCL.Diagnostics.AutoPilot",
+                new object[] { csv, summary }));
+        }
+        catch (Exception ex)
+        {
+            _testPerformanceUnavailable = true;
+            Reporter.Log($"WARNING: per-test performance capture unavailable: {ex}");
+        }
+    }
+
+    private void FinishTestPerformance()
+    {
+        if (_testPerformance == null) return;
+        try
+        {
+            var message = TestContext.CurrentContext.Result.Message ?? "";
+            var transportFailed = DriverSession.IsLost || message.Contains("DriverDisconnectedException")
+                || message.Contains("CommandResponseTimeoutException") || message.Contains("NoAppConnectedException");
+            var summary = _testPerformance.Finish(TestContext.CurrentContext.Result.Outcome.ToString(),
+                transportFailed, () => AltDriver.CallStaticMethod<string>(
+                    "DCL.PerformanceAndDiagnostics.AutoPilot.PerfSampler", "End", "DCL.Diagnostics.AutoPilot", new object[] { }));
+            _testPerformanceUnavailable |= !_testPerformance.Complete;
+            Reporter.Log($"PERF: {summary}");
+            AllureApi.AddAttachment("Performance diagnostics", "text/plain", System.Text.Encoding.UTF8.GetBytes(summary));
+            AllureApi.AddAttachment("Performance test window", "application/json", File.ReadAllBytes(_testPerformance.MetadataPath));
+            var csv = _testPerformance.ReadCsv();
+            if (csv.Length > 0) AllureApi.AddAttachment("perf.csv", "text/csv", csv);
+        }
+        catch (Exception ex)
+        {
+            _testPerformanceUnavailable = true;
+            Reporter.Log($"WARNING: performance report unavailable: {ex}");
+        }
     }
 
     #endregion
