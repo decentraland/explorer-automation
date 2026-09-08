@@ -25,3 +25,8 @@ A capture is evidence of a progress gap; it does not by itself establish a deadl
 
 For a controlled comparison, set `unity_log_notifications` to false. The normal
 Player.log artifact remains available; per-test forwarded log attachments stop.
+
+If the dump tool fails to launch, dispatch with `hang_capture_preflight=true`.
+This skips Explorer and tests, checks the signed tool against an owned idle process,
+and collects matching execution-policy events. Only logs are uploaded; the temporary
+probe dump is deleted. No permissions or protection settings are changed.

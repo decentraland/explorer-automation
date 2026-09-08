@@ -100,6 +100,11 @@ on:
         type: boolean
   workflow_dispatch:
     inputs:
+      hang_capture_preflight:
+        description: 'Check dump-tool permissions on an idle runner without running Explorer or tests.'
+        required: false
+        default: false
+        type: boolean
       record_perf:
         description: 'Capture per-test frame times and independent process progress (diagnostic only).'
         required: false
@@ -186,11 +191,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  capture-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.hang_capture_preflight }}
+    name: Check hang capture permissions
+    runs-on: win-gpu-t4-explorer
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ github.sha }}
+      - name: Check capture tool
+        shell: powershell
+        run: ./explorer/ci/test-hang-capture-permissions.ps1 -OutputDirectory ./capture-preflight
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hang-capture-preflight-${{ github.run_id }}
+          path: capture-preflight/
+          if-no-files-found: error
+
   # The only place a shard matrix is built, for every origin of this leg â€” a PR run that
   # resolved a scope, a push to main, a dispatch. Callers pass what to split, never how it
   # splits: the tool owns the packing and the shard count, so no path can plan differently
   # and no path can end up unsplit by omission.
   plan:
+    if: ${{ !inputs.hang_capture_preflight }}
     name: Plan shards
     runs-on: ubuntu-latest
     outputs:
