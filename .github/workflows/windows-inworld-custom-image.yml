@@ -13,6 +13,26 @@ on:
         required: false
         default: ''
         type: string
+      use_bitblt_swapchain:
+        description: 'Diagnostic D3D11 BitBlt swapchain instead of the default flip model.'
+        required: false
+        default: false
+        type: boolean
+      unity_log_notifications:
+        description: 'Forward Unity logs over AltTester for per-test attachments.'
+        required: false
+        default: true
+        type: boolean
+      hang_dump_public_key:
+        description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
+        required: false
+        default: ''
+        type: string
+      spawn_position:
+        description: 'Public-world spawn parcel. Ignored when a fixture URL is configured.'
+        required: false
+        default: '100,100'
+        type: string
       verification_screenshots:
         description: 'Capture intermediate verification screenshots.'
         required: false
@@ -85,6 +105,26 @@ on:
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
         type: string
+      use_bitblt_swapchain:
+        description: 'Diagnostic D3D11 BitBlt swapchain instead of the default flip model.'
+        required: false
+        default: false
+        type: boolean
+      unity_log_notifications:
+        description: 'Forward Unity logs over AltTester for per-test attachments.'
+        required: false
+        default: true
+        type: boolean
+      hang_dump_public_key:
+        description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
+        required: false
+        default: ''
+        type: string
+      spawn_position:
+        description: 'Public-world spawn parcel. Ignored when a fixture URL is configured.'
+        required: false
+        default: '100,100'
+        type: string
       verification_screenshots:
         description: 'Capture intermediate verification screenshots (slow; final test screenshots remain enabled).'
         required: false
@@ -136,7 +176,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The only place a shard matrix is built, for every origin of this leg — a PR run that
+  # The only place a shard matrix is built, for every origin of this leg â€” a PR run that
   # resolved a scope, a push to main, a dispatch. Callers pass what to split, never how it
   # splits: the tool owns the packing and the shard count, so no path can plan differently
   # and no path can end up unsplit by omission.
@@ -214,14 +254,14 @@ jobs:
           PLAN="$RUNNER_TEMP/shards.json"
 
           if ! dotnet build explorer/ci/ScopeInWorldTests -c Release --nologo -v quiet; then
-            echo "::warning::Scope tool did not build — the suite runs on one runner."
+            echo "::warning::Scope tool did not build â€” the suite runs on one runner."
             exit 0
           fi
 
-          # The packer's invariants — a disjoint cover, no token containing another, no empty
-          # shard — are checked before a split it produced is trusted with the run.
+          # The packer's invariants â€” a disjoint cover, no token containing another, no empty
+          # shard â€” are checked before a split it produced is trusted with the run.
           if ! dotnet "$DLL" --self-test; then
-            echo "::warning::Golden closure check did not pass — the suite runs on one runner."
+            echo "::warning::Golden closure check did not pass â€” the suite runs on one runner."
             exit 0
           fi
 
@@ -242,7 +282,7 @@ jobs:
           fi
 
           if [ ! -f "$PLAN" ]; then
-            echo "::warning::No shard plan was written — the suite runs on one runner."
+            echo "::warning::No shard plan was written â€” the suite runs on one runner."
             exit 0
           fi
 
@@ -271,7 +311,7 @@ jobs:
           # Never publish something the matrix cannot parse: an expression error there fails
           # the leg before any step of it can say why. An empty output falls back instead.
           if ! printf '%s' "$SHARD_PLAN" | jq -e 'type == "array" and length > 0' > /dev/null 2>&1; then
-            echo "::warning::Planned matrix is not a non-empty array — the suite runs on one runner."
+            echo "::warning::Planned matrix is not a non-empty array â€” the suite runs on one runner."
             exit 0
           fi
 
@@ -285,7 +325,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   benchmark:
-    # Explicit, or the matrix appends every value it carries — including the whole filter.
+    # Explicit, or the matrix appends every value it carries â€” including the whole filter.
     name: Windows InWorld tests ${{ matrix.name }}
     needs: plan
     # A plan job that died still leaves a runnable leg: the fallback below is the whole
@@ -304,6 +344,11 @@ jobs:
       # Deliberately not BUILD_URL: a job-level env key wins over the value Resolve build URL
       # writes to GITHUB_ENV.
       BUILD_URL_INPUT: ${{ inputs.build_url }}
+      SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
+      HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
+      USE_BITBLT_SWAPCHAIN: ${{ inputs.use_bitblt_swapchain && 'true' || 'false' }}
+      UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
+      ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       WINDOWS_SHARD: ${{ matrix.name }}
       SHARD_INDEX: ${{ matrix.index }}
@@ -802,6 +847,18 @@ jobs:
           # connected and intentionally skips Explorer launch. Launch the
           # exact pre-installed build ourselves and verify its AltTester server
           # receives a command before handing control to NUnit.
+          if ($env:HANG_DUMP_PUBLIC_KEY) {
+            $dumpTools = Join-Path $env:RUNNER_TEMP 'explorer-dump-tools'
+            $dumpZip = Join-Path $env:RUNNER_TEMP 'explorer-procdump.zip'
+            Invoke-WebRequest 'https://download.sysinternals.com/files/Procdump.zip' -OutFile $dumpZip -UseBasicParsing
+            Expand-Archive $dumpZip $dumpTools -Force
+            $procDump = Join-Path $dumpTools 'procdump64.exe'
+            $signature = Get-AuthenticodeSignature $procDump
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation') {
+              throw 'ProcDump did not have a valid Microsoft signature'
+            }
+          }
+
           $explorerRoot = Join-Path $env:LOCALAPPDATA "Decentraland\MetaForge\explorer"
           $explorer = Get-ChildItem $explorerRoot -Recurse -Filter "Decentraland.exe" -File |
             Where-Object { $_.FullName -like "*$env:BUILD_TAG*" } |
@@ -818,11 +875,14 @@ jobs:
           # Unity arg placed after one silently overwrites it: -screen-fullscreen 0 landing after
           # --resolution is how resolution became 0. Single-dash args first, where there is no
           # key to clobber.
+          if ($env:SPAWN_POSITION_INPUT -notmatch '^-?\d{1,3},-?\d{1,3}$') {
+            throw "spawn_position must be a parcel coordinate such as 100,100"
+          }
           $explorerArgs = @(
             '-screen-width', $env:EXPLORER_RENDER_WIDTH,
             '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
             '-screen-fullscreen', '0',
-            '--skip-version-check', '--alttester', '--position', '0,0', '--dclenv', 'org',
+            '--skip-version-check', '--alttester', '--position', $env:SPAWN_POSITION_INPUT, '--dclenv', 'org',
             '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
             '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
             # Load-bearing, not cosmetic. Clears FeatureId.BugReport, so DynamicWorldContainer
@@ -851,12 +911,27 @@ jobs:
             Write-Host "Using Comms Gatekeeper: $($env:FIXTURE_BASE_URL)/comms-gatekeeper"
             Write-Host "Using Social RPC: $friendsApiUrl"
           }
+          if ($env:USE_BITBLT_SWAPCHAIN -eq 'true') {
+            $explorerArgs = @('-force-d3d11-bitblt-model') + $explorerArgs
+          }
           Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
           $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Explorer started with PID $($explorerProcess.Id)"
 
           $appLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"
+          if ($env:HANG_DUMP_PUBLIC_KEY) {
+            $watchScript = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\watch-explorer-hang.ps1"
+            $watchOutput = Join-Path $env:GITHUB_WORKSPACE "benchmark-diagnostics"
+            [IO.Directory]::CreateDirectory($watchOutput) | Out-Null
+            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+              '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchScript`"",
+              '-ExplorerProcessId', $explorerProcess.Id, '-LogPath', "`"$appLog`"",
+              '-ProcDumpPath', "`"$procDump`"", '-OutputDirectory', "`"$watchOutput`"", '-PublicKey', $env:HANG_DUMP_PUBLIC_KEY
+            ) -RedirectStandardOutput (Join-Path $watchOutput 'hang-monitor.log') `
+              -RedirectStandardError (Join-Path $watchOutput 'hang-monitor-error.log') | Out-Null
+          }
+
           $connectDeadline = [DateTime]::UtcNow.AddSeconds(120)
           $appConnected = $false
           do {
@@ -868,6 +943,7 @@ jobs:
           } while (-not $appConnected -and [DateTime]::UtcNow -lt $connectDeadline)
           if (-not $appConnected) { throw "Explorer did not connect to AltTester within 120 seconds" }
           Write-Host "Explorer exchanged commands with AltTester; starting NUnit suite"
+
 
           # No target: run against the explicitly launched Explorer session.
           $ErrorActionPreference = "Continue"
@@ -1043,6 +1119,17 @@ jobs:
           )
           foreach ($file in $diagnosticFiles) {
             if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
+          }
+          if ($env:HANG_DUMP_PUBLIC_KEY) {
+            Get-ChildItem $env:GITHUB_WORKSPACE -Filter AltTester.log -File -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName $diagnostics -Force }
+            $localLow = Join-Path $env:USERPROFILE "AppData\LocalLow"
+            Get-ChildItem $localLow -Filter Player.log -File -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'AltTester' } |
+              ForEach-Object {
+                $name = 'desktop-' + ($_.Directory.Name -replace '[^a-zA-Z0-9.-]', '_') + '.log'
+                Copy-Item $_.FullName (Join-Path $diagnostics $name) -Force
+              }
           }
 
       # Kept alongside the S3 publish, same as the macOS leg: artifact-url backs this leg's

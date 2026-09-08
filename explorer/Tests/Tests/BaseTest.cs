@@ -11,6 +11,7 @@ public abstract class BaseTest
     private static bool _bootedInWorld;
 
     protected Exception ExceptionFromOneTimeSetUp;
+    private Exception _terminalBootstrapFailure;
 
     private string _perfCsvPath;
     private string _perfSummaryPath;
@@ -21,19 +22,6 @@ public abstract class BaseTest
     // near-free on every call after the first. See EnsureInWorld.
     protected const double SIDEBAR_VIEW_SIGNAL_TIMEOUT = 30D;
 
-    // A CommandResponseTimeoutException means the driver stopped hearing back from the client.
-    // Nothing recovers from that mid-run, and every later command pays the full response ceiling
-    // — 300s in GlobalSetup — before failing the same way. Left alone that is 300s per remaining
-    // fixture, which times the whole step out and buries the one real event under a run's worth
-    // of identical failures. Latch it and stop talking to the driver instead.
-    private static volatile bool _driverLost;
-
-    private const string DRIVER_LOST_MESSAGE =
-        "AltTester stopped responding earlier in this run, so this test never ran. "
-        + "Look at the first failure in the run, not this one.";
-
-    protected static bool DriverLost => _driverLost;
-
     protected ViewContainer Views => ViewContainer.Instance;
     protected AltDriver AltDriver => CommonStuff.AltDriver;
 
@@ -43,12 +31,7 @@ public abstract class BaseTest
     [AllureBefore("Ensure the player is in world")]
     public void OneTimeSetUp()
     {
-        // Nothing left to talk to, so do not spend a command finding that out again.
-        if (DriverLost)
-        {
-            ExceptionFromOneTimeSetUp = new AssertionException(DRIVER_LOST_MESSAGE);
-            return;
-        }
+        if (DriverSession.IsLost) return;
 
         var inWorldBootstrapStarted = false;
         try
@@ -61,7 +44,12 @@ public abstract class BaseTest
         }
         catch (Exception ex)
         {
-            NoteIfDriverLost(ex);
+            if (DriverSession.Record(ex))
+            {
+                // Report one test failure through SetUp; a fixture-level failure hides it in Allure.
+                _terminalBootstrapFailure = ex;
+                return;
+            }
 
             // A failed in-world bootstrap is a process-wide infrastructure failure, not a
             // test-level assertion. Continuing would make every remaining fixture wait for the
@@ -134,7 +122,7 @@ public abstract class BaseTest
     {
         // PerfSampler.End is a driver call, and a lost driver would make it cost the response
         // ceiling to learn what the run already knows.
-        if (!_perfStarted || _driverLost) return;
+        if (!_perfStarted || DriverSession.CheckCurrentResult()) return;
 
         try
         {
@@ -172,8 +160,19 @@ public abstract class BaseTest
     }
 
     [SetUp]
-    [AllureBefore("Set up before each test")]
     public void SetUp()
+    {
+        var bootstrapFailure = Interlocked.Exchange(ref _terminalBootstrapFailure, null);
+        if (bootstrapFailure != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(bootstrapFailure).Throw();
+
+        // Allure wraps exceptions, but NUnit only treats a direct IgnoreException as a skip.
+        DriverSession.SkipIfLost();
+        SetUpWithReporting();
+    }
+
+    [AllureBefore("Set up before each test")]
+    private void SetUpWithReporting()
     {
         if (ExceptionFromOneTimeSetUp != null)
         {
@@ -206,17 +205,9 @@ public abstract class BaseTest
         var testResult = TestContext.CurrentContext.Result.Outcome.Status;
         Reporter.Log($"Test {TestContext.CurrentContext.Test.Name} completed with status: {testResult}");
 
-        // The first loss usually happens inside a test body, not in a fixture's setup, so this is
-        // the earliest place the run can notice. NUnit has already reduced it to text by now.
-        if (!_driverLost && testResult == NUnit.Framework.Interfaces.TestStatus.Failed
-            && TestContext.CurrentContext.Result.Message?.Contains(nameof(CommandResponseTimeoutException)) == true)
-            MarkDriverLost();
-
-        // A screenshot is a command too, so once the driver is gone it buys nothing and costs
-        // the response ceiling per test.
-        if (_driverLost)
+        if (DriverSession.CheckCurrentResult())
         {
-            Reporter.Log("Skipping the final-frame screenshot: AltTester is not responding");
+            Reporter.Log("Skipping cleanup: the AltTester session is unavailable");
             return;
         }
 
@@ -318,29 +309,6 @@ public abstract class BaseTest
         ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         _bootedInWorld = true;
         Reporter.Log("Player is in-world and main menu is ready");
-    }
-
-    /// <summary>
-    /// Latches the lost-driver flag when <paramref name="exception"/> is a response timeout.
-    /// Walks the inner chain: the [AllureStep] aspect invokes through reflection, so the real
-    /// exception arrives wrapped in a TargetInvocationException per decorated frame it crossed.
-    /// </summary>
-    private static void NoteIfDriverLost(Exception exception)
-    {
-        for (var e = exception; e != null; e = e.InnerException)
-        {
-            if (e is not CommandResponseTimeoutException) continue;
-
-            MarkDriverLost();
-            return;
-        }
-    }
-
-    private static void MarkDriverLost()
-    {
-        _driverLost = true;
-        Reporter.Log("AltTester stopped responding — abandoning the rest of the run rather than "
-                     + "spending the command ceiling per remaining test. The first failure is the real one.");
     }
 
     private static bool InfrastructureFailFastEnabled() =>

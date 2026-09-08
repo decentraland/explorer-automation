@@ -136,13 +136,15 @@ public class ChatPanelView() : BaseView(new(By.NAME, "ChatPanel"))
             try
             {
                 new Locatable(By.PATH, entryPath + "/ChatReactionsRow_Own(Clone)").WaitFor(10);
-                DismissReactionSelectorIfOpen();
-                return;
             }
-            catch when (attempt < ATTEMPTS)
+            catch (Exception ex) when (attempt < ATTEMPTS && DriverSession.Unwrap(ex) is AssertionException)
             {
                 Reporter.Log("Reaction row did not appear — pool likely re-bound, retrying");
+                continue;
             }
+
+            DismissReactionSelectorIfOpen();
+            return;
         }
     }
 

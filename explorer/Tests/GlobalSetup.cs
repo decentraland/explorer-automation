@@ -46,13 +46,15 @@ public class GlobalSetup
     [AllureBefore("Start AltTester Driver")]
     public void StartDriver()
     {
+        DriverSession.Reset();
         Reporter.Log($"Connecting to AltTester at 127.0.0.1:13000");
 
         CommonStuff.AltDriver = new AltDriver(
             host: "127.0.0.1",
             port: 13000,
             appName: "__default__",
-            enableLogging: false,
+            enableLogging: string.Equals(Environment.GetEnvironmentVariable("ALT_DRIVER_LOGS"),
+                "true", StringComparison.OrdinalIgnoreCase),
             connectTimeout: 5
         );
 

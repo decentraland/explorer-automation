@@ -122,7 +122,7 @@ public class ChatTests : BaseTest
         // verification shots so this plumbing doesn't attach screenshots, and bail if the
         // fixture never made it in-world.
         Reporter.StopVerificationShots();
-        if (ExceptionFromOneTimeSetUp != null)
+        if (DriverSession.CheckCurrentResult() || ExceptionFromOneTimeSetUp != null)
             return;
 
         // If the test (or its failure path) left the chat open, close it via the sidebar

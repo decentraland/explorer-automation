@@ -23,6 +23,8 @@ public static class Reporter
 
     public static void TakeScreenshot(string customName = null)
     {
+        if (DriverSession.CheckCurrentResult()) return;
+
         if (CommonStuff.AltDriver == null)
         {
             Log("Cannot take screenshot: AltDriver not set");
@@ -52,6 +54,7 @@ public static class Reporter
         }
         catch (Exception ex)
         {
+            if (DriverSession.Record(ex)) throw;
             Log($"Failed to take screenshot: {ex.Message}");
         }
     }
@@ -107,7 +110,7 @@ public static class Reporter
     /// </summary>
     public static void TakeVerificationShot(string label)
     {
-        if (!_verificationShotsEnabled || !_verificationShotsArmed || CommonStuff.AltDriver == null)
+        if (!_verificationShotsEnabled || !_verificationShotsArmed || DriverSession.IsLost || CommonStuff.AltDriver == null)
             return;
 
         try
@@ -121,6 +124,7 @@ public static class Reporter
         }
         catch (Exception ex)
         {
+            if (DriverSession.Record(ex)) throw;
             Log($"Failed to take verification screenshot '{label}': {ex.Message}");
         }
     }
@@ -178,6 +182,13 @@ public static class Reporter
     [AllureBefore("Setup Unity log listener")]
     public static void SetupUnityLogListener()
     {
+        if (string.Equals(Environment.GetEnvironmentVariable("UNITY_LOG_NOTIFICATIONS"),
+                "false", StringComparison.OrdinalIgnoreCase))
+        {
+            Log("Unity log forwarding disabled; use the Player.log artifact.");
+            return;
+        }
+
         if (CommonStuff.AltDriver != null)
         {
             Reporter.Log("Setting up Unity log listener");
