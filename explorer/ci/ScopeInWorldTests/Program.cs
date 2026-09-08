@@ -77,7 +77,7 @@ internal static class Program
         }
 
         if (selfTest)
-            return GoldenCases.Run(graph);
+            return GoldenCases.Run(graph, compilation, repoRoot);
 
         var planPath = Option(args, "--shard-plan");
 
