@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      use_bitblt_swapchain:
+        description: 'Diagnostic D3D11 BitBlt swapchain instead of the default flip model.'
+        required: false
+        default: false
+        type: boolean
       unity_log_notifications:
         description: 'Forward Unity logs over AltTester for per-test attachments.'
         required: false
@@ -100,6 +105,11 @@ on:
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
         type: string
+      use_bitblt_swapchain:
+        description: 'Diagnostic D3D11 BitBlt swapchain instead of the default flip model.'
+        required: false
+        default: false
+        type: boolean
       unity_log_notifications:
         description: 'Forward Unity logs over AltTester for per-test attachments.'
         required: false
@@ -166,7 +176,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The only place a shard matrix is built, for every origin of this leg — a PR run that
+  # The only place a shard matrix is built, for every origin of this leg â€” a PR run that
   # resolved a scope, a push to main, a dispatch. Callers pass what to split, never how it
   # splits: the tool owns the packing and the shard count, so no path can plan differently
   # and no path can end up unsplit by omission.
@@ -244,14 +254,14 @@ jobs:
           PLAN="$RUNNER_TEMP/shards.json"
 
           if ! dotnet build explorer/ci/ScopeInWorldTests -c Release --nologo -v quiet; then
-            echo "::warning::Scope tool did not build — the suite runs on one runner."
+            echo "::warning::Scope tool did not build â€” the suite runs on one runner."
             exit 0
           fi
 
-          # The packer's invariants — a disjoint cover, no token containing another, no empty
-          # shard — are checked before a split it produced is trusted with the run.
+          # The packer's invariants â€” a disjoint cover, no token containing another, no empty
+          # shard â€” are checked before a split it produced is trusted with the run.
           if ! dotnet "$DLL" --self-test; then
-            echo "::warning::Golden closure check did not pass — the suite runs on one runner."
+            echo "::warning::Golden closure check did not pass â€” the suite runs on one runner."
             exit 0
           fi
 
@@ -272,7 +282,7 @@ jobs:
           fi
 
           if [ ! -f "$PLAN" ]; then
-            echo "::warning::No shard plan was written — the suite runs on one runner."
+            echo "::warning::No shard plan was written â€” the suite runs on one runner."
             exit 0
           fi
 
@@ -301,7 +311,7 @@ jobs:
           # Never publish something the matrix cannot parse: an expression error there fails
           # the leg before any step of it can say why. An empty output falls back instead.
           if ! printf '%s' "$SHARD_PLAN" | jq -e 'type == "array" and length > 0' > /dev/null 2>&1; then
-            echo "::warning::Planned matrix is not a non-empty array — the suite runs on one runner."
+            echo "::warning::Planned matrix is not a non-empty array â€” the suite runs on one runner."
             exit 0
           fi
 
@@ -315,7 +325,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   benchmark:
-    # Explicit, or the matrix appends every value it carries — including the whole filter.
+    # Explicit, or the matrix appends every value it carries â€” including the whole filter.
     name: Windows InWorld tests ${{ matrix.name }}
     needs: plan
     # A plan job that died still leaves a runnable leg: the fallback below is the whole
@@ -336,6 +346,7 @@ jobs:
       BUILD_URL_INPUT: ${{ inputs.build_url }}
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
+      USE_BITBLT_SWAPCHAIN: ${{ inputs.use_bitblt_swapchain && 'true' || 'false' }}
       UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
       ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
@@ -859,6 +870,7 @@ jobs:
             '-screen-width', $env:EXPLORER_RENDER_WIDTH,
             '-screen-height', $env:EXPLORER_RENDER_HEIGHT,
             '-screen-fullscreen', '0',
+            $(if ($env:USE_BITBLT_SWAPCHAIN -eq 'true') { '-force-d3d11-bitblt-model' }),
             '--skip-version-check', '--alttester', '--position', $env:SPAWN_POSITION_INPUT, '--dclenv', 'org',
             '--landscape-terrain-enabled', 'false', '--skybox-time-enabled', 'false',
             '--graphics', 'low', '--skip-minimum-specs-screen', '--use-log-matrix', $logMatrix,
@@ -889,6 +901,7 @@ jobs:
             Write-Host "Using Social RPC: $friendsApiUrl"
           }
           Write-Host "Launching: $($explorer.FullName) $($explorerArgs -join ' ')"
+          $explorerArgs = @($explorerArgs | Where-Object { $null -ne $_ })
           $explorerProcess = Start-Process -FilePath $explorer.FullName -ArgumentList $explorerArgs -PassThru
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Explorer started with PID $($explorerProcess.Id)"

@@ -26,6 +26,7 @@ function Save-EncryptedDump($process, [string]$stem) {
     $rawPath = Join-Path ([IO.Path]::GetTempPath()) ($stem + '-' + [Guid]::NewGuid().ToString('N') + '.dmp')
     $encryptedPath = Join-Path $OutputDirectory ($stem + '.dmp.enc')
     try {
+        Write-Output "Starting dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         $file = [IO.File]::Create($rawPath)
         try {
             # Thread stacks and module metadata, without the process heap.
@@ -34,6 +35,7 @@ function Save-EncryptedDump($process, [string]$stem) {
                 [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero)
             if (-not $ok) { throw "MiniDumpWriteDump failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
         } finally { $file.Dispose() }
+        Write-Output "Finished dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         $aes = [Security.Cryptography.Aes]::Create()
         $aes.GenerateKey()
         $aes.GenerateIV()
