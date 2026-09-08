@@ -24,14 +24,14 @@ internal static class DriverSession
 
     internal static bool Record(Exception exception)
     {
-        if (exception is AggregateException aggregate)
-        {
-            foreach (var inner in aggregate.InnerExceptions)
-                if (Record(inner)) return true;
-        }
-
         for (var error = exception; error != null; error = error.InnerException)
         {
+            if (error is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions)
+                    if (Record(inner)) return true;
+            }
+
             if (error is CommandResponseTimeoutException
                 || error is AltException { Message: "Driver disconnected" })
             {

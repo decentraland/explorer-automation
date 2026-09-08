@@ -43,6 +43,13 @@ public class DriverSessionTests
             new TargetInvocationException(new AltException("Driver disconnected")))), Is.True);
     }
 
+    [Test]
+    public void WrappedAggregateExaminesEveryInnerException()
+    {
+        var errors = new AggregateException(new InvalidOperationException(), new CommandResponseTimeoutException());
+        Assert.That(DriverSession.Record(new TargetInvocationException(errors)), Is.True);
+    }
+
     [TestCase("Object not found")]
     [TestCase("Driver disconnected unexpectedly in test data")]
     public void OtherAltErrorsDoNotPoisonSession(string message)
