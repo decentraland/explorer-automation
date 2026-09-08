@@ -1,0 +1,38 @@
+name: Test local AltTester driver
+on:
+  pull_request:
+    paths:
+      - 'NuGet.Config'
+      - 'packages/nuget/**'
+      - 'explorer/Driver.Transport.Tests/**'
+      - 'explorer/Tests/Tests.csproj'
+      - 'explorer/Tests/GlobalSetup.cs'
+      - '.github/workflows/local-driver-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transport:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore the vendored driver without a warm package cache
+        shell: bash
+        run: dotnet restore explorer/Driver.Transport.Tests/Driver.Transport.Tests.csproj --packages "$RUNNER_TEMP/local-driver-packages" --no-cache
+      - name: Test package identity and transport
+        run: dotnet test explorer/Driver.Transport.Tests/Driver.Transport.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=transport.trx"
+      - name: Build automation with the local driver
+        run: dotnet build explorer/Tests/Tests.csproj --configuration Release
+      - name: Preserve transport results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-driver-tests-${{ matrix.os }}
+          path: explorer/Driver.Transport.Tests/TestResults/*.trx

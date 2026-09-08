@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <PackageReference Include="Allure.NUnit" Version="2.14.1" />
-    <PackageReference Include="AltTester-Driver" Version="2.3.0" />
+    <PackageReference Include="AltTester-Driver" Version="[2.3.3-dcl.transport.3b2540f5]" />
     <PackageReference Include="coverlet.collector" Version="8.0.1" />
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
     <PackageReference Include="MailKit" Version="4.16.0" />
