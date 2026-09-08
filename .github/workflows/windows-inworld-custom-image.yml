@@ -366,7 +366,7 @@ jobs:
     needs: plan
     # A plan job that died still leaves a runnable leg: the fallback below is the whole
     # selection on one runner, which is the same answer it gives when there is nothing to split.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.hang_capture_preflight }}
     runs-on: win-gpu-t4-explorer
     strategy:
       fail-fast: false
