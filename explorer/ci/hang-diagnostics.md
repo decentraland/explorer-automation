@@ -4,10 +4,11 @@ For a diagnostic dispatch of `windows-inworld-custom-image.yml`, set
 `hang_dump_public_key` to a base64-encoded RSA public-key XML (2048 bits or more).
 Keep the corresponding private-key XML locally, outside the repository.
 
+The workflow downloads and validates Microsoft ProcDump when capture is requested.
 The optional monitor captures up to two stack minidumps after 60 seconds without
 AltTester log progress. Idle tests can also trigger captures. It records process
 CPU, memory, and thread counts, and enables driver/desktop connection logs.
-No heap is requested, but stacks can contain session data, so dumps are encrypted
+Capture uses a process clone and a 20-second capture timeout. No heap is requested, but stacks can contain session data, so dumps are encrypted
 with AES and authenticated with HMAC before reaching the diagnostic artifact.
 Only the encryption public key is sent to CI. Raw temporary dumps are deleted
 and are outside the artifact directory.

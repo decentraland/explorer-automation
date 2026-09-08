@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$LogPath,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [Parameter(Mandatory=$true)][string]$PublicKey,
+    [Parameter(Mandatory=$true)][string]$ProcDumpPath,
     [int]$StallSeconds = 60,
     [int]$MaxDumps = 2
 )
@@ -13,28 +14,16 @@ $started = $target.StartTime
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $rsa = New-Object Security.Cryptography.RSACryptoServiceProvider
 $rsa.FromXmlString([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($PublicKey)))
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class ExplorerHangDump {
-    [DllImport("dbghelp.dll", SetLastError=true)]
-    public static extern bool MiniDumpWriteDump(IntPtr process, uint processId,
-        IntPtr file, uint flags, IntPtr exception, IntPtr streams, IntPtr callback);
-}
-"@
 function Save-EncryptedDump($process, [string]$stem) {
     $rawPath = Join-Path ([IO.Path]::GetTempPath()) ($stem + '-' + [Guid]::NewGuid().ToString('N') + '.dmp')
     $encryptedPath = Join-Path $OutputDirectory ($stem + '.dmp.enc')
     try {
         Write-Output "Starting dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
-        $file = [IO.File]::Create($rawPath)
-        try {
-            # Thread stacks and module metadata, without the process heap.
-            $ok = [ExplorerHangDump]::MiniDumpWriteDump($process.Handle, $process.Id,
-                $file.SafeFileHandle.DangerousGetHandle(), 0x1020,
-                [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero)
-            if (-not $ok) { throw "MiniDumpWriteDump failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
-        } finally { $file.Dispose() }
+        # Capture a clone so writing the dump does not hold the live player's threads.
+        & $ProcDumpPath -accepteula -r 1 -a -at 20 -mc 1020 $process.Id $rawPath | Out-Null
+        if ($LASTEXITCODE -notin @(0, 1) -or -not (Test-Path -LiteralPath $rawPath)) {
+            throw "Clone dump capture failed with exit code $LASTEXITCODE"
+        }
         Write-Output "Finished dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         $aes = [Security.Cryptography.Aes]::Create()
         $aes.GenerateKey()
