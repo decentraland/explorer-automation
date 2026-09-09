@@ -3,6 +3,16 @@ name: Windows InWorld custom-image benchmark
 on:
   workflow_call:
     inputs:
+      record_perf:
+        description: 'Capture per-test frame times and independent process progress (diagnostic only).'
+        required: false
+        default: true
+        type: boolean
+      main_thread_diagnostics:
+        description: 'Enable main-thread stage sampling in a compatible diagnostic AltTester SDK build.'
+        required: false
+        default: false
+        type: boolean
       scope:
         description: 'What to split, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
@@ -95,6 +105,21 @@ on:
         type: boolean
   workflow_dispatch:
     inputs:
+      hang_capture_preflight:
+        description: 'Check dump-tool permissions on an idle runner without running Explorer or tests.'
+        required: false
+        default: false
+        type: boolean
+      record_perf:
+        description: 'Capture per-test frame times and independent process progress (diagnostic only).'
+        required: false
+        default: true
+        type: boolean
+      main_thread_diagnostics:
+        description: 'Enable main-thread stage sampling in a compatible diagnostic AltTester SDK build.'
+        required: false
+        default: false
+        type: boolean
       scope:
         description: 'What to split: ALL, or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
@@ -114,6 +139,11 @@ on:
         description: 'Forward Unity logs over AltTester for per-test attachments.'
         required: false
         default: true
+        type: boolean
+      hang_capture_startup:
+        description: 'Capture one encrypted baseline stack immediately after Explorer launch.'
+        required: false
+        default: false
         type: boolean
       hang_dump_public_key:
         description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
@@ -176,11 +206,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  capture-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.hang_capture_preflight }}
+    name: Check hang capture permissions
+    runs-on: win-gpu-t4-explorer
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ github.sha }}
+      - name: Check capture tool
+        shell: powershell
+        run: ./explorer/ci/test-hang-capture-permissions.ps1 -OutputDirectory ./capture-preflight
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hang-capture-preflight-${{ github.run_id }}
+          path: capture-preflight/
+          if-no-files-found: error
+
   # The only place a shard matrix is built, for every origin of this leg â€” a PR run that
   # resolved a scope, a push to main, a dispatch. Callers pass what to split, never how it
   # splits: the tool owns the packing and the shard count, so no path can plan differently
   # and no path can end up unsplit by omission.
   plan:
+    if: ${{ !inputs.hang_capture_preflight }}
     name: Plan shards
     runs-on: ubuntu-latest
     outputs:
@@ -330,7 +381,7 @@ jobs:
     needs: plan
     # A plan job that died still leaves a runnable leg: the fallback below is the whole
     # selection on one runner, which is the same answer it gives when there is nothing to split.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.hang_capture_preflight }}
     runs-on: win-gpu-t4-explorer
     strategy:
       fail-fast: false
@@ -346,9 +397,11 @@ jobs:
       BUILD_URL_INPUT: ${{ inputs.build_url }}
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
+      HANG_CAPTURE_STARTUP: ${{ inputs.hang_capture_startup && 'true' || 'false' }}
+      ALTTESTER_MAIN_THREAD_DIAGNOSTICS: ${{ inputs.main_thread_diagnostics && '1' || '0' }}
       USE_BITBLT_SWAPCHAIN: ${{ inputs.use_bitblt_swapchain && 'true' || 'false' }}
       UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
-      ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
+      ALT_DRIVER_LOGS: ${{ (inputs.hang_dump_public_key != '' || inputs.main_thread_diagnostics) && 'true' || 'false' }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       WINDOWS_SHARD: ${{ matrix.name }}
       SHARD_INDEX: ${{ matrix.index }}
@@ -366,7 +419,8 @@ jobs:
       # with the bucket secret selected below, same as the macOS leg.
       PUBLIC_URL_PREFIX: ${{ github.repository == 'decentraland/explorer-automation' && vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL || vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
       ALT_VERBOSE_LOGS: 'false'
-      EXPLORER_PERF_RECORD: '0'
+      EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
+      EXPLORER_PERF_PER_TEST: '1'
       VERIFY_SCREENSHOTS: ${{ inputs.verification_screenshots && '1' || '0' }}
       FIXTURE_BASE_URL_INPUT: ${{ inputs.fixture_base_url || '' }}
       FIXTURE_BASE_DOMAIN_INPUT: ${{ inputs.fixture_base_domain || '' }}
@@ -783,7 +837,7 @@ jobs:
           # account MetaForge just provisioned lives there too - deleting it drops the session
           # and the client comes up with nothing to log in as.
           $logRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
-          @("Player.log", "AltTester-Server.log") | ForEach-Object {
+          @("Player.log", "AltTester-Server.log", "AltTesterMainThread.tsv") | ForEach-Object {
             $log = Join-Path $logRoot $_
             if (Test-Path $log) { Remove-Item $log -Force }
           }
@@ -802,6 +856,7 @@ jobs:
         timeout-minutes: 45
         shell: powershell
         env:
+          EXPLORER_PERF_DIR: ${{ runner.temp }}/explorer-perf
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
         run: |
           # Keep the server and test command in the same Actions step. The
@@ -919,16 +974,31 @@ jobs:
           "EXPLORER_PID=$($explorerProcess.Id)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Explorer started with PID $($explorerProcess.Id)"
 
+          if ($env:EXPLORER_PERF_RECORD -eq '1') {
+            try {
+              New-Item -ItemType Directory -Force -Path $env:EXPLORER_PERF_DIR | Out-Null
+              $monitorArgs = @('-NoProfile', '-File', "`"$env:GITHUB_WORKSPACE\explorer\ci\watch-explorer-performance.ps1`"",
+                '-ExplorerProcessId', $explorerProcess.Id, '-OwnerProcessId', $PID,
+                '-OutputDirectory', "`"$env:EXPLORER_PERF_DIR`"")
+              Start-Process powershell.exe -WindowStyle Hidden -ArgumentList $monitorArgs `
+                -RedirectStandardOutput (Join-Path $env:EXPLORER_PERF_DIR 'monitor.log') `
+                -RedirectStandardError (Join-Path $env:EXPLORER_PERF_DIR 'monitor-error.log') | Out-Null
+            } catch { Write-Host "::warning::Performance monitor unavailable: $_" }
+          }
+
           $appLog = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"
           if ($env:HANG_DUMP_PUBLIC_KEY) {
             $watchScript = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\watch-explorer-hang.ps1"
             $watchOutput = Join-Path $env:GITHUB_WORKSPACE "benchmark-diagnostics"
             [IO.Directory]::CreateDirectory($watchOutput) | Out-Null
-            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+            $hangMonitorArgs = @(
               '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchScript`"",
               '-ExplorerProcessId', $explorerProcess.Id, '-LogPath', "`"$appLog`"",
               '-ProcDumpPath', "`"$procDump`"", '-OutputDirectory', "`"$watchOutput`"", '-PublicKey', $env:HANG_DUMP_PUBLIC_KEY
-            ) -RedirectStandardOutput (Join-Path $watchOutput 'hang-monitor.log') `
+            )
+            if ($env:HANG_CAPTURE_STARTUP -eq 'true') { $hangMonitorArgs += '-CaptureOnStart' }
+            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList $hangMonitorArgs `
+              -RedirectStandardOutput (Join-Path $watchOutput 'hang-monitor.log') `
               -RedirectStandardError (Join-Path $watchOutput 'hang-monitor-error.log') | Out-Null
           }
 
@@ -1115,12 +1185,19 @@ jobs:
             (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
             (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
             (Join-Path $env:RUNNER_TEMP "mf-test.log"),
-            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
+            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"),
+            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTesterMainThread.tsv")
           )
           foreach ($file in $diagnosticFiles) {
             if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
           }
-          if ($env:HANG_DUMP_PUBLIC_KEY) {
+          if ($env:ALTTESTER_MAIN_THREAD_DIAGNOSTICS -eq '1') {
+            $stageLog = Join-Path $diagnostics 'AltTesterMainThread.tsv'
+            if (-not (Test-Path $stageLog)) {
+              Write-Warning 'Main-thread diagnostics requested but no SDK stage log was produced. Check build compatibility and player startup.'
+            }
+          }
+          if ($env:HANG_DUMP_PUBLIC_KEY -or $env:ALTTESTER_MAIN_THREAD_DIAGNOSTICS -eq '1') {
             Get-ChildItem $env:GITHUB_WORKSPACE -Filter AltTester.log -File -Recurse -ErrorAction SilentlyContinue |
               Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName $diagnostics -Force }
             $localLow = Join-Path $env:USERPROFILE "AppData\LocalLow"
@@ -1149,6 +1226,15 @@ jobs:
         with:
           name: windows-custom-image-player-log-shard${{ matrix.index }}-${{ github.run_id }}
           path: ${{ steps.outputs.outputs.player_log }}
+          retention-days: 7
+
+      - name: Upload Windows performance diagnostics
+        if: always() && inputs.record_perf
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-inworld-perf-shard${{ matrix.index }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/explorer-perf
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Upload benchmark diagnostics
@@ -1250,6 +1336,18 @@ jobs:
             throw "Shard $env:WINDOWS_SHARD ran $ran of $expected planned tests"
           }
           Write-Host "Shard $env:WINDOWS_SHARD ran $ran test(s), planned $expected"
+
+      - name: Summarize frame timings
+        if: always()
+        continue-on-error: true
+        shell: powershell
+        env:
+          RECORD_PERF: ${{ inputs.record_perf && 'true' || 'false' }}
+        run: |
+          dotnet run --project explorer/ci/PerformanceReport -- `
+            (Join-Path $env:RUNNER_TEMP 'explorer-perf') `
+            (Join-Path $env:RUNNER_TEMP 'inworld-result/row.json') $env:RECORD_PERF test
+          if ($LASTEXITCODE -ne 0) { throw 'Frame timing summary failed; result row remains available.' }
 
       - name: Upload shard result
         if: always()

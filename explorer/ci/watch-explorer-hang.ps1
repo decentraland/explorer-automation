@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [Parameter(Mandatory=$true)][string]$PublicKey,
     [Parameter(Mandatory=$true)][string]$ProcDumpPath,
+    [switch]$CaptureOnStart,
     [int]$StallSeconds = 60,
     [int]$MaxDumps = 2
 )
@@ -12,6 +13,9 @@ $target = Get-Process -Id $ExplorerProcessId
 if ($target.ProcessName -ne 'Decentraland') { throw 'Expected the owned Explorer process' }
 $started = $target.StartTime
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+$toolFile = Get-Item -LiteralPath $ProcDumpPath
+if ($toolFile.PSIsContainer) { throw 'Expected a ProcDump executable file' }
+Write-Output "Capture tool: $($toolFile.FullName), $($toolFile.Length) bytes; user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
 $rsa = New-Object Security.Cryptography.RSACryptoServiceProvider
 $rsa.FromXmlString([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($PublicKey)))
 function Save-EncryptedDump($process, [string]$stem) {
@@ -20,9 +24,16 @@ function Save-EncryptedDump($process, [string]$stem) {
     try {
         Write-Output "Starting dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         # Capture a clone so writing the dump does not hold the live player's threads.
-        & $ProcDumpPath -accepteula -r 1 -a -at 20 -mc 1020 $process.Id $rawPath | Out-Null
-        if ($LASTEXITCODE -notin @(0, 1) -or -not (Test-Path -LiteralPath $rawPath)) {
-            throw "Clone dump capture failed with exit code $LASTEXITCODE"
+        $stdoutPath = Join-Path $OutputDirectory ($stem + '-procdump.log')
+        $stderrPath = Join-Path $OutputDirectory ($stem + '-procdump-error.log')
+        $capture = Start-Process -FilePath $ProcDumpPath -WindowStyle Hidden -Wait -PassThru -ArgumentList @(
+            '-accepteula', '-r', '1', '-a', '-at', '20', '-mc', '1020', $process.Id, "`"$rawPath`""
+        ) -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        try { $exitCode = $capture.ExitCode } finally { $capture.Dispose() }
+        $dumpExists = Test-Path -LiteralPath $rawPath
+        Write-Output "ProcDump exited at $([DateTime]::UtcNow.ToString('o')): exit=$exitCode dumpExists=$dumpExists"
+        if ($exitCode -notin @(0, 1) -or -not $dumpExists) {
+            throw "Clone dump capture failed with exit code $exitCode; see $stdoutPath and $stderrPath"
         }
         Write-Output "Finished dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         $aes = [Security.Cryptography.Aes]::Create()
@@ -58,6 +69,25 @@ function Save-EncryptedDump($process, [string]$stem) {
         if (Test-Path -LiteralPath $rawPath) { Remove-Item -LiteralPath $rawPath -Force }
     }
 }
+function Write-CaptureFailure($failure, [string]$label) {
+    Write-Warning "$label failed at $([DateTime]::UtcNow.ToString('o')): $($failure.Exception.Message)"
+    $failure | Format-List * -Force | Out-String | Write-Output
+    for ($exception = $failure.Exception; $exception; $exception = $exception.InnerException) {
+        Write-Output "Exception=$($exception.GetType().FullName) HResult=$($exception.HResult) NativeErrorCode=$($exception.NativeErrorCode) Message=$($exception.Message)"
+    }
+    $since = (Get-Date).AddMinutes(-3)
+    foreach ($channel in @('Microsoft-Windows-Windows Defender/Operational', 'Microsoft-Windows-CodeIntegrity/Operational', 'Microsoft-Windows-AppLocker/EXE and DLL')) {
+        try {
+            Get-WinEvent -FilterHashtable @{LogName=$channel; StartTime=$since} -ErrorAction Stop |
+                Where-Object { $_.Message -match 'procdump|explorer-dump-tools' } |
+                Select-Object TimeCreated, Id, ProviderName, Message | Format-List | Out-String | Write-Output
+        } catch { Write-Output "$channel : $($_.Exception.Message)" }
+    }
+}
+if ($CaptureOnStart) {
+    try { Save-EncryptedDump $target ("explorer-startup-{0}" -f $ExplorerProcessId) }
+    catch { Write-CaptureFailure $_ 'Startup capture' }
+}
 $csv = Join-Path $OutputDirectory 'explorer-progress.csv'
 [IO.File]::WriteAllText($csv, "utc,cpu_seconds,working_set,private_bytes,threads,log_bytes,idle_seconds`n")
 $lastLength = -1L
@@ -77,8 +107,9 @@ while ([DateTime]::UtcNow -lt $deadline -and $count -lt $MaxDumps) {
     [IO.File]::AppendAllText($csv, "$($now.ToString('o')),$cpu,$($target.WorkingSet64),$($target.PrivateMemorySize64),$($target.Threads.Count),$length,$([int]$idle)`n")
     if ($idle -ge $StallSeconds -and ($now - $lastDump).TotalSeconds -ge $StallSeconds) {
         $count++
-        Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count)
-        $lastDump = $now
+        try { Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count) }
+        catch { Write-CaptureFailure $_ "Dump attempt $count" }
+        $lastDump = [DateTime]::UtcNow
     }
     Start-Sleep -Seconds 2
 }

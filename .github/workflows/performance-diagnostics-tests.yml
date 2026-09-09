@@ -1,0 +1,29 @@
+name: Test performance diagnostics
+on:
+  pull_request:
+    paths:
+      - 'explorer/Tests/Common/PerformanceCapture.cs'
+      - 'explorer/ci/PerformanceTests/**'
+      - 'explorer/ci/PerformanceReport/**'
+      - 'explorer/Tests/Tests/BaseTest.cs'
+      - 'explorer/ci/test-performance-monitor.ps1'
+      - '.github/workflows/run-inworld-suite.yml'
+      - '.github/workflows/windows-inworld-custom-image.yml'
+      - 'explorer/ci/watch-explorer-performance.ps1'
+      - '.github/workflows/performance-diagnostics-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test explorer/ci/PerformanceTests/PerformanceTests.csproj
+      - shell: powershell
+        run: ./explorer/ci/test-performance-monitor.ps1
+      - run: dotnet build explorer/Tests/Tests.csproj
+      - run: dotnet build explorer/ci/PerformanceReport/PerformanceReport.csproj
