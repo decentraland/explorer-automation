@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      main_thread_diagnostics:
+        description: 'Enable main-thread stage sampling in a compatible diagnostic AltTester SDK build.'
+        required: false
+        default: false
+        type: boolean
       scope:
         description: 'What to split, in the scope resolver''s own words: `ALL` or `FIXTURES: A B C`. Empty is read from test_filter.'
         required: false
@@ -107,6 +112,11 @@ on:
         type: boolean
       record_perf:
         description: 'Capture per-test frame times and independent process progress (diagnostic only).'
+        required: false
+        default: false
+        type: boolean
+      main_thread_diagnostics:
+        description: 'Enable main-thread stage sampling in a compatible diagnostic AltTester SDK build.'
         required: false
         default: false
         type: boolean
@@ -388,9 +398,10 @@ jobs:
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
       HANG_CAPTURE_STARTUP: ${{ inputs.hang_capture_startup && 'true' || 'false' }}
+      ALTTESTER_MAIN_THREAD_DIAGNOSTICS: ${{ inputs.main_thread_diagnostics && '1' || '0' }}
       USE_BITBLT_SWAPCHAIN: ${{ inputs.use_bitblt_swapchain && 'true' || 'false' }}
       UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
-      ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
+      ALT_DRIVER_LOGS: ${{ (inputs.hang_dump_public_key != '' || inputs.main_thread_diagnostics) && 'true' || 'false' }}
       TEST_FILTER: ${{ matrix.filter != '' && matrix.filter || inputs.test_filter || 'Name=TestExplorerIsInWorldFromTokenBridge' }}
       WINDOWS_SHARD: ${{ matrix.name }}
       SHARD_INDEX: ${{ matrix.index }}
@@ -826,7 +837,7 @@ jobs:
           # account MetaForge just provisioned lives there too - deleting it drops the session
           # and the client comes up with nothing to log in as.
           $logRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer"
-          @("Player.log", "AltTester-Server.log") | ForEach-Object {
+          @("Player.log", "AltTester-Server.log", "AltTesterMainThread.tsv") | ForEach-Object {
             $log = Join-Path $logRoot $_
             if (Test-Path $log) { Remove-Item $log -Force }
           }
@@ -1174,12 +1185,19 @@ jobs:
             (Join-Path $env:RUNNER_TEMP "alttester-stdout.log"),
             (Join-Path $env:RUNNER_TEMP "alttester-stderr.log"),
             (Join-Path $env:RUNNER_TEMP "mf-test.log"),
-            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log")
+            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTester-Server.log"),
+            (Join-Path $env:USERPROFILE "AppData\LocalLow\Decentraland\Explorer\AltTesterMainThread.tsv")
           )
           foreach ($file in $diagnosticFiles) {
             if (Test-Path $file) { Copy-Item $file $diagnostics -Force }
           }
-          if ($env:HANG_DUMP_PUBLIC_KEY) {
+          if ($env:ALTTESTER_MAIN_THREAD_DIAGNOSTICS -eq '1') {
+            $stageLog = Join-Path $diagnostics 'AltTesterMainThread.tsv'
+            if (-not (Test-Path $stageLog)) {
+              Write-Warning 'Main-thread diagnostics requested but no SDK stage log was produced. Check build compatibility and player startup.'
+            }
+          }
+          if ($env:HANG_DUMP_PUBLIC_KEY -or $env:ALTTESTER_MAIN_THREAD_DIAGNOSTICS -eq '1') {
             Get-ChildItem $env:GITHUB_WORKSPACE -Filter AltTester.log -File -Recurse -ErrorAction SilentlyContinue |
               Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName $diagnostics -Force }
             $localLow = Join-Path $env:USERPROFILE "AppData\LocalLow"
