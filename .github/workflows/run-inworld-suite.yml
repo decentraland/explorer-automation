@@ -103,7 +103,7 @@ on:
         description: 'Capture diagnostic frame times: per test on Windows, per fixture on macOS.'
         type: boolean
         required: false
-        default: false
+        default: true
       dry_run:
         description: 'Skip the mf explorer test invocation (chassis validation only).'
         type: boolean
@@ -239,7 +239,7 @@ on:
       record_perf:
         type: boolean
         required: false
-        default: false
+        default: true
       dry_run:
         type: boolean
         required: false
@@ -968,12 +968,7 @@ jobs:
           # wrapper that exports DYLD only for its own final `exec` of the real
           # binary, so the shim loads into Explorer and nowhere else.
           #
-          # Perf capture is opt-in via record_perf. BaseTest only calls
-          # PerfSampler when EXPLORER_PERF_RECORD is exactly '1', so the default
-          # (and every push-triggered run, where inputs are empty) skips it and
-          # pays no artifact/S3 cost. The planned Windows chassis (PR #12) owns
-          # a dedicated GPU image, so its numbers are stable enough to record
-          # unconditionally.
+          # Frame capture can be disabled with record_perf: false.
           EXPLORER_PERF_RECORD: ${{ inputs.record_perf && '1' || '0' }}
           # Stable, upload-artifact-friendly path for PerfSampler output.
           # BaseTest reads this and writes <fixture>/perf.csv + perf-summary.txt here.
@@ -1465,6 +1460,15 @@ jobs:
             echo "- Allure: ${ALLURE}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Summarize frame timings
+        if: always()
+        continue-on-error: true
+        env:
+          RECORD_PERF: ${{ inputs.record_perf && 'true' || 'false' }}
+        run: |
+          dotnet run --project explorer/ci/PerformanceReport -- \
+            "$RUNNER_TEMP/explorer-perf" "$RUNNER_TEMP/inworld-result/row.json" "$RECORD_PERF" fixture
+
       - name: Upload suite result
         if: always()
         uses: actions/upload-artifact@v4
@@ -1669,11 +1673,26 @@ jobs:
             def allure:
               if (.report // "") == "" then "not generated"
               else "[" + (.report_kind // "Open") + "](" + .report + ")" end;
+            def ms: if . == null then "n/a" else ((. * 100 | round) / 100 | tostring) end;
+            def timing($metric):
+              if .performance.enabled == false then "disabled"
+              elif (.performance[$metric].samples // 0) == 0 then "unavailable"
+              else .performance[$metric] | (.p50_ms | ms) + " / " + (.p95_ms | ms) + " / " + (.max_ms | ms)
+                + " (n=" + (.samples | tostring) + ")" end;
+            def captures:
+              if .performance == null then "not reported"
+              elif .performance.enabled == false then "disabled"
+              else (.performance.complete | tostring) + " complete, "
+                + (.performance.partial | tostring) + " partial, "
+                + (.performance.unavailable | tostring) + " unavailable (" + .performance.scope + ")" end;
             "| | " + ([.[].label] | join(" | ")) + " |",
             "|---|" + ([.[] | "---"] | join("|")) + "|",
             "| Result | " + ([.[] | verdict] | join(" | ")) + " |",
             "| Tests | " + ([.[] | tests] | join(" | ")) + " |",
             "| Duration | " + ([.[] | .seconds | dur] | join(" | ")) + " |",
+            "| CPU frame time (ms: p50 / p95 / max) | " + ([.[] | timing("cpu")] | join(" | ")) + " |",
+            "| GPU frame time (ms: p50 / p95 / max) | " + ([.[] | timing("gpu")] | join(" | ")) + " |",
+            "| Performance captures | " + ([.[] | captures] | join(" | ")) + " |",
             "| Allure | " + ([.[] | allure] | join(" | ")) + " |"
           ' > table.md
 
@@ -1692,6 +1711,8 @@ jobs:
             echo "$STATUS"
             echo
             cat table.md
+            echo
+            echo "<sub>Frame samples pooled within each leg; n = valid samples. CPU includes waits, not CPU utilization. p50/p95 require 2/20 samples. Partial captures can miss stalls. macOS records fixtures including setup/cleanup gaps; Windows records individual tests. Unavailable GPU samples are excluded.</sub>"
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
@@ -1714,6 +1735,8 @@ jobs:
             echo "$STATUS"
             echo
             cat table.md
+            echo
+            echo "<sub>Frame samples pooled within each leg; n = valid samples. CPU includes waits, not CPU utilization. p50/p95 require 2/20 samples. Partial captures can miss stalls. macOS records fixtures including setup/cleanup gaps; Windows records individual tests. Unavailable GPU samples are excluded.</sub>"
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo

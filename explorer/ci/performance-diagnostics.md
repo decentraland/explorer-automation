@@ -1,14 +1,24 @@
 # In-world performance diagnostics
 
-Set `record_perf: true` when dispatching `run-inworld-suite.yml` or
-`windows-inworld-custom-image.yml`. It defaults to false and adds no performance
-pass/fail threshold. Pin the Windows build URL and tests_ref when comparing runs.
+`run-inworld-suite.yml` and `windows-inworld-custom-image.yml` record performance
+by default. Set `record_perf: false` to opt out. There is no performance pass/fail
+threshold. Pin the Windows build URL and tests_ref when comparing runs.
+
+The CI results comment and job summary show CPU/GPU frame p50, p95 and maximum
+in milliseconds for each platform/shard, plus valid sample counts and complete,
+partial and unavailable capture counts. Frames are pooled within each leg;
+these are not averages of per-test percentiles. p50/p95 need at least 2/20 samples.
+Disabled, missing and unsupported GPU measurements never appear as zero.
+Windows captures individual tests; macOS captures fixtures including setup/cleanup
+gaps. CPU frame time includes waits and is not CPU utilization. A partial capture
+can miss the stall itself. Older test refs without the summary helper show
+unavailable measurements without losing their functional results.
 
 Windows emits a `PERF:` progress line at each test teardown and attaches frame
 CSV, summary and UTC test window to Allure. The standalone
 `windows-inworld-perf-shard<N>-<run>` artifact uploads even after failure. Each
 invocation gets a unique directory, including repeated test names. macOS keeps
-its existing opt-in fixture capture.
+its existing fixture capture.
 
 - `process.csv`: UTC/elapsed time, liveness, cumulative CPU/CPU delta, working and
   private memory, thread count and current test. Sampling starts at Explorer

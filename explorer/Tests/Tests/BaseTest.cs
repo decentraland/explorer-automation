@@ -78,10 +78,7 @@ public abstract class BaseTest
         // needs a live Explorer to sample, and [SetUp] is about to re-fail every test anyway.
         if (ExceptionFromOneTimeSetUp != null) return;
 
-        // Opt-in fixture-level perf capture. Driven by EXPLORER_PERF_RECORD=1, which the
-        // chassis workflow only sets when explicitly asked (Windows runs, or a macOS run
-        // dispatched with record_perf). Unset means the AutoPilot PerfSampler call is
-        // skipped entirely, so builds without the perf module loaded don't blow up.
+        // Fixture capture is skipped when per-test recording owns the sampler.
         if (Environment.GetEnvironmentVariable(PERF_ENV) != "1"
             || Environment.GetEnvironmentVariable("EXPLORER_PERF_PER_TEST") == "1") return;
 

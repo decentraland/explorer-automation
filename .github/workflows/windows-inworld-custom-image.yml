@@ -6,7 +6,7 @@ on:
       record_perf:
         description: 'Capture per-test frame times and independent process progress (diagnostic only).'
         required: false
-        default: false
+        default: true
         type: boolean
       main_thread_diagnostics:
         description: 'Enable main-thread stage sampling in a compatible diagnostic AltTester SDK build.'
@@ -113,7 +113,7 @@ on:
       record_perf:
         description: 'Capture per-test frame times and independent process progress (diagnostic only).'
         required: false
-        default: false
+        default: true
         type: boolean
       main_thread_diagnostics:
         description: 'Enable main-thread stage sampling in a compatible diagnostic AltTester SDK build.'
@@ -1336,6 +1336,18 @@ jobs:
             throw "Shard $env:WINDOWS_SHARD ran $ran of $expected planned tests"
           }
           Write-Host "Shard $env:WINDOWS_SHARD ran $ran test(s), planned $expected"
+
+      - name: Summarize frame timings
+        if: always()
+        continue-on-error: true
+        shell: powershell
+        env:
+          RECORD_PERF: ${{ inputs.record_perf && 'true' || 'false' }}
+        run: |
+          dotnet run --project explorer/ci/PerformanceReport -- `
+            (Join-Path $env:RUNNER_TEMP 'explorer-perf') `
+            (Join-Path $env:RUNNER_TEMP 'inworld-result/row.json') $env:RECORD_PERF test
+          if ($LASTEXITCODE -ne 0) { throw 'Frame timing summary failed; result row remains available.' }
 
       - name: Upload shard result
         if: always()

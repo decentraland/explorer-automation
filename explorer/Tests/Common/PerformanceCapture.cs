@@ -84,6 +84,14 @@ public sealed class PerformanceCapture
 
     public static string Summarize(byte[] data, bool complete)
     {
+        var (cpu, gpu, invalid, invalidGpu) = ReadTimings(data);
+        return $"{(complete ? "complete" : "PARTIAL/UNAVAILABLE")}; "
+            + $"CPU {Metrics(cpu)}; GPU {Metrics(gpu)}; invalid CPU/rows={invalid}, GPU={invalidGpu}. "
+            + "Diagnostic only; frame timings do not measure wall-clock hangs.";
+    }
+
+    public static (List<double> Cpu, List<double> Gpu, int InvalidCpu, int InvalidGpu) ReadTimings(byte[] data)
+    {
         var cpu = new List<double>();
         var gpu = new List<double>();
         var invalid = 0;
@@ -100,10 +108,11 @@ public sealed class PerformanceCapture
             if (TryTiming(cells[1], out var c)) cpu.Add(c); else invalid++;
             if (TryTiming(cells[2], out var g)) gpu.Add(g); else invalidGpu++;
         }
-        return $"{(complete ? "complete" : "PARTIAL/UNAVAILABLE")}; "
-            + $"CPU {Metrics(cpu)}; GPU {Metrics(gpu)}; invalid CPU/rows={invalid}, GPU={invalidGpu}. "
-            + "Diagnostic only; frame timings do not measure wall-clock hangs.";
+        return (cpu, gpu, invalid, invalidGpu);
     }
+
+    public static double? Percentile(List<double> sortedTimes, double quantile, int minimum) =>
+        sortedTimes.Count < minimum ? null : sortedTimes[(int)Math.Ceiling(sortedTimes.Count * quantile) - 1];
 
     private static bool TryTiming(string value, out double time) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out time)
@@ -113,10 +122,10 @@ public sealed class PerformanceCapture
     {
         if (times.Count == 0) return "unavailable (n=0)";
         times.Sort();
-        string Percentile(double q, int minimum) => times.Count < minimum ? "n/a" :
-            times[(int)Math.Ceiling(times.Count * q) - 1].ToString("F2", CultureInfo.InvariantCulture);
-        return $"n={times.Count}, p50={Percentile(.5, 2)}ms, p95={Percentile(.95, 20)}ms, "
-            + $"p99={Percentile(.99, 100)}ms, max={times[^1].ToString("F2", CultureInfo.InvariantCulture)}ms, "
+        string FormatPercentile(double q, int minimum) =>
+            Percentile(times, q, minimum)?.ToString("F2", CultureInfo.InvariantCulture) ?? "n/a";
+        return $"n={times.Count}, p50={FormatPercentile(.5, 2)}ms, p95={FormatPercentile(.95, 20)}ms, "
+            + $"p99={FormatPercentile(.99, 100)}ms, max={times[^1].ToString("F2", CultureInfo.InvariantCulture)}ms, "
             + $">33ms={times.Count(x => x > 33)}, >100ms={times.Count(x => x > 100)}, >1000ms={times.Count(x => x > 1000)}";
     }
 }

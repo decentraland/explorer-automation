@@ -10,5 +10,6 @@
     <PackageReference Include="NUnit" Version="4.5.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.2.0" />
     <Compile Include="../../Tests/Common/PerformanceCapture.cs" Link="PerformanceCapture.cs" />
+    <Compile Include="../PerformanceReport/PerformanceSummary.cs" Link="PerformanceSummary.cs" />
   </ItemGroup>
 </Project>

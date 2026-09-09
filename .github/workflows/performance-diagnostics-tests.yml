@@ -4,6 +4,7 @@ on:
     paths:
       - 'explorer/Tests/Common/PerformanceCapture.cs'
       - 'explorer/ci/PerformanceTests/**'
+      - 'explorer/ci/PerformanceReport/**'
       - 'explorer/Tests/Tests/BaseTest.cs'
       - 'explorer/ci/test-performance-monitor.ps1'
       - '.github/workflows/run-inworld-suite.yml'
@@ -25,3 +26,4 @@ jobs:
       - shell: powershell
         run: ./explorer/ci/test-performance-monitor.ps1
       - run: dotnet build explorer/Tests/Tests.csproj
+      - run: dotnet build explorer/ci/PerformanceReport/PerformanceReport.csproj
