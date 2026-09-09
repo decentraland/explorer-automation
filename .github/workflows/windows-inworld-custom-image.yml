@@ -130,6 +130,11 @@ on:
         required: false
         default: true
         type: boolean
+      hang_capture_startup:
+        description: 'Capture one encrypted baseline stack immediately after Explorer launch.'
+        required: false
+        default: false
+        type: boolean
       hang_dump_public_key:
         description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
         required: false
@@ -382,6 +387,7 @@ jobs:
       BUILD_URL_INPUT: ${{ inputs.build_url }}
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
+      HANG_CAPTURE_STARTUP: ${{ inputs.hang_capture_startup && 'true' || 'false' }}
       USE_BITBLT_SWAPCHAIN: ${{ inputs.use_bitblt_swapchain && 'true' || 'false' }}
       UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
       ALT_DRIVER_LOGS: ${{ inputs.hang_dump_public_key != '' && 'true' || 'false' }}
@@ -974,11 +980,14 @@ jobs:
             $watchScript = Join-Path $env:GITHUB_WORKSPACE "explorer\ci\watch-explorer-hang.ps1"
             $watchOutput = Join-Path $env:GITHUB_WORKSPACE "benchmark-diagnostics"
             [IO.Directory]::CreateDirectory($watchOutput) | Out-Null
-            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+            $hangMonitorArgs = @(
               '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$watchScript`"",
               '-ExplorerProcessId', $explorerProcess.Id, '-LogPath', "`"$appLog`"",
               '-ProcDumpPath', "`"$procDump`"", '-OutputDirectory', "`"$watchOutput`"", '-PublicKey', $env:HANG_DUMP_PUBLIC_KEY
-            ) -RedirectStandardOutput (Join-Path $watchOutput 'hang-monitor.log') `
+            )
+            if ($env:HANG_CAPTURE_STARTUP -eq 'true') { $hangMonitorArgs += '-CaptureOnStart' }
+            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList $hangMonitorArgs `
+              -RedirectStandardOutput (Join-Path $watchOutput 'hang-monitor.log') `
               -RedirectStandardError (Join-Path $watchOutput 'hang-monitor-error.log') | Out-Null
           }
 

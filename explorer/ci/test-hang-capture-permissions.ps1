@@ -49,13 +49,13 @@ try {
     $monitor = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
         '-NoProfile', '-File', "`"$monitorScript`"", '-ExplorerProcessId', $probe.Id,
         '-LogPath', "`"$probeDirectory\idle.log`"", '-OutputDirectory', "`"$monitorOutput`"",
-        '-PublicKey', $publicKey, '-ProcDumpPath', "`"$tool`"", '-StallSeconds', '1', '-MaxDumps', '1'
+        '-PublicKey', $publicKey, '-ProcDumpPath', "`"$tool`"", '-CaptureOnStart', '-StallSeconds', '1', '-MaxDumps', '1'
     ) -RedirectStandardOutput (Join-Path $OutputDirectory 'monitor.log') `
         -RedirectStandardError (Join-Path $OutputDirectory 'monitor-error.log')
     if (-not $monitor.WaitForExit(120000)) { throw 'Child monitor did not finish within 120 seconds' }
     Get-ChildItem $monitorOutput -Filter '*.log' | Copy-Item -Destination $OutputDirectory
     $encryptedDumps = @(Get-ChildItem $monitorOutput -Filter '*.dmp.enc')
-    if ($encryptedDumps.Count -ne 1) { throw 'Child monitor did not create an encrypted dump' }
+    if ($encryptedDumps.Count -ne 2) { throw 'Child monitor did not create both startup and stall dumps' }
     foreach ($encryptedDump in $encryptedDumps) { Remove-Item -LiteralPath $encryptedDump.FullName -Force }
     Write-Output 'PASS: actual background monitor captured and encrypted the owned idle process'
 

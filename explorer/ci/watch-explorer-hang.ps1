@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [Parameter(Mandatory=$true)][string]$PublicKey,
     [Parameter(Mandatory=$true)][string]$ProcDumpPath,
+    [switch]$CaptureOnStart,
     [int]$StallSeconds = 60,
     [int]$MaxDumps = 2
 )
@@ -68,6 +69,25 @@ function Save-EncryptedDump($process, [string]$stem) {
         if (Test-Path -LiteralPath $rawPath) { Remove-Item -LiteralPath $rawPath -Force }
     }
 }
+function Write-CaptureFailure($failure, [string]$label) {
+    Write-Warning "$label failed at $([DateTime]::UtcNow.ToString('o')): $($failure.Exception.Message)"
+    $failure | Format-List * -Force | Out-String | Write-Output
+    for ($exception = $failure.Exception; $exception; $exception = $exception.InnerException) {
+        Write-Output "Exception=$($exception.GetType().FullName) HResult=$($exception.HResult) NativeErrorCode=$($exception.NativeErrorCode) Message=$($exception.Message)"
+    }
+    $since = (Get-Date).AddMinutes(-3)
+    foreach ($channel in @('Microsoft-Windows-Windows Defender/Operational', 'Microsoft-Windows-CodeIntegrity/Operational', 'Microsoft-Windows-AppLocker/EXE and DLL')) {
+        try {
+            Get-WinEvent -FilterHashtable @{LogName=$channel; StartTime=$since} -ErrorAction Stop |
+                Where-Object { $_.Message -match 'procdump|explorer-dump-tools' } |
+                Select-Object TimeCreated, Id, ProviderName, Message | Format-List | Out-String | Write-Output
+        } catch { Write-Output "$channel : $($_.Exception.Message)" }
+    }
+}
+if ($CaptureOnStart) {
+    try { Save-EncryptedDump $target ("explorer-startup-{0}" -f $ExplorerProcessId) }
+    catch { Write-CaptureFailure $_ 'Startup capture' }
+}
 $csv = Join-Path $OutputDirectory 'explorer-progress.csv'
 [IO.File]::WriteAllText($csv, "utc,cpu_seconds,working_set,private_bytes,threads,log_bytes,idle_seconds`n")
 $lastLength = -1L
@@ -88,7 +108,7 @@ while ([DateTime]::UtcNow -lt $deadline -and $count -lt $MaxDumps) {
     if ($idle -ge $StallSeconds -and ($now - $lastDump).TotalSeconds -ge $StallSeconds) {
         $count++
         try { Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count) }
-        catch { Write-Warning "Dump attempt $count failed: $($_.Exception.Message)" }
+        catch { Write-CaptureFailure $_ "Dump attempt $count" }
         $lastDump = [DateTime]::UtcNow
     }
     Start-Sleep -Seconds 2

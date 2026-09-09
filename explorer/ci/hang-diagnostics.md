@@ -30,3 +30,7 @@ If the dump tool fails to launch, dispatch with `hang_capture_preflight=true`.
 This skips Explorer and tests, checks the signed tool against an owned idle process,
 and collects matching execution-policy events. Only logs are uploaded; the temporary
 probe dump is deleted. No permissions or protection settings are changed.
+
+Set `hang_capture_startup=true` with the public key to request one additional
+encrypted baseline capture immediately after Explorer launches. Failure logs include
+the Windows exception and matching execution-policy events.
