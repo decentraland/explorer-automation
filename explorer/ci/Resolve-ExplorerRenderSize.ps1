@@ -17,6 +17,8 @@ and prints them either way, so it can be run by hand on a candidate runner image
 #>
 [CmdletBinding()]
 param(
+    [string]$DisplayDevice = '',
+    [string]$RenderSize = '',
     [int]$TargetWidth = 1920,
     [int]$TargetHeight = 1080,
 
@@ -62,8 +64,8 @@ public static class DisplayMode
 }
 '@
 
-$primary = [System.Windows.Forms.Screen]::PrimaryScreen
-if (-not $primary) { throw "Windows did not expose a primary display" }
+$primary = if ($DisplayDevice) { [System.Windows.Forms.Screen]::AllScreens | Where-Object DeviceName -eq $DisplayDevice | Select-Object -First 1 } else { [System.Windows.Forms.Screen]::PrimaryScreen }
+if (-not $primary) { throw "Requested display is unavailable: $DisplayDevice" }
 $device = $primary.DeviceName
 
 # EnumDisplaySettings, not Screen.Bounds: PowerShell is not DPI-aware, so Bounds reports scaled
@@ -116,6 +118,16 @@ if (-not $wanted) {
 
 $height = $active.dmPelsHeight - $Chrome
 $width = [Math]::Min($active.dmPelsWidth, [int][Math]::Round($height * 16 / 9))
+if ($RenderSize) {
+    if ($RenderSize -notmatch '^([1-9][0-9]{2,3})x([1-9][0-9]{2,3})$') { throw 'render_size must be WIDTHxHEIGHT' }
+    $requestedWidth = [int]$Matches[1]
+    $requestedHeight = [int]$Matches[2]
+    if ($requestedWidth -gt $active.dmPelsWidth -or $requestedHeight -gt $height -or $requestedWidth * 9 -gt $requestedHeight * 16) {
+        throw 'Requested viewport does not fit this display or exceeds the UI aspect ratio.'
+    }
+    $width = $requestedWidth
+    $height = $requestedHeight
+}
 if ($height -lt $MinHeight -or $width -lt $MinWidth) {
     throw "Active mode $($active.dmPelsWidth)x$($active.dmPelsHeight) leaves only ${width}x${height} for the Explorer, which is too small to drive the UI."
 }
