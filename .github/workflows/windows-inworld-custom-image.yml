@@ -105,6 +105,14 @@ on:
         type: boolean
   workflow_dispatch:
     inputs:
+      native_wait_capture:
+        description: 'Record encrypted native scheduling trace during tests (20 minute / polled 2 GiB limit).'
+        type: boolean
+        default: false
+      native_trace_public_key:
+        description: 'Base64 RSA public XML key for encrypted ETL; required for native_wait_capture.'
+        type: string
+        default: ''
       native_wait_preflight:
         description: "Record a bounded synthetic CPU/wait trace on an idle runner; skip Explorer tests."
         type: boolean
@@ -434,6 +442,8 @@ jobs:
       # writes to GITHUB_ENV.
       BUILD_URL_INPUT: ${{ inputs.build_url }}
       SPAWN_POSITION_INPUT: ${{ inputs.spawn_position || '100,100' }}
+      NATIVE_WAIT_CAPTURE: ${{ inputs.native_wait_capture && 'true' || 'false' }}
+      NATIVE_TRACE_PUBLIC_KEY: ${{ inputs.native_trace_public_key }}
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
       HANG_CAPTURE_STARTUP: ${{ inputs.hang_capture_startup && 'true' || 'false' }}
       ALTTESTER_MAIN_THREAD_DIAGNOSTICS: ${{ inputs.main_thread_diagnostics && '1' || '0' }}
@@ -1053,18 +1063,68 @@ jobs:
           Write-Host "Explorer exchanged commands with AltTester; starting NUnit suite"
 
 
-          # No target: run against the explicitly launched Explorer session.
-          $ErrorActionPreference = "Continue"
-          # Teed so the next step can read the count MetaForge reports. A pipe does not
-          # disturb $LASTEXITCODE, which still carries the native exit code.
-          # --report-type None for the same reason as the macOS leg: SingleFile inlines every
-          # attachment as base64 and overruns allure's size cap on a full run. Generation is
-          # ours, in the step below.
-          mf explorer test `
-            --non-interactive `
-            --filter "$env:TEST_FILTER" `
-            --report-type None | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP "mf-test.log")
-          exit $LASTEXITCODE
+          $traceMonitor = $null
+          $nativeTraceDir = Join-Path $env:GITHUB_WORKSPACE 'native-wait-capture'
+          try {
+            if ($env:NATIVE_WAIT_CAPTURE -eq 'true') {
+              if (-not $env:NATIVE_TRACE_PUBLIC_KEY) { throw 'Native capture requires an RSA public key.' }
+              [IO.Directory]::CreateDirectory($nativeTraceDir) | Out-Null
+              $traceScript = Join-Path $env:GITHUB_WORKSPACE 'explorer/ci/watch-native-wait.ps1'
+              $traceMonitor = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+                '-NoProfile', '-File', "`"$traceScript`"", '-ExplorerProcessId', $explorerProcess.Id,
+                '-OwnerProcessId', $PID, '-OutputDirectory', "`"$nativeTraceDir`""
+              ) -RedirectStandardOutput (Join-Path $nativeTraceDir 'monitor.log') `
+                -RedirectStandardError (Join-Path $nativeTraceDir 'monitor-error.log')
+              $readyDeadline = [DateTime]::UtcNow.AddSeconds(60)
+              while (-not (Test-Path -LiteralPath (Join-Path $nativeTraceDir 'ready.txt'))) {
+                if ($traceMonitor.HasExited -or [DateTime]::UtcNow -ge $readyDeadline) { throw 'Native recorder failed to acknowledge start.' }
+                Start-Sleep -Seconds 1
+              }
+            }
+            $ErrorActionPreference = 'Continue'
+            mf explorer test `
+              --non-interactive `
+              --filter "$env:TEST_FILTER" `
+              --report-type None | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'mf-test.log')
+            $testExitCode = $LASTEXITCODE
+          } finally {
+            if ($traceMonitor) {
+              [IO.File]::WriteAllText((Join-Path $nativeTraceDir 'stop.txt'), 'stop')
+              if (-not $traceMonitor.WaitForExit(240000)) { Write-Host '::warning::Native recorder has not finalized within 240 seconds.' }
+              $traceMonitor.Dispose()
+            }
+          }
+          exit $testExitCode
+
+      - name: Finalize native trace
+        if: always() && inputs.native_wait_capture
+        shell: powershell
+        timeout-minutes: 2
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $traceDir = Join-Path $env:GITHUB_WORKSPACE 'native-wait-capture'
+          $instanceFile = Join-Path $traceDir 'instance.txt'
+          if (Test-Path -LiteralPath $instanceFile) {
+            $instance = (Get-Content -LiteralPath $instanceFile -Raw).Trim()
+            if ($instance -notmatch '^ExplorerWait-[0-9a-f]{32}$') { throw 'Invalid recording instance' }
+            & "$env:WINDIR/System32/wpr.exe" -cancel -instancename $instance
+            $global:LASTEXITCODE = 0
+          }
+          $result = Get-Content -LiteralPath (Join-Path $traceDir 'result.json') -Raw | ConvertFrom-Json
+          if ($result.status -ne 'encrypted-requires-event-validation') { throw "Native trace failed: $($result.error)" }
+          Write-Host "Native trace saved: $($result.raw_bytes) bytes, stop reason $($result.stop_reason)."
+
+      - name: Upload encrypted native trace
+        if: always() && inputs.native_wait_capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-wait-capture-${{ matrix.index }}-${{ github.run_id }}
+          path: |
+            native-wait-capture/*.enc
+            native-wait-capture/*.json
+            native-wait-capture/*.log
+          retention-days: 3
+          if-no-files-found: error
 
       # The macOS leg's Generate Allure report, in PowerShell. Same reasoning throughout:
       # results land in the workspace build output because metaforge runs in cwd-mode; the
