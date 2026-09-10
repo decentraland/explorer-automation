@@ -35,7 +35,8 @@ public static class ExplorerTestDisplay {
             return new Placement {Device=actual.Device,ClientWidth=client.Right,ClientHeight=client.Bottom,Left=bounds.Left,Top=bounds.Top,Right=bounds.Right,Bottom=bounds.Bottom};
         } finally { if (previous!=IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
     }
-    public static Placement Place(IntPtr window, string device) {
+    public static Placement Place(IntPtr window, string device) { return Place(window,device,0,0); }
+    public static Placement Place(IntPtr window, string device, int requestedWidth, int requestedHeight) {
         var previous=SetThreadDpiAwarenessContext(new IntPtr(-4));
         try {
             Info target=new Info(); bool found=false;
@@ -47,6 +48,7 @@ public static class ExplorerTestDisplay {
             if (!EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,callback,IntPtr.Zero) || !found) throw new InvalidOperationException("Requested display unavailable");
             Rect bounds, client, originalClient;
             if (!GetClientRect(window,out originalClient)) throw new InvalidOperationException("Cannot read initial viewport");
+            if (requestedWidth>0 && requestedHeight>0) { originalClient.Right=requestedWidth; originalClient.Bottom=requestedHeight; }
             if (!GetWindowRect(window,out bounds)) throw new InvalidOperationException("Cannot read Explorer window");
             int width=bounds.Right-bounds.Left, height=bounds.Bottom-bounds.Top;
             if (width>target.Work.Right-target.Work.Left || height>target.Work.Bottom-target.Work.Top) throw new InvalidOperationException("Explorer window does not fit target work area");
@@ -72,7 +74,7 @@ public static class ExplorerTestDisplay {
 $process = Get-Process -Id $ExplorerProcessId
 try {
     if ($process.ProcessName -ne 'Decentraland' -or $process.MainWindowHandle -eq [IntPtr]::Zero) { throw 'Expected an owned Explorer window.' }
-    $placement = [ExplorerTestDisplay]::Place($process.MainWindowHandle,$DisplayDevice)
+    $placement = [ExplorerTestDisplay]::Place($process.MainWindowHandle,$DisplayDevice,$ExpectedWidth,$ExpectedHeight)
     [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
     $record = @{ utc = [DateTime]::UtcNow.ToString('o'); process_id = $ExplorerProcessId; requested_device = $DisplayDevice; expected_width = $ExpectedWidth; expected_height = $ExpectedHeight; actual = $placement }
     [IO.File]::WriteAllText((Join-Path $OutputDirectory 'window-placement.json'), ($record | ConvertTo-Json -Depth 4))
