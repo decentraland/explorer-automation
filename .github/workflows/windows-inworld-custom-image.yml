@@ -23,6 +23,16 @@ on:
         required: false
         default: ''
         type: string
+      display_device:
+        description: 'Diagnostic GDI display name, for example \\.\DISPLAY2. Empty keeps the primary display.'
+        required: false
+        default: ''
+        type: string
+      render_size:
+        description: 'Optional fixed viewport WIDTHxHEIGHT for display comparisons; must fit the selected display.'
+        required: false
+        default: ''
+        type: string
       use_bitblt_swapchain:
         description: 'Diagnostic D3D11 BitBlt swapchain instead of the default flip model.'
         required: false
@@ -141,6 +151,16 @@ on:
         description: 'NUnit filter. Use Category=InWorld for the complete suite.'
         required: false
         default: 'Name=TestExplorerIsInWorldFromTokenBridge'
+        type: string
+      display_device:
+        description: 'Diagnostic GDI display name, for example \\.\DISPLAY2. Empty keeps the primary display.'
+        required: false
+        default: ''
+        type: string
+      render_size:
+        description: 'Optional fixed viewport WIDTHxHEIGHT for display comparisons; must fit the selected display.'
+        required: false
+        default: ''
         type: string
       use_bitblt_swapchain:
         description: 'Diagnostic D3D11 BitBlt swapchain instead of the default flip model.'
@@ -447,6 +467,8 @@ jobs:
       HANG_DUMP_PUBLIC_KEY: ${{ inputs.hang_dump_public_key }}
       HANG_CAPTURE_STARTUP: ${{ inputs.hang_capture_startup && 'true' || 'false' }}
       ALTTESTER_MAIN_THREAD_DIAGNOSTICS: ${{ inputs.main_thread_diagnostics && '1' || '0' }}
+      TEST_DISPLAY_DEVICE: ${{ inputs.display_device }}
+      TEST_RENDER_SIZE: ${{ inputs.render_size }}
       USE_BITBLT_SWAPCHAIN: ${{ inputs.use_bitblt_swapchain && 'true' || 'false' }}
       UNITY_LOG_NOTIFICATIONS: ${{ inputs.unity_log_notifications && 'true' || 'false' }}
       ALT_DRIVER_LOGS: ${{ (inputs.hang_dump_public_key != '' || inputs.main_thread_diagnostics) && 'true' || 'false' }}
@@ -896,7 +918,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           & (Join-Path $env:GITHUB_WORKSPACE "explorer\ci\Resolve-ExplorerRenderSize.ps1") `
             -TargetWidth ([int]$env:EXPLORER_TARGET_WIDTH) `
-            -TargetHeight ([int]$env:EXPLORER_TARGET_HEIGHT)
+            -TargetHeight ([int]$env:EXPLORER_TARGET_HEIGHT) `
+            -DisplayDevice $env:TEST_DISPLAY_DEVICE -RenderSize $env:TEST_RENDER_SIZE
 
       - name: Run InWorld suite
         id: test
@@ -1063,6 +1086,12 @@ jobs:
           Write-Host "Explorer exchanged commands with AltTester; starting NUnit suite"
 
 
+          if ($env:TEST_DISPLAY_DEVICE) {
+            & (Join-Path $env:GITHUB_WORKSPACE 'explorer\ci\Set-ExplorerTestDisplay.ps1') `
+              -ExplorerProcessId $explorerProcess.Id -DisplayDevice $env:TEST_DISPLAY_DEVICE `
+              -ExpectedWidth ([int]$env:EXPLORER_RENDER_WIDTH) -ExpectedHeight ([int]$env:EXPLORER_RENDER_HEIGHT) `
+              -OutputDirectory (Join-Path $env:GITHUB_WORKSPACE 'benchmark-diagnostics')
+          }
           $traceMonitor = $null
           $nativeTraceDir = Join-Path $env:GITHUB_WORKSPACE 'native-wait-capture'
           try {
@@ -1092,6 +1121,13 @@ jobs:
               [IO.File]::WriteAllText((Join-Path $nativeTraceDir 'stop.txt'), 'stop')
               if (-not $traceMonitor.WaitForExit(900000)) { Write-Host '::warning::Native recorder has not finalized within 900 seconds.' }
               $traceMonitor.Dispose()
+            }
+            if ($env:TEST_DISPLAY_DEVICE -and -not $explorerProcess.HasExited) {
+              try {
+                $finalPlacement = [ExplorerTestDisplay]::Read($explorerProcess.MainWindowHandle)
+                $finalPath = Join-Path $env:GITHUB_WORKSPACE 'benchmark-diagnostics/window-placement-final.json'
+                [IO.File]::WriteAllText($finalPath, ($finalPlacement | ConvertTo-Json))
+              } catch { Write-Host "::warning::Final window placement unavailable: $_" }
             }
           }
           exit $testExitCode
