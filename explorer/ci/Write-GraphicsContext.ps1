@@ -11,7 +11,7 @@ Read-Context 'os' { Get-CimInstance Win32_OperatingSystem -OperationTimeoutSec 5
 Read-Context 'display_drivers' { @(Get-CimInstance Win32_PnPSignedDriver -Filter "DeviceClass='DISPLAY'" -OperationTimeoutSec 5 | Select-Object DeviceName,DeviceID,DriverProviderName,DriverVersion,InfName,IsSigned) }
 Read-Context 'driver_packages' {
     @(foreach ($driver in $result.display_drivers) {
-        Get-WindowsDriver -Online -Driver $driver.InfName | Select-Object Driver,OriginalFileName,ProviderName,ClassName,Version,Date
+        Get-WindowsDriver -Online -Driver $driver.InfName | Select-Object Driver,OriginalFileName,ProviderName,ClassName,Version,Date -Unique
     })
 }
 Read-Context 'video_controllers' { @(Get-CimInstance Win32_VideoController -OperationTimeoutSec 5 | Select-Object Name,PNPDeviceID,DriverVersion,VideoProcessor,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate,Status) }
@@ -31,13 +31,20 @@ public static class ExplorerGraphicsPaths {
     [StructLayout(LayoutKind.Sequential)] public struct Path { public Source Source; public Target Target; public uint Flags; }
     [StructLayout(LayoutKind.Sequential)] public struct Header { public uint Type, Size; public Luid Adapter; public uint Id; }
     [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] public struct AdapterName { public Header Header; [MarshalAs(UnmanagedType.ByValTStr,SizeConst=128)] public string Name; }
+    [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] public struct SourceName { public Header Header; [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string Name; }
+    [DllImport("user32.dll",EntryPoint="DisplayConfigGetDeviceInfo")] static extern int GetSourceName(ref SourceName name);
+    static string GdiName(Source source) {
+        var name=new SourceName {Header=new Header {Type=1,Size=(uint)Marshal.SizeOf(typeof(SourceName)),Adapter=source.Adapter,Id=source.Id}};
+        int error=GetSourceName(ref name);
+        return error==0 ? name.Name : "Unavailable: " + error;
+    }
     [DllImport("user32.dll",EntryPoint="DisplayConfigGetDeviceInfo")] static extern int GetAdapterName(ref AdapterName name);
     static string AdapterPath(Luid id) {
         var name=new AdapterName {Header=new Header {Type=4,Size=(uint)Marshal.SizeOf(typeof(AdapterName)),Adapter=id}};
         int error=GetAdapterName(ref name);
         return error==0 ? name.Name : "Unavailable: " + error;
     }
-    public class Entry { public string SourceAdapter, TargetAdapter, SourceDevicePath, TargetDevicePath; public uint SourceId, TargetId, OutputTechnology, RefreshNumerator, RefreshDenominator; }
+    public class Entry { public string SourceAdapter, TargetAdapter, SourceDevicePath, TargetDevicePath, GdiSourceName; public uint SourceId, TargetId, OutputTechnology, RefreshNumerator, RefreshDenominator; }
     [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint paths, out uint modes);
     [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint paths, [In,Out] Path[] data, ref uint modes, IntPtr modeData, IntPtr topology);
     public static Entry[] Read() {
@@ -52,7 +59,7 @@ public static class ExplorerGraphicsPaths {
                 if (error==122) continue;
                 if (error!=0) throw new InvalidOperationException("Display path query failed: " + error);
                 var entries=new Entry[paths];
-                for (int i=0;i<paths;i++) entries[i]=new Entry {SourceAdapter=data[i].Source.Adapter.ToString(),TargetAdapter=data[i].Target.Adapter.ToString(),SourceDevicePath=AdapterPath(data[i].Source.Adapter),TargetDevicePath=AdapterPath(data[i].Target.Adapter),SourceId=data[i].Source.Id,TargetId=data[i].Target.Id,OutputTechnology=data[i].Target.Technology,RefreshNumerator=data[i].Target.Numerator,RefreshDenominator=data[i].Target.Denominator};
+                for (int i=0;i<paths;i++) entries[i]=new Entry {SourceAdapter=data[i].Source.Adapter.ToString(),TargetAdapter=data[i].Target.Adapter.ToString(),GdiSourceName=GdiName(data[i].Source),SourceDevicePath=AdapterPath(data[i].Source.Adapter),TargetDevicePath=AdapterPath(data[i].Target.Adapter),SourceId=data[i].Source.Id,TargetId=data[i].Target.Id,OutputTechnology=data[i].Target.Technology,RefreshNumerator=data[i].Target.Numerator,RefreshDenominator=data[i].Target.Denominator};
                 return entries;
             } finally { Marshal.FreeHGlobal(memory); }
         }

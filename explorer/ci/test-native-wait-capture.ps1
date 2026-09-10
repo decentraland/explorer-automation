@@ -74,10 +74,10 @@ public class NativeWaitProbe {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     do {
         Start-Sleep -Seconds 1
-        $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Measure-Object Length -Sum).Sum
+        $size = (Get-RecorderTemporaryFiles $tempDirectory | Measure-Object Length -Sum).Sum
         if ($size -gt 256MB) { throw 'Temporary trace exceeded the 256 MiB stop threshold.' }
     } while ($watch.Elapsed.TotalSeconds -lt 20 -and -not $probe.HasExited)
-    $result.temporary_files_before_stop = @(Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Select-Object Name,Length,Attributes)
+    $result.temporary_files_before_stop = @(Get-RecorderTemporaryFiles $tempDirectory)
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
     $trace = Join-Path $OutputDirectory 'idle-probe.etl'
     Invoke-Recorder @('-stop', ('"' + $trace + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 60

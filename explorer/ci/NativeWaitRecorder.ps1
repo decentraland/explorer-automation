@@ -45,3 +45,15 @@ function Invoke-Recorder([string[]]$Arguments, [string]$LogName, [int]$TimeoutSe
         } finally { $command.Dispose() }
     }
 }
+
+function Get-RecorderTemporaryFiles([string]$Directory) {
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -Recurse -File -Force) {
+        $handle = $null
+        try {
+            # Directory metadata can lag behind a file that ETW keeps open.
+            $share = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+            $handle = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, $share)
+            [pscustomobject]@{ Name = $file.Name; Length = $handle.Length; DirectoryLength = $file.Length; Attributes = [string]$file.Attributes }
+        } finally { if ($handle) { $handle.Dispose() } }
+    }
+}

@@ -87,14 +87,14 @@ try {
             if ($currentOwner) { $currentOwner.Dispose() }
             if ($currentTarget) { $currentTarget.Dispose() }
         }
-        $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Measure-Object Length -Sum).Sum
+        $size = (Get-RecorderTemporaryFiles $tempDirectory | Measure-Object Length -Sum).Sum
         if ($size -ge $MaxTempMiB * 1MB -or $drive.AvailableFreeSpace -lt 10GB) { $result.stop_reason = 'disk-limit'; break }
         Start-Sleep -Seconds 2
     }
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
     $result.stop_started_utc = [DateTime]::UtcNow.ToString('o')
-    $result.temporary_files_before_stop = @(Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Select-Object Name,Length,Attributes)
-    $result.temporary_bytes_before_stop = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Measure-Object Length -Sum).Sum
+    $result.temporary_files_before_stop = @(Get-RecorderTemporaryFiles $tempDirectory)
+    $result.temporary_bytes_before_stop = (Get-RecorderTemporaryFiles $tempDirectory | Measure-Object Length -Sum).Sum
     Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 300
     $owned = $false
     $result.recording_stopped_utc = [DateTime]::UtcNow.ToString('o')
