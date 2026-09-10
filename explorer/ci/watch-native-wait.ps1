@@ -25,7 +25,8 @@ $result = [ordered]@{
     poll_seconds = 2
     minimum_start_free_gib = 18
     stop_free_gib = 10
-    etl_compression = $true
+    etl_compression = $false
+    stop_timeout_seconds = 300
     explorer_pid = $ExplorerProcessId
 }
 try {
@@ -76,7 +77,9 @@ try {
         Start-Sleep -Seconds 2
     }
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
-    Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-compress', '-instancename', $instance) 'stop' 120
+    $result.stop_started_utc = [DateTime]::UtcNow.ToString('o')
+    $result.temporary_bytes_before_stop = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File | Measure-Object Length -Sum).Sum
+    Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 300
     $owned = $false
     $result.recording_stopped_utc = [DateTime]::UtcNow.ToString('o')
     $result.raw_bytes = (Get-Item -LiteralPath $rawPath).Length
@@ -86,6 +89,7 @@ try {
     $result.status = 'encrypted-requires-event-validation'
 } catch {
     $result.error = $_.Exception.Message
+    if (Test-Path -LiteralPath $rawPath) { $result.incomplete_output_bytes = (Get-Item -LiteralPath $rawPath).Length }
     Write-Error $_ -ErrorAction Continue
 } finally {
     if ($owned) {

@@ -1090,7 +1090,7 @@ jobs:
           } finally {
             if ($traceMonitor) {
               [IO.File]::WriteAllText((Join-Path $nativeTraceDir 'stop.txt'), 'stop')
-              if (-not $traceMonitor.WaitForExit(360000)) { Write-Host '::warning::Native recorder has not finalized within 360 seconds.' }
+              if (-not $traceMonitor.WaitForExit(900000)) { Write-Host '::warning::Native recorder has not finalized within 900 seconds.' }
               $traceMonitor.Dispose()
             }
           }
