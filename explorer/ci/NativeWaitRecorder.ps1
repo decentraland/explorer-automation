@@ -1,6 +1,6 @@
-function Invoke-Recorder([string[]]$Arguments, [string]$LogName, [int]$TimeoutSeconds = 30) {
+function Invoke-Recorder([string[]]$Arguments, [string]$LogName, [int]$TimeoutSeconds = 30, [string]$Executable = $wpr) {
     $command = New-Object Diagnostics.Process
-    $command.StartInfo.FileName = $wpr
+    $command.StartInfo.FileName = $Executable
     $command.StartInfo.Arguments = $Arguments -join ' '
     $command.StartInfo.UseShellExecute = $false
     $command.StartInfo.CreateNoWindow = $true
@@ -11,17 +11,17 @@ function Invoke-Recorder([string[]]$Arguments, [string]$LogName, [int]$TimeoutSe
     $timedOut = $false
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
-        if (-not $command.Start()) { throw "Could not start WPR $LogName" }
+        if (-not $command.Start()) { throw "Could not start Recorder $LogName" }
         $stdout = $command.StandardOutput.ReadToEndAsync()
         $stderr = $command.StandardError.ReadToEndAsync()
         if (-not $command.WaitForExit($TimeoutSeconds * 1000)) {
             $timedOut = $true
             $command.Kill()
             [void]$command.WaitForExit(5000)
-            throw "WPR $LogName exceeded $TimeoutSeconds seconds"
+            throw "Recorder $LogName exceeded $TimeoutSeconds seconds"
         }
         $command.WaitForExit()
-        if ($command.ExitCode -ne 0) { throw "WPR $LogName exit code $($command.ExitCode)" }
+        if ($command.ExitCode -ne 0) { throw "Recorder $LogName exit code $($command.ExitCode)" }
     } finally {
         try {
             if ($stdout -and $stderr) {
@@ -56,4 +56,14 @@ function Get-RecorderTemporaryFiles([string]$Directory) {
             [pscustomobject]@{ Name = $file.Name; Length = $handle.Length; DirectoryLength = $file.Length; Attributes = [string]$file.Attributes }
         } finally { if ($handle) { $handle.Dispose() } }
     }
+}
+function Save-RecorderUnmergedTrace([string]$Instance, [string]$Directory, [string]$Destination) {
+    if ($Instance -notmatch '^ExplorerWait-[0-9a-f]{32}$') { throw 'Invalid owned recorder instance.' }
+    $collector = 'WPR_initiated_' + $Instance + '_WPR System Collector'
+    $logman = Join-Path $env:WINDIR 'System32/logman.exe'
+    Invoke-Recorder @('stop', ('"' + $collector + '"'), '-ets') 'collector-stop' 30 $logman
+    $source = Join-Path $Directory ($collector + '.etl')
+    if (-not (Test-Path -LiteralPath $source)) { throw 'Owned collector did not leave an ETL file.' }
+    Copy-Item -LiteralPath $source -Destination $Destination -ErrorAction Stop
+    if ((Get-Item -LiteralPath $Destination).Length -eq 0) { throw 'Owned collector left an empty trace.' }
 }

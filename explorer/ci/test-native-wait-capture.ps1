@@ -80,8 +80,12 @@ public class NativeWaitProbe {
     $result.temporary_files_before_stop = @(Get-RecorderTemporaryFiles $tempDirectory)
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
     $trace = Join-Path $OutputDirectory 'idle-probe.etl'
-    Invoke-Recorder @('-stop', ('"' + $trace + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 60
-    $owned = $false
+    Save-RecorderUnmergedTrace $instance $tempDirectory $trace
+    $result.capture_mode = 'unmerged-owned-collector'
+    try {
+        Invoke-Recorder @('-cancel', '-instancename', $instance) 'cancel'
+        $owned = $false
+    } catch { $result.wpr_cleanup_error = $_.Exception.Message }
     if (-not (Test-Path -LiteralPath $trace) -or (Get-Item -LiteralPath $trace).Length -eq 0) {
         throw 'WPR returned no nonempty trace.'
     }
