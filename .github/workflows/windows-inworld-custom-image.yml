@@ -105,6 +105,10 @@ on:
         type: boolean
   workflow_dispatch:
     inputs:
+      native_wait_preflight:
+        description: "Record a bounded synthetic CPU/wait trace on an idle runner; skip Explorer tests."
+        type: boolean
+        default: false
       hang_capture_preflight:
         description: 'Check dump-tool permissions on an idle runner without running Explorer or tests.'
         required: false
@@ -206,8 +210,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-wait-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.native_wait_preflight }}
+    name: Preflight native wait capture
+    runs-on: win-gpu-t4-explorer
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: decentraland/explorer-automation
+          ref: ${{ github.sha }}
+      - name: Record synthetic CPU and wait activity
+        shell: powershell
+        timeout-minutes: 3
+        run: ./explorer/ci/test-native-wait-capture.ps1 -OutputDirectory ./native-wait-preflight
+      - name: Clean up this recording instance
+        if: always()
+        shell: powershell
+        timeout-minutes: 1
+        run: |
+          $file = './native-wait-preflight/instance.txt'
+          if (Test-Path -LiteralPath $file) {
+            $instance = (Get-Content -LiteralPath $file -Raw).Trim()
+            if ($instance -notmatch '^ExplorerWait-[0-9a-f]{32}$') { throw 'Invalid recording instance' }
+            & "$env:WINDIR/System32/wpr.exe" -cancel -instancename $instance
+            $global:LASTEXITCODE = 0
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-wait-preflight-${{ github.run_id }}
+          path: native-wait-preflight/
+          retention-days: 3
+          if-no-files-found: error
+
   capture-preflight:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.hang_capture_preflight }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.hang_capture_preflight && !inputs.native_wait_preflight }}
     name: Check hang capture permissions
     runs-on: win-gpu-t4-explorer
     timeout-minutes: 8
@@ -231,7 +269,7 @@ jobs:
   # splits: the tool owns the packing and the shard count, so no path can plan differently
   # and no path can end up unsplit by omission.
   plan:
-    if: ${{ !inputs.hang_capture_preflight }}
+    if: ${{ !inputs.hang_capture_preflight && !inputs.native_wait_preflight }}
     name: Plan shards
     runs-on: ubuntu-latest
     outputs:
@@ -381,7 +419,7 @@ jobs:
     needs: plan
     # A plan job that died still leaves a runnable leg: the fallback below is the whole
     # selection on one runner, which is the same answer it gives when there is nothing to split.
-    if: ${{ !cancelled() && !inputs.hang_capture_preflight }}
+    if: ${{ !cancelled() && !inputs.hang_capture_preflight && !inputs.native_wait_preflight }}
     runs-on: win-gpu-t4-explorer
     strategy:
       fail-fast: false
