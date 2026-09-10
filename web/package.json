@@ -41,8 +41,8 @@
   "dependencies": {
     "@types/mailparser": "^3.4.6",
     "dotenv": "^16.4.0",
-    "imapflow": "^1.0.0",
-    "mailparser": "^3.9.8"
+    "imapflow": "^1.7.8",
+    "mailparser": "^3.9.23"
   },
   "engines": {
     "node": ">=20"
