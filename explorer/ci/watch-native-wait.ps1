@@ -27,7 +27,8 @@ $result = [ordered]@{
     minimum_start_free_gib = 18
     stop_free_gib = 10
     etl_compression = $false
-    stop_timeout_seconds = 300
+    stop_timeout_seconds = 30
+    capture_mode = 'unmerged-owned-collector'
     explorer_pid = $ExplorerProcessId
 }
 try {
@@ -48,7 +49,7 @@ try {
     $sessions | Out-File (Join-Path $OutputDirectory 'sessions-before.log')
     if (($sessions -join "`n") -match 'WPR_|NT Kernel Logger|Explorer Native Wait') { throw 'Another recording is already active.' }
     $drive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($tempDirectory))
-    if ($drive.AvailableFreeSpace -lt 18GB) { throw 'Less than 18 GiB available for bounded trace and merge.' }
+    if ($drive.AvailableFreeSpace -lt 18GB) { throw 'Less than 18 GiB available for bounded trace and encryption.' }
     try {
         $contextScript = Join-Path $PSScriptRoot 'Write-GraphicsContext.ps1'
         $contextArgs = @('-NoProfile','-File',('"' + $contextScript + '"'),'-OutputDirectory',('"' + $OutputDirectory + '"'))
@@ -95,9 +96,13 @@ try {
     $result.stop_started_utc = [DateTime]::UtcNow.ToString('o')
     $result.temporary_files_before_stop = @(Get-RecorderTemporaryFiles $tempDirectory)
     $result.temporary_bytes_before_stop = (Get-RecorderTemporaryFiles $tempDirectory | Measure-Object Length -Sum).Sum
-    Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 300
-    $owned = $false
+    # Retain the kernel stream without a merge that can block after long stalls.
+    Save-RecorderUnmergedTrace $instance $tempDirectory $rawPath
     $result.recording_stopped_utc = [DateTime]::UtcNow.ToString('o')
+    try {
+        Invoke-Recorder @('-cancel', '-instancename', $instance) 'cancel'
+        $owned = $false
+    } catch { $result.wpr_cleanup_error = $_.Exception.Message }
     $result.raw_bytes = (Get-Item -LiteralPath $rawPath).Length
     if ($result.raw_bytes -eq 0) { throw 'Empty trace.' }
     $result.raw_sha256 = (Get-FileHash -LiteralPath $rawPath -Algorithm SHA256).Hash
