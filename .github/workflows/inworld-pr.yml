@@ -14,18 +14,20 @@ name: InWorld (PR)
 # split across shards — this job resolves the scope and the Windows leg plans the split
 # from it, with the same tool, the same way every other origin of that leg does.
 #
-# Baselines are excluded — they are visual-suite inputs and cannot change an
-# InWorld result.
+# The Visual suite (run-visual-suite.yml) runs beside it on every PR here. Baselines
+# and explorer/scenes/ are visual-suite inputs: they cannot change an InWorld result,
+# so they are dropped before the scope is resolved.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'explorer/Tests/**'
-      - '!explorer/Tests/Baselines/**'
+      - 'explorer/scenes/**'
       - 'explorer/ci/**'
       - '.github/workflows/inworld-pr.yml'
       - '.github/workflows/run-inworld-suite.yml'
+      - '.github/workflows/run-visual-suite.yml'
       - '.github/workflows/windows-inworld-custom-image.yml'
       - '.github/actions/setup-explorer-runner/**'
 
@@ -53,6 +55,7 @@ jobs:
       should_run: ${{ steps.scope.outputs.should_run }}
       filter: ${{ steps.scope.outputs.filter }}
       scope: ${{ steps.scope.outputs.scope }}
+      short_sha: ${{ steps.scope.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v6
 
@@ -91,6 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GOLDEN: ${{ steps.golden.outcome }}
         run: |
           set -euo pipefail
@@ -101,6 +105,15 @@ jobs:
           echo "::group::Changed files"
           echo "$CHANGED"
           echo "::endgroup::"
+          echo "short_sha=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
+
+          # Visual-suite inputs cannot change an InWorld result; the Visual job runs regardless.
+          INWORLD_CHANGED=$(printf '%s\n' "$CHANGED" | grep -Ev '^explorer/(Tests/Baselines|scenes)/' || true)
+          if [ -z "$INWORLD_CHANGED" ]; then
+            echo "::notice::Only visual-suite inputs changed — nothing for the InWorld suite to run."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           # None of this is symbol-reachable, so the closure below cannot see it and
           # must not be trusted with it. GlobalSetup is the sharpest case: it is an
@@ -112,12 +125,12 @@ jobs:
           # that kills it before it can, and a failed golden check demotes the answer to
           # ALL as well.
           SCOPE=ALL
-          if printf '%s\n' "$CHANGED" | grep -Eq "$BROAD"; then
+          if printf '%s\n' "$INWORLD_CHANGED" | grep -Eq "$BROAD"; then
             echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
           elif [ "$GOLDEN" != 'success' ]; then
             echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
           else
-            SCOPE=$(printf '%s\n' "$CHANGED" \
+            SCOPE=$(printf '%s\n' "$INWORLD_CHANGED" \
               | dotnet "$SCOPE_DLL" 2> "$RUNNER_TEMP/scope.log" \
               || echo ALL)
             SCOPE=$(printf '%s' "$SCOPE" | tail -n 1)
@@ -226,4 +239,22 @@ jobs:
       fixture_image: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
       real_livekit_smoke: true
+    secrets: inherit
+
+  visual-suite:
+    name: Visual suite
+    needs: resolve
+    uses: ./.github/workflows/run-visual-suite.yml
+    # Must be a superset of run-visual-suite.yml's, or the call dies at startup.
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      mode: test
+      # Empty build_url resolves the newest unity-explorer dev build, as above.
+      build_url: ''
+      pr_number: ${{ github.event.pull_request.number }}
+      tests_ref: ${{ github.head_ref }}
+      commit_sha: ${{ needs.resolve.outputs.short_sha }}
+      branch_label: ${{ github.head_ref }}
     secrets: inherit

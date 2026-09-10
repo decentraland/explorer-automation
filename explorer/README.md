@@ -215,6 +215,8 @@ When authoring a brand-new test you need a live Explorer build instrumented for 
 
 Pixel-diff tests run against custom SDK7 scenes hosted out of [`scenes/`](scenes). The host server stays up across many test invocations; each fixture's scene gets hot-reloaded into it on demand.
 
+In CI the suite runs wherever the InWorld suite runs: on every explorer-automation PR and merge to `main` that touches tests, baselines or scenes (`inworld-pr.yml`, `inworld-main.yml`), and on unity-explorer release and hotfix PRs into `main` (`in-world-tests.yml`). `/visual-tests` on any unity-explorer PR still runs it on demand.
+
 Two-command workflow:
 
 ```bash
@@ -249,9 +251,9 @@ Direct human commits to `Tests/Baselines/**/*.png` should be flagged at review. 
 
 ### Merge order with paired unity-explorer PRs
 
-If your baseline change is paired with a unity-explorer PR (i.e. you used the matching branch name in both repos so `/visual-tests` picks up your tests, and `/generate-baselines` records against your Explorer build), **merge the unity-explorer PR first.**
+If your baseline change is paired with a unity-explorer PR (i.e. you used the matching branch name in both repos so the unity-explorer visual run picks up your tests, and `/generate-baselines` records against your Explorer build), **merge the unity-explorer PR first.**
 
-Why: explorer-automation main is the baseline of record for every open unity-explorer PR. The moment a baseline change lands here, every unity-explorer PR re-runs visual tests against the new pixels — which only the paired Explorer build produces. Merging explorer-automation first breaks every other in-flight PR until the paired Explorer change lands.
+Why: explorer-automation main is the baseline of record for every open unity-explorer PR. The moment a baseline change lands here, every unity-explorer release or hotfix PR (and any `/visual-tests` run) tests against the new pixels — which only the paired Explorer build produces. Merging explorer-automation first breaks every other in-flight PR until the paired Explorer change lands.
 
 The safe order is:
 1. Get both PRs reviewed.
