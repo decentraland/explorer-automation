@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory=$true)][int]$OwnerProcessId,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [ValidateRange(10,1200)][int]$MaxSeconds = 1200,
-    [ValidateRange(64,2048)][int]$MaxTempMiB = 2048
+    [ValidateRange(64,4096)][int]$MaxTempMiB = 4096
 )
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) { throw 'Expected assigned CI runner.' }
@@ -23,6 +23,9 @@ $result = [ordered]@{
     max_seconds = $MaxSeconds
     temporary_size_stop_mib = $MaxTempMiB
     poll_seconds = 2
+    minimum_start_free_gib = 18
+    stop_free_gib = 10
+    etl_compression = $true
     explorer_pid = $ExplorerProcessId
 }
 try {
@@ -43,7 +46,7 @@ try {
     $sessions | Out-File (Join-Path $OutputDirectory 'sessions-before.log')
     if (($sessions -join "`n") -match 'WPR_|NT Kernel Logger|Explorer Native Wait') { throw 'Another recording is already active.' }
     $drive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($tempDirectory))
-    if ($drive.AvailableFreeSpace -lt 10GB) { throw 'Less than 10 GiB available for bounded trace and merge.' }
+    if ($drive.AvailableFreeSpace -lt 18GB) { throw 'Less than 18 GiB available for bounded trace and merge.' }
     $playerDirectory = Split-Path -Parent $target.Path
     $result.binaries = @(foreach ($name in @('Decentraland.exe','GameAssembly.dll','UnityPlayer.dll')) {
         $file = Join-Path $playerDirectory $name
@@ -69,11 +72,11 @@ try {
             if ($currentTarget) { $currentTarget.Dispose() }
         }
         $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File | Measure-Object Length -Sum).Sum
-        if ($size -ge $MaxTempMiB * 1MB -or $drive.AvailableFreeSpace -lt 6GB) { $result.stop_reason = 'disk-limit'; break }
+        if ($size -ge $MaxTempMiB * 1MB -or $drive.AvailableFreeSpace -lt 10GB) { $result.stop_reason = 'disk-limit'; break }
         Start-Sleep -Seconds 2
     }
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
-    Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 90
+    Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-compress', '-instancename', $instance) 'stop' 120
     $owned = $false
     $result.recording_stopped_utc = [DateTime]::UtcNow.ToString('o')
     $result.raw_bytes = (Get-Item -LiteralPath $rawPath).Length

@@ -106,7 +106,7 @@ on:
   workflow_dispatch:
     inputs:
       native_wait_capture:
-        description: 'Record encrypted native scheduling trace during tests (20 minute / polled 2 GiB limit).'
+        description: 'Record encrypted native scheduling trace during tests (20 minute / polled 4 GiB limit).'
         type: boolean
         default: false
       native_trace_public_key:
@@ -1090,7 +1090,7 @@ jobs:
           } finally {
             if ($traceMonitor) {
               [IO.File]::WriteAllText((Join-Path $nativeTraceDir 'stop.txt'), 'stop')
-              if (-not $traceMonitor.WaitForExit(240000)) { Write-Host '::warning::Native recorder has not finalized within 240 seconds.' }
+              if (-not $traceMonitor.WaitForExit(360000)) { Write-Host '::warning::Native recorder has not finalized within 360 seconds.' }
               $traceMonitor.Dispose()
             }
           }
