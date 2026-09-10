@@ -39,6 +39,14 @@ try {
     if (($sessions -join "`n") -match 'WPR_|NT Kernel Logger|Explorer Native Wait') {
         throw 'Another kernel/WPR recording is present; it will not be changed.'
     }
+    try {
+        $contextScript = Join-Path $PSScriptRoot 'Write-GraphicsContext.ps1'
+        $contextArgs = @('-NoProfile','-File',('"' + $contextScript + '"'),'-OutputDirectory',('"' + $OutputDirectory + '"'))
+        $context = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList $contextArgs -RedirectStandardOutput (Join-Path $OutputDirectory 'graphics-context.log') -RedirectStandardError (Join-Path $OutputDirectory 'graphics-context-error.log')
+        try {
+            if (-not $context.WaitForExit(30000)) { $context.Kill(); [void]$context.WaitForExit(5000); $result.graphics_context_timeout = $true }
+        } finally { $context.Dispose() }
+    } catch { $result.graphics_context_error = $_.Exception.Message }
     Invoke-Recorder @('-profiledetails', ('"' + $profile + '!NativeWait"'), '-filemode') 'profile'
     $probeExe = Join-Path $tempDirectory 'NativeWaitProbe.exe'
     Add-Type -TypeDefinition @"
@@ -66,9 +74,10 @@ public class NativeWaitProbe {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     do {
         Start-Sleep -Seconds 1
-        $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File | Measure-Object Length -Sum).Sum
+        $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Measure-Object Length -Sum).Sum
         if ($size -gt 256MB) { throw 'Temporary trace exceeded the 256 MiB stop threshold.' }
     } while ($watch.Elapsed.TotalSeconds -lt 20 -and -not $probe.HasExited)
+    $result.temporary_files_before_stop = @(Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Select-Object Name,Length,Attributes)
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
     $trace = Join-Path $OutputDirectory 'idle-probe.etl'
     Invoke-Recorder @('-stop', ('"' + $trace + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 60

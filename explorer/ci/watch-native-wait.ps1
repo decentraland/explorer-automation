@@ -15,6 +15,7 @@ $tempDirectory = Join-Path $env:RUNNER_TEMP $instance
 $wpr = Join-Path $env:WINDIR 'System32/wpr.exe'
 . (Join-Path $PSScriptRoot 'NativeWaitRecorder.ps1')
 $owned = $false
+$gpuMonitor = $null
 $rawPath = Join-Path $tempDirectory 'player.etl'
 $result = [ordered]@{
     status = 'failed'
@@ -48,6 +49,14 @@ try {
     if (($sessions -join "`n") -match 'WPR_|NT Kernel Logger|Explorer Native Wait') { throw 'Another recording is already active.' }
     $drive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($tempDirectory))
     if ($drive.AvailableFreeSpace -lt 18GB) { throw 'Less than 18 GiB available for bounded trace and merge.' }
+    try {
+        $contextScript = Join-Path $PSScriptRoot 'Write-GraphicsContext.ps1'
+        $contextArgs = @('-NoProfile','-File',('"' + $contextScript + '"'),'-OutputDirectory',('"' + $OutputDirectory + '"'))
+        $context = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList $contextArgs -RedirectStandardOutput (Join-Path $OutputDirectory 'graphics-context.log') -RedirectStandardError (Join-Path $OutputDirectory 'graphics-context-error.log')
+        try {
+            if (-not $context.WaitForExit(30000)) { $context.Kill(); [void]$context.WaitForExit(5000); $result.graphics_context_timeout = $true }
+        } finally { $context.Dispose() }
+    } catch { $result.graphics_context_error = $_.Exception.Message }
     $playerDirectory = Split-Path -Parent $target.Path
     $result.binaries = @(foreach ($name in @('Decentraland.exe','GameAssembly.dll','UnityPlayer.dll')) {
         $file = Join-Path $playerDirectory $name
@@ -59,6 +68,12 @@ try {
     Invoke-Recorder @('-start', ('"' + $profile + '!NativeWait"'), '-filemode', '-recordtempto', ('"' + $tempDirectory + '"'), '-instancename', $instance) 'start'
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $result.recording_started_utc = [DateTime]::UtcNow.ToString('o')
+    try {
+        $smi = (Get-Command nvidia-smi.exe -ErrorAction Stop).Source
+        $gpuArgs = @('--query-gpu=timestamp,index,pstate,utilization.gpu,utilization.memory,memory.used,temperature.gpu,power.draw,clocks.current.graphics,clocks.current.sm,clocks.current.memory,clocks_throttle_reasons.active','--format=csv','-l','2')
+        $gpuMonitor = Start-Process $smi -WindowStyle Hidden -PassThru -ArgumentList $gpuArgs -RedirectStandardOutput (Join-Path $OutputDirectory 'gpu-samples.csv') -RedirectStandardError (Join-Path $OutputDirectory 'gpu-samples-error.log')
+        $result.gpu_sample_timezone = [TimeZoneInfo]::Local.Id
+    } catch { $result.gpu_monitor_error = $_.Exception.Message }
     [IO.File]::WriteAllText((Join-Path $OutputDirectory 'ready.txt'), $result.recording_started_utc)
     while ($true) {
         if (Test-Path -LiteralPath (Join-Path $OutputDirectory 'stop.txt')) { $result.stop_reason = 'test-step-finished'; break }
@@ -72,13 +87,14 @@ try {
             if ($currentOwner) { $currentOwner.Dispose() }
             if ($currentTarget) { $currentTarget.Dispose() }
         }
-        $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File | Measure-Object Length -Sum).Sum
+        $size = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Measure-Object Length -Sum).Sum
         if ($size -ge $MaxTempMiB * 1MB -or $drive.AvailableFreeSpace -lt 10GB) { $result.stop_reason = 'disk-limit'; break }
         Start-Sleep -Seconds 2
     }
     Invoke-Recorder @('-status', 'collectors', '-details', '-instancename', $instance) 'status'
     $result.stop_started_utc = [DateTime]::UtcNow.ToString('o')
-    $result.temporary_bytes_before_stop = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File | Measure-Object Length -Sum).Sum
+    $result.temporary_files_before_stop = @(Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Select-Object Name,Length,Attributes)
+    $result.temporary_bytes_before_stop = (Get-ChildItem -LiteralPath $tempDirectory -Recurse -File -Force | Measure-Object Length -Sum).Sum
     Invoke-Recorder @('-stop', ('"' + $rawPath + '"'), '-skipPdbGen', '-instancename', $instance) 'stop' 300
     $owned = $false
     $result.recording_stopped_utc = [DateTime]::UtcNow.ToString('o')
@@ -92,6 +108,9 @@ try {
     if (Test-Path -LiteralPath $rawPath) { $result.incomplete_output_bytes = (Get-Item -LiteralPath $rawPath).Length }
     Write-Error $_ -ErrorAction Continue
 } finally {
+    if ($gpuMonitor) {
+        try { if (-not $gpuMonitor.HasExited) { $gpuMonitor.Kill(); [void]$gpuMonitor.WaitForExit(5000) } } catch { $result.gpu_monitor_cleanup_error = $_.Exception.Message } finally { $gpuMonitor.Dispose() }
+    }
     if ($owned) {
         try { Invoke-Recorder @('-cancel', '-instancename', $instance) 'cancel' } catch { Write-Warning $_ }
     }

@@ -1121,6 +1121,7 @@ jobs:
           name: native-wait-capture-${{ matrix.index }}-${{ github.run_id }}
           path: |
             native-wait-capture/*.enc
+            native-wait-capture/*.csv
             native-wait-capture/*.json
             native-wait-capture/*.log
           retention-days: 3
