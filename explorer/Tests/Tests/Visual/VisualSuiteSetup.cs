@@ -57,7 +57,7 @@ public class VisualSuiteSetup
         try
         {
             // Instantiated during world bootstrap, so it is not there while loading is up.
-            ViewContainer.Instance.LoadingScreen.WaitForGone(WORLD_TIMEOUT);
+            ViewContainer.Instance.LoadingScreen.WaitForGone(WORLD_TIMEOUT, verificationShot: false);
 
             var menu = new Locatable(By.NAME, DEBUG_MENU_OBJECT)
                 .WaitFor(DEBUG_MENU_TIMEOUT, verificationShot: false);
