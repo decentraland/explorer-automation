@@ -19,6 +19,8 @@ public class VisualSuiteSetup
     private const string DEBUG_MENU_OBJECT     = "DebugMenuUIDocument(Clone)";
     private const string UI_DOCUMENT_COMPONENT = "UnityEngine.UIElements.UIDocument";
     private const string UI_DOCUMENT_ASSEMBLY  = "UnityEngine.UIElementsModule";
+    private const string TRACKER_COMPONENT     = "DCL.UI.UIDocumentTracker";
+    private const string TRACKER_ASSEMBLY      = "UI";
     private const double DEBUG_MENU_TIMEOUT    = 15D;
     private const double WORLD_TIMEOUT         = 180D;
 
@@ -46,7 +48,7 @@ public class VisualSuiteSetup
     /// <remarks>
     /// The visual host server *is* local-scene development, and the client offers no way to
     /// keep one without the other, so the sidebar renders into the top-right of every frame.
-    /// Its contents are UIElements rather than GameObjects — the whole UIDocument goes, not
+    /// Its contents are UIElements rather than GameObjects — the whole document goes, not
     /// individual buttons. Best-effort: a baseline carrying the sidebar is the status quo,
     /// and this is a [SetUpFixture], so throwing would abort the whole Visual namespace.
     /// </remarks>
@@ -57,9 +59,14 @@ public class VisualSuiteSetup
             // Instantiated during world bootstrap, so it is not there while loading is up.
             ViewContainer.Instance.LoadingScreen.WaitForGone(WORLD_TIMEOUT);
 
-            new Locatable(By.NAME, DEBUG_MENU_OBJECT)
-                .WaitFor(DEBUG_MENU_TIMEOUT, verificationShot: false)
-                .SetComponentProperty(UI_DOCUMENT_COMPONENT, "enabled", false, UI_DOCUMENT_ASSEMBLY);
+            var menu = new Locatable(By.NAME, DEBUG_MENU_OBJECT)
+                .WaitFor(DEBUG_MENU_TIMEOUT, verificationShot: false);
+
+            // Order is load-bearing. UpdateShowHideUIInputSystem dereferences rootVisualElement
+            // for every tracked document each frame, and disabling the UIDocument nulls it, so
+            // the tracker has to deregister first or the client throws on every frame after.
+            menu.SetComponentProperty(TRACKER_COMPONENT, "enabled", false, TRACKER_ASSEMBLY);
+            menu.SetComponentProperty(UI_DOCUMENT_COMPONENT, "enabled", false, UI_DOCUMENT_ASSEMBLY);
 
             Reporter.Log("VisualSuiteSetup: local-scene debug menu hidden.");
         }
