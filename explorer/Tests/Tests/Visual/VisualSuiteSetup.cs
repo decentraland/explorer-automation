@@ -7,15 +7,21 @@ namespace ExplorerAutomation.Tests.Tests.Visual;
 ///
 /// Today the host-server lifecycle is owned by metaforge (`mf explorer server start/stop`),
 /// not this fixture. It fails fast with a clear message when the visual run was invoked
-/// without orchestration that injects VISUAL_HOST_URL, and logs the framebuffer size once
-/// so a resolution drift is visible at the top of the report rather than only in whichever
-/// fixture happens to snapshot first. Frame size is not asserted here — the authoritative
-/// check is Snapshot.AssertSizeMatchesBaseline, which compares against each baseline's own
-/// dimensions.
+/// without orchestration that injects VISUAL_HOST_URL, hides the local-scene debug menu so
+/// it stays out of every baseline, and logs the framebuffer size once so a resolution drift
+/// is visible at the top of the report rather than only in whichever fixture happens to
+/// snapshot first. Frame size is not asserted here — the authoritative check is
+/// Snapshot.AssertSizeMatchesBaseline, which compares against each baseline's own dimensions.
 /// </summary>
 [SetUpFixture]
 public class VisualSuiteSetup
 {
+    private const string DEBUG_MENU_OBJECT     = "DebugMenuUIDocument(Clone)";
+    private const string UI_DOCUMENT_COMPONENT = "UnityEngine.UIElements.UIDocument";
+    private const string UI_DOCUMENT_ASSEMBLY  = "UnityEngine.UIElementsModule";
+    private const double DEBUG_MENU_TIMEOUT    = 15D;
+    private const double WORLD_TIMEOUT         = 180D;
+
     [OneTimeSetUp]
     public void RequireHost()
     {
@@ -30,7 +36,39 @@ public class VisualSuiteSetup
 
         Reporter.Log($"VisualSuiteSetup: host = {url}");
 
+        HideLocalSceneDebugMenu();
         LogFrameSize();
+    }
+
+    /// <summary>
+    /// Switches off the debug menu the client adds whenever local-scene development is on.
+    /// </summary>
+    /// <remarks>
+    /// The visual host server *is* local-scene development, and the client offers no way to
+    /// keep one without the other, so the sidebar renders into the top-right of every frame.
+    /// Its contents are UIElements rather than GameObjects — the whole UIDocument goes, not
+    /// individual buttons. Best-effort: a baseline carrying the sidebar is the status quo,
+    /// and this is a [SetUpFixture], so throwing would abort the whole Visual namespace.
+    /// </remarks>
+    private static void HideLocalSceneDebugMenu()
+    {
+        try
+        {
+            // Instantiated during world bootstrap, so it is not there while loading is up.
+            ViewContainer.Instance.LoadingScreen.WaitForGone(WORLD_TIMEOUT);
+
+            new Locatable(By.NAME, DEBUG_MENU_OBJECT)
+                .WaitFor(DEBUG_MENU_TIMEOUT, verificationShot: false)
+                .SetComponentProperty(UI_DOCUMENT_COMPONENT, "enabled", false, UI_DOCUMENT_ASSEMBLY);
+
+            Reporter.Log("VisualSuiteSetup: local-scene debug menu hidden.");
+        }
+        catch (Exception ex)
+        {
+            Reporter.Log(
+                $"VisualSuiteSetup: could not hide the local-scene debug menu ({ex.Message}). " +
+                "Baselines will include it.");
+        }
     }
 
     private static void LogFrameSize()
