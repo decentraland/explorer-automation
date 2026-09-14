@@ -1,6 +1,6 @@
 name: InWorld (main)
 
-# Runs the whole Category=InWorld suite after every merge to main.
+# Runs the whole Category=InWorld suite and the Visual suite after every merge to main.
 #
 # PR runs are scoped by Roslyn reachability (inworld-pr.yml), so a merge commit
 # is the first time the whole suite sees the merged state. It is also what makes
@@ -11,18 +11,22 @@ name: InWorld (main)
 # tabulates both. There is no PR to comment on, so the table lands in the job summary
 # alongside the Allure report link. The Windows leg splits the category across shards
 # here exactly as it does on a PR.
+#
+# The Visual suite (run-visual-suite.yml) runs beside it against the same dev build
+# rule. Baselines and explorer/scenes/ are visual-only inputs: a push touching nothing
+# else runs the Visual suite alone.
 
 on:
   push:
     branches: [main]
-    # Same inputs as inworld-pr.yml. Baselines feed the visual suite and
-    # explorer/scenes/ is visual-only, so neither can change a result here.
+    # Same inputs as inworld-pr.yml.
     paths:
       - 'explorer/Tests/**'
-      - '!explorer/Tests/Baselines/**'
+      - 'explorer/scenes/**'
       - 'explorer/ci/**'
       - '.github/workflows/inworld-main.yml'
       - '.github/workflows/run-inworld-suite.yml'
+      - '.github/workflows/run-visual-suite.yml'
       - '.github/workflows/windows-inworld-custom-image.yml'
       - '.github/actions/setup-explorer-runner/**'
 
@@ -39,8 +43,43 @@ permissions:
   id-token: write
 
 jobs:
+  resolve:
+    name: Classify the push
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      inworld_should_run: ${{ steps.classify.outputs.inworld_should_run }}
+      short_sha: ${{ steps.classify.outputs.short_sha }}
+    steps:
+      - name: Classify changed files
+        id: classify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "short_sha=${AFTER::7}" >> "$GITHUB_OUTPUT"
+          # Visual-only inputs cannot change an InWorld result. Anything else, or a
+          # diff the API cannot produce, runs the whole suite.
+          CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE}...${AFTER}" \
+            --paginate --jq '.files[].filename' 2>/dev/null || echo '<unknown>')
+          echo "::group::Changed files"
+          echo "$CHANGED"
+          echo "::endgroup::"
+          if printf '%s\n' "$CHANGED" | grep -Evq '^explorer/(Tests/Baselines|scenes)/'; then
+            echo "inworld_should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Only visual-suite inputs changed — skipping the InWorld suite."
+            echo "inworld_should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   run-suite:
     name: InWorld suite
+    needs: resolve
+    if: needs.resolve.outputs.inworld_should_run == 'true'
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
       # Empty build_url makes the reusable resolve the newest unity-explorer
@@ -75,4 +114,21 @@ jobs:
       fixture_seed_version: ${{ vars.E2E_FIXTURE_SEED_VERSION || 'avatar-assets' }}
       fixture_image: ${{ vars.E2E_FIXTURE_PROVISION == 'true' && (vars.E2E_FIXTURE_MODE || 'org') == 'local' && (vars.E2E_CATALYST_IMAGE || '') || '' }}
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
+    secrets: inherit
+
+  visual-suite:
+    name: Visual suite
+    needs: resolve
+    uses: ./.github/workflows/run-visual-suite.yml
+    # Must be a superset of run-visual-suite.yml's, or the call dies at startup.
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      mode: test
+      # Empty build_url resolves the newest unity-explorer dev build, as above.
+      build_url: ''
+      tests_ref: ${{ github.ref_name }}
+      commit_sha: ${{ needs.resolve.outputs.short_sha }}
+      branch_label: ${{ github.ref_name }}
     secrets: inherit
