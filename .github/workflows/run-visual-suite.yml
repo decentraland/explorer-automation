@@ -311,9 +311,12 @@ jobs:
           # to be generated in the single file mode!"), taking the whole publish
           # chain down with it. None also subsumes --skip-allure-open: nothing
           # is generated, so there is nothing to open.
+          # Same switch run-inworld-suite.yml passes: the client's performance-issue
+          # prompt is a modal over the whole frame and shows on the paravirt runner.
           TEST_EXIT=0
           mf explorer test "${BUILD_URL}" \
             --non-interactive \
+            --app-args="--bug-report false" \
             ${TESTS_REF:+--tests-ref "$TESTS_REF"} \
             $RECORD_FLAG \
             --filter "$TEST_FILTER" \
