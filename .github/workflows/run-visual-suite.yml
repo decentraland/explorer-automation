@@ -590,8 +590,81 @@ jobs:
           gh api graphql --input "$RUNNER_TEMP/ccob.json"
           echo "Committed regenerated baselines to ${TESTS_REF} (signed by GitHub)."
 
+      # unity-explorer PRs carry a unified CI status comment; fold the verdict into
+      # its automation section so the suite adds no second bot comment there, as
+      # run-inworld-suite.yml does for its inworld section. Every other caller keeps
+      # the standalone comment below, which is also the fallback when the section
+      # write exits non-zero (no unified comment yet, or an older dev format).
+      - name: Compose CI status section
+        id: compose
+        if: always() && env.PR_NUMBER != '' && github.repository == 'decentraland/unity-explorer' && inputs.mode == 'test'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPORT_LINK: ${{ steps.s3.outcome == 'success' && format('[Open report]({0})', steps.ids.outputs.report_url) || (steps.report.outputs.report_path != '' && 'generated but S3 upload failed — see workflow artifact' || 'not produced — see the workflow run') }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          BADGE_STYLE="?logo=github&logoColor=white&style=for-the-badge"
+          if [ "$JOB_STATUS" = "success" ]; then
+            BADGE="https://img.shields.io/badge/Automation-Passed!-3fb950${BADGE_STYLE}"; MSG="✅ Visual regression suite passed."
+          else
+            BADGE="https://img.shields.io/badge/Automation-Failed!-ff0000${BADGE_STYLE}"; MSG="❌ Visual regression suite failed."
+          fi
+          {
+            echo "[![Automation]($BADGE)]($RUN_URL)"
+            echo
+            echo "$MSG"
+            echo
+            echo "| Name | Link |"
+            echo "| -------- | ----------------------- |"
+            echo "| Commit | [\`${COMMIT_SHA}\`](${GITHUB_SERVER_URL:-https://github.com}/${PR_REPO}/commit/${COMMIT_SHA}) |"
+            echo "| Allure report | ${REPORT_LINK} |"
+            echo "| Workflow run | [View run]($RUN_URL) |"
+            echo
+            echo "<sub>Filter \`${TEST_FILTER}\` · tests ref \`${TESTS_REF:-main}\` · updated on every run.</sub>"
+          } > "$RUNNER_TEMP/section-body.md"
+
+      - name: Fetch unity-explorer's CI status action
+        if: always() && steps.compose.outcome == 'success'
+        uses: actions/checkout@v6
+        with:
+          repository: decentraland/unity-explorer
+          ref: dev
+          sparse-checkout: .github/actions/ci-status-comment
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          path: unity-explorer-ci
+
+      - name: Fold results into the unified CI status comment
+        id: section
+        if: always() && steps.compose.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WRITTEN=false
+          if REPO="$PR_REPO" SECTION=automation NO_CREATE=1 \
+             SECTION_BODY= SECTION_BODY_FILE="$RUNNER_TEMP/section-body.md" \
+             bash unity-explorer-ci/.github/actions/ci-status-comment/upsert-ci-status.sh; then
+            WRITTEN=true
+            # Retire the standalone comment an earlier run left behind. Best-effort.
+            (gh api --paginate "repos/$PR_REPO/issues/$PR_NUMBER/comments" \
+              --jq '.[] | select(.user.login == "github-actions[bot]"
+                                 and (.body | contains("## Visual regression tests"))
+                                 and ((.body | contains("<!-- ci-status -->")) | not)) | .id' \
+              || true) \
+            | while read -r id; do
+                gh api -X PATCH "repos/$PR_REPO/issues/comments/$id" \
+                  -f body="_The Visual suite now reports in the unified **CI Status** comment on this PR._" \
+                  >/dev/null || true
+              done
+          else
+            echo "::notice::CI status section not written; posting the standalone comment instead."
+          fi
+          echo "written=$WRITTEN" >> "$GITHUB_OUTPUT"
+
       - name: Find existing PR comment
-        if: always() && env.PR_NUMBER != ''
+        if: always() && env.PR_NUMBER != '' && steps.section.outputs.written != 'true'
         uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
         id: find-comment
         with:
@@ -601,7 +674,7 @@ jobs:
           body-includes: ${{ format('## {0} ({1})', (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests', inputs.platform) }}
 
       - name: Comment results on PR
-        if: always() && env.PR_NUMBER != ''
+        if: always() && env.PR_NUMBER != '' && steps.section.outputs.written != 'true'
         uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           repository: ${{ env.PR_REPO }}
