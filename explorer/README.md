@@ -40,6 +40,7 @@ Fixtures are tagged with NUnit `[Category]` so you can run them in isolation:
 | `Auth` | `EmailOtpLoginTests`, `EmailOtpLoginWithNewsletterTests`, `EmailOtpRecurrentLoginTests` | logged-out (cache cleared) | yes — IMAP fetches the code |
 | `InWorld` | `BackpackEmotesTests`, `ExplorePanelTests`, `ShortcutsTests` | in-world via a pre-cached identity | no |
 | `Visual` | per-scene fixtures under `Tests/Tests/Visual/` (`CoreFixture`, `MaterialsFixture`, `GltfFixture`, `UiFixture`, …) | host server + hot-reloaded test scenes | no |
+| `SyntheticInput` | `SyntheticInputTests` | in-world on **zone**, navigated to the `sdk7testscenes.dcl.eth` world by the fixture itself | no |
 
 Within each category, fixtures execute in their declared `[Order]`.
 
@@ -49,7 +50,7 @@ The `Auth` fixtures (`Order` ≥ 1000) **must run last in the assembly.** They i
 
 NUnit quirk that makes this fragile: fixtures **with** `[Order]` run first in numeric order, then fixtures **without** `[Order]` run last in undefined order. So just giving Auth a high Order isn't enough — every other fixture must also carry an `[Order]` lower than 1000, otherwise it falls into the "unordered" bucket and runs *after* Auth.
 
-**Rule when adding a new fixture:** annotate it with `[Order(N)]` where `N < 1000`. Current allocation: in-world fixtures `10–19`, visual fixtures `20–29`, Auth `1000+`. Pick the next free number in the relevant band.
+**Rule when adding a new fixture:** annotate it with `[Order(N)]` where `N < 1000`. Current allocation: in-world fixtures `10–19`, visual fixtures `20–29`, synthetic-input fixtures `30–39`, Auth `1000+`. Pick the next free number in the relevant band.
 
 ## Running Tests
 
@@ -85,6 +86,29 @@ metaforge account create dcl-e2e-inworld
 metaforge explorer run -- --alttester              # NOTE: no --clear
 metaforge explorer test --filter "Category=InWorld"
 ```
+
+### SyntheticInput suite (zone, drives the player through the input pipelines)
+
+`SyntheticInputTests` is the demo for the client's synthetic input layer: instead of clicking UI it
+walks the avatar, turns the camera and presses SDK input actions through the production input
+pipelines, via the `WorldAutomationProbe` / `NavigationAutomationProbe` static probes
+(`Tests/Common/SyntheticInput/`, `Tests/Common/Navigation.cs`). It runs against the
+`sdk7testscenes.dcl.eth` world on the **zone** environment, so it needs a zone identity and a zone
+launch — the InWorld chassis boots on org and this fixture skips there.
+
+```bash
+# One-time: an identity on zone (the account must live in the same env as --dclenv)
+metaforge account create synthetic-input --env zone
+metaforge account login synthetic-input --env zone
+
+# Every run. --realm/--position only save the fixture a realm change: it navigates to the
+# world and parcel itself when the client is anywhere else on zone.
+metaforge explorer run -- --alttester --dclenv zone --realm sdk7testscenes.dcl.eth --position 0,0
+metaforge explorer test --filter "Category=SyntheticInput"
+```
+
+The probes are gated by the `ALTTESTER` define and installed by `--alttester`, so a release build or a
+client launched without the flag fails the fixture's `OneTimeSetUp` with a message naming the flag.
 
 ### Targeted filters
 
