@@ -14,7 +14,7 @@ All paths below are relative to the repo root unless noted otherwise.
 # Build
 dotnet build explorer/Tests/
 
-# Run all tests (requires AltTester Desktop running + instrumented Explorer connected)
+# Run all tests (requires an instrumented Explorer launched with --alttester; AltTester Desktop optional)
 dotnet test explorer/Tests/ --logger "console;verbosity=detailed"
 
 # Run a specific test class
@@ -27,7 +27,7 @@ dotnet test explorer/Tests/ --filter "TestOpenEventsFromSidebar"
 metaforge explorer test <PR-number-or-branch>
 ```
 
-Tests connect to AltTester Desktop at `127.0.0.1:13000`. The Explorer must be instrumented and connected before running.
+Tests connect to `127.0.0.1:13000`: AltTester Desktop when it is running, otherwise the embedded relay from `explorer/AltRelay/` that `GlobalSetup` starts (`ALT_RELAY=0` requires Desktop). The Explorer must be instrumented (`--alttester`) and pointed at that port.
 
 ## CI Scope
 

@@ -69,7 +69,7 @@ scenes-syncpack:
 explorer-build:
 	dotnet build $(TESTS_DIR)
 
-## Run the explorer suite (needs AltTester Desktop + instrumented client), then build + open the Allure report. Usage: make explorer-test [FILTER="FullyQualifiedName~ExplorePanelTests"]
+## Run the explorer suite (needs an instrumented client on --alttester; AltTester Desktop optional), then build + open the Allure report. Usage: make explorer-test [FILTER="FullyQualifiedName~ExplorePanelTests"]
 explorer-test:
 	rm -rf $(TESTS_DIR)/bin/Debug/net10.0/allure-results
 	-dotnet test $(TESTS_DIR) $(if $(FILTER),--filter "$(FILTER)") --logger "console;verbosity=normal"

@@ -40,6 +40,7 @@ public class GlobalSetup
         finally
         {
             StopDriver();
+            EmbeddedRelay.Stop();
         }
     }
 
@@ -47,11 +48,12 @@ public class GlobalSetup
     public void StartDriver()
     {
         DriverSession.Reset();
-        Reporter.Log($"Connecting to AltTester at 127.0.0.1:13000");
+        EmbeddedRelay.EnsureStarted();
+        Reporter.Log($"Connecting to AltTester at {EmbeddedRelay.HOST}:{EmbeddedRelay.PORT}");
 
         CommonStuff.AltDriver = new AltDriver(
-            host: "127.0.0.1",
-            port: 13000,
+            host: EmbeddedRelay.HOST,
+            port: EmbeddedRelay.PORT,
             appName: "__default__",
             enableLogging: string.Equals(Environment.GetEnvironmentVariable("ALT_DRIVER_LOGS"),
                 "true", StringComparison.OrdinalIgnoreCase),

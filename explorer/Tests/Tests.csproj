@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MetaForge.TestLogger\MetaForge.TestLogger.csproj" />
+    <ProjectReference Include="..\AltRelay\AltRelay.csproj" />
   </ItemGroup>
 
   <ItemGroup>

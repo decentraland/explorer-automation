@@ -7,7 +7,7 @@ For the web/dapp test stack see [../web/README.md](../web/README.md). For repo-w
 ## Prerequisites
 
 - [.NET 10.0 SDK](https://dotnet.microsoft.com/download)
-- [AltTester Desktop](https://alttester.com/alttester/) — get a free trial license at https://alttester.com/tools
+- [AltTester Desktop](https://alttester.com/alttester/) — optional. When nothing listens on `127.0.0.1:13000` the suite starts its own relay (`explorer/AltRelay/`, no license needed); Desktop is still the tool for browsing the GameObject hierarchy (free trial license at https://alttester.com/tools)
 - An instrumented Explorer build or the Unity Editor
 - [MetaForge CLI](https://github.com/decentraland/metaforge) on your PATH (visual mode requires **v2.1.2+**)
 - A `.env` at the **repo root** populated from [../.env.example](../.env.example) — required only for the **Auth** suite (IMAP credentials to fetch OTP codes); the **InWorld** and **Visual** suites do not read it.
@@ -128,18 +128,25 @@ metaforge explorer test --filter "Name=TestUnequipAndEquipAllEmoteSlots"
 If you're driving the Explorer + AltTester yourself:
 
 1. Launch an instrumented Explorer with `--alttester` (build) or click **Play in Editor** under `AltTester > AltTester Editor` (editor).
-2. Start AltTester Desktop and wait for the connection.
+2. Optionally start AltTester Desktop and wait for the connection. Without it `GlobalSetup` starts the embedded relay on `127.0.0.1:13000` and the client connects to that instead (`ALT_RELAY=0` disables the relay and requires Desktop).
 3. Run the tests:
    ```bash
    dotnet test explorer/Tests/ --logger "console;verbosity=detailed"
    dotnet test explorer/Tests/ --filter "Category=InWorld"
    ```
 
+To keep the relay up on its own (for a driver outside this suite, or so the client can be connected before the run):
+```bash
+dotnet run --project explorer/AltRelay          # ws://127.0.0.1:13000, Ctrl+C stops
+dotnet run --project explorer/AltRelay -- 0.0.0.0 13000
+```
+
 ## Project Structure
 
 ```
 explorer/
 ├── ExplorerAutomation.sln
+├── AltRelay/                          # license-free stand-in for the AltTester Desktop relay (auto-started by GlobalSetup)
 ├── MetaForge.TestLogger/              # custom NUnit logger consumed by metaforge
 ├── ci/                                # CI-only helpers, outside the solution
 │   └── ScopeInWorldTests/             # picks the InWorld fixtures a PR's changes can reach
@@ -171,7 +178,7 @@ The project follows the **Page Object Model (POM)** pattern.
 4. **TearDown** — Takes a screenshot on failure.
 5. **OneTimeTearDown** — Disconnects the driver.
 
-`GlobalSetup` runs once for the whole assembly: connects `AltDriver` to AltTester Desktop at `127.0.0.1:13000`, initializes `ViewContainer`, sets up the Unity log listener.
+`GlobalSetup` runs once for the whole assembly: starts the embedded relay if `127.0.0.1:13000` is free (`EmbeddedRelay`), connects `AltDriver` there (AltTester Desktop or the relay), initializes `ViewContainer`, sets up the Unity log listener.
 
 ### Reporting
 

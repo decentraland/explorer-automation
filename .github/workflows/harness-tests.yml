@@ -5,12 +5,14 @@ on:
     paths:
       - 'explorer/Tests/**'
       - 'explorer/Harness.Tests/**'
+      - 'explorer/AltRelay/**'
       - '.github/workflows/harness-tests.yml'
   push:
     branches: [main]
     paths:
       - 'explorer/Tests/**'
       - 'explorer/Harness.Tests/**'
+      - 'explorer/AltRelay/**'
       - '.github/workflows/harness-tests.yml'
   workflow_dispatch:
 
