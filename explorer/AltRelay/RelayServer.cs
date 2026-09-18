@@ -23,6 +23,8 @@ public sealed class RelayServer : IDisposable
     private const int MAX_PENDING_MESSAGES = 256;
     private const string DRIVER_REGISTERED =
         "{\"commandName\":\"driverRegistered\",\"isNotification\":true,\"messageId\":\"\",\"driverId\":\"\",\"data\":null,\"error\":null}";
+    private const string DRIVER_CONNECTED = "DriverConnectedNotification";
+    private const string DRIVER_DISCONNECTED = "DriverDisconnectedNotification";
 
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _cts = new();
@@ -239,7 +241,12 @@ public sealed class RelayServer : IDisposable
             mate = peer.Mate;
             peer.Mate = null;
             if (mate is not null) mate.Mate = null;
-            if (mate is not null && peer.Role == Role.Driver) TryPairLocked();
+            if (mate is not null && peer.Role == Role.Driver)
+            {
+                // Started before re-pairing so the app sees this driver leave before the next one arrives.
+                _ = mate.SendAsync(DriverNotification(DRIVER_DISCONNECTED, peer));
+                TryPairLocked();
+            }
         }
         if (mate is not null && peer.Role == Role.App)
         {
@@ -263,11 +270,16 @@ public sealed class RelayServer : IDisposable
             _log($"paired {driver} with {app}");
             _ = Task.Run(async () =>
             {
+                // The app only switches to its simulated input devices once it is told a driver is there.
+                await app.SendAsync(DriverNotification(DRIVER_CONNECTED, driver));
                 foreach (var text in backlog) await driver.SendAsync(text);
                 await driver.SendAsync(DRIVER_REGISTERED);
             });
         }
     }
+
+    private static string DriverNotification(string name, Peer driver) =>
+        $"{{\"commandName\":\"{name}\",\"isNotification\":true,\"messageId\":\"\",\"driverId\":\"{driver.Id}\"}}";
 
     private enum Role { App, Driver }
 
@@ -276,6 +288,7 @@ public sealed class RelayServer : IDisposable
         private readonly SemaphoreSlim _sendGate = new(1, 1);
 
         public WebSocket Socket { get; } = socket;
+        public string Id { get; } = Guid.NewGuid().ToString("N");
         public Role Role { get; } = role;
         public string AppName { get; } = appName;
         public Peer? Mate { get; set; }

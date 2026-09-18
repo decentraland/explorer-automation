@@ -68,6 +68,24 @@ public class AltRelayTests
     }
 
     [Test]
+    public async Task AppIsToldWhenADriverComesAndGoes()
+    {
+        using var relay = RelayServer.Start(port: 0);
+        using var app = await FakeApp.ConnectAsync(relay.Port, APP_NAME);
+        var driver = NewDriver(relay.Port);
+        try
+        {
+            Assert.That(app.Notifications, Is.EqualTo(new[] { "DriverConnectedNotification" }));
+        }
+        finally
+        {
+            StopQuietly(driver);
+        }
+        Assert.That(() => app.Notifications,
+            Is.EqualTo(new[] { "DriverConnectedNotification", "DriverDisconnectedNotification" }).After(2000, 50));
+    }
+
+    [Test]
     public async Task DriverLosesItsSessionWhenTheAppLeaves()
     {
         using var relay = RelayServer.Start(port: 0);
@@ -100,10 +118,16 @@ public class AltRelayTests
         private readonly ClientWebSocket _socket = new();
         private readonly CancellationTokenSource _cts = new();
         private readonly List<string> _commands = [];
+        private readonly List<string> _notifications = [];
 
         public IReadOnlyList<string> Commands
         {
             get { lock (_commands) return _commands.ToArray(); }
+        }
+
+        public IReadOnlyList<string> Notifications
+        {
+            get { lock (_notifications) return _notifications.ToArray(); }
         }
 
         public static async Task<FakeApp> ConnectAsync(int port, string appName)
@@ -137,6 +161,7 @@ public class AltRelayTests
                         message.Write(buffer, 0, result.Count);
                     } while (!result.EndOfMessage);
                     var reply = Answer(Encoding.UTF8.GetString(message.ToArray()));
+                    if (reply is null) continue;
                     await _socket.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, _cts.Token);
                 }
             }
@@ -147,6 +172,11 @@ public class AltRelayTests
         {
             using var command = JsonDocument.Parse(request);
             var name = command.RootElement.GetProperty("commandName").GetString();
+            if (command.RootElement.TryGetProperty("isNotification", out var notification) && notification.GetBoolean())
+            {
+                lock (_notifications) _notifications.Add(name);
+                return null;
+            }
             var messageId = command.RootElement.GetProperty("messageId").GetString();
             lock (_commands) _commands.Add(name);
             var data = name switch
