@@ -645,14 +645,67 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         [AllureStep("Wait for the whole emote grid page to load")]
         public void WaitForGridPageLoaded()
         {
-            // One budget shared across the tiles, not one ceiling each.
-            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
-            foreach (var item in GridItems)
-                item.LoadedIndicator.WaitFor(
-                    Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
+            if (!TryWaitForGridPageLoaded())
+                throw new AssertionException(
+                    $"The emote grid stopped at {LoadedTileCount()} of {GRID_ITEM_COUNT} tiles after "
+                    + $"{GRID_PAGE_TIMEOUT}s. The client can abandon the base-emote catalogue under load "
+                    + "- check Player.log for \"Loading emotes timed out\".");
 
             Reporter.TakeVerificationShot("loaded_EmoteGridPage");
             Reporter.Log("Emote grid page finished loading");
+        }
+
+        /// <summary>
+        /// Waits for a full page, answering false rather than throwing when it never fills, so a
+        /// caller can retry the fetch instead of reporting a missing tile as the whole story.
+        /// </summary>
+        public bool TryWaitForGridPageLoaded(double timeout = GRID_PAGE_TIMEOUT)
+        {
+            // Per index, not a total across the grid: callers address tiles by index, and a pooled
+            // grid can satisfy a count with a different set than the one they are about to read.
+            // One budget shared across the tiles, not one ceiling each.
+            var deadline = DateTime.UtcNow.AddSeconds(timeout);
+
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
+                while (!TileLoaded(i))
+                {
+                    if (DateTime.UtcNow >= deadline)
+                        return false;
+
+                    Thread.Sleep(POLL_MS);
+                }
+
+            return true;
+        }
+
+        /// <summary>
+        /// How many of the page's addressable tiles currently hold content — for failure messages,
+        /// which otherwise name only the first index that never bound.
+        /// </summary>
+        public int LoadedTileCount()
+        {
+            var loaded = 0;
+
+            for (var i = 0; i < GRID_ITEM_COUNT; i++)
+                if (TileLoaded(i))
+                    loaded++;
+
+            return loaded;
+        }
+
+        // Read off the same locator the callers address, so the two can never drift apart. Driver
+        // call rather than Locatable.IsPresent: this runs on every poll, and that overload is an
+        // [AllureStep] whose per-call entry would bury the report it is meant to explain.
+        private bool TileLoaded(int index)
+        {
+            Locatable loaded = GridItems[index].LoadedIndicator;
+
+            try
+            {
+                CommonStuff.AltDriver.FindObject(loaded.by, loaded.name);
+                return true;
+            }
+            catch (NotFoundException) { return false; }
         }
 
         /// <summary>

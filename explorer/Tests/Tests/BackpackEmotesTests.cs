@@ -16,6 +16,9 @@ public class BackpackEmotesTests : BaseTest
     // after the page reports full.
     private const double SETTLE_SAMPLE_INTERVAL = 5;
     private const int CATALOG_SETTLE_READS = 7;
+    // Panel opens allowed before giving up on the catalogue, not retries of a flaky wait: each
+    // open reissues the fetch the client abandoned on the previous one.
+    private const int CATALOG_LOAD_ATTEMPTS = 2;
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
@@ -155,18 +158,41 @@ public class BackpackEmotesTests : BaseTest
 
     private void OpenEmotes()
     {
-        // Open backpack via the keyboard shortcut: more reliable than the sidebar click
-        // for the very first interaction post-warmup.
-        PressKey(AltKeyCode.I);
-        Views.ExplorePanel.WaitFor();
-        Views.ExplorePanel.Backpack.EmotesTabButton.Click();
-        Views.ExplorePanel.Backpack.Emotes.WaitFor();
+        for (var attempt = 1; ; attempt++)
+        {
+            // Open backpack via the keyboard shortcut: more reliable than the sidebar click
+            // for the very first interaction post-warmup.
+            PressKey(AltKeyCode.I);
+            Views.ExplorePanel.WaitFor();
+            Views.ExplorePanel.Backpack.EmotesTabButton.Click();
+            Views.ExplorePanel.Backpack.Emotes.WaitFor();
 
-        // A search term from an earlier test outlives the panel and shrinks the page, which
-        // index addressing cannot survive — clear it (after the tab click, since only the active
-        // section's grid picks it up) and wait out the rebuild it triggers.
-        Views.ExplorePanel.Backpack.ClearSearch();
-        Views.ExplorePanel.Backpack.Emotes.WaitForGridPageLoaded();
+            // A search term from an earlier test outlives the panel and shrinks the page, which
+            // index addressing cannot survive — clear it (after the tab click, since only the active
+            // section's grid picks it up) and wait out the rebuild it triggers.
+            Views.ExplorePanel.Backpack.ClearSearch();
+
+            var emotes = Views.ExplorePanel.Backpack.Emotes;
+            if (emotes.TryWaitForGridPageLoaded())
+                return;
+
+            // The page is short because the client gave up on the catalogue, not because it is
+            // still arriving: Player.log names every base emote under "Loading emotes timed out",
+            // and no further tile arrives on this open. Reopening reissues the fetch, which then
+            // completes in seconds. Waiting longer on the same open cannot help.
+            var loaded = emotes.LoadedTileCount();
+
+            if (attempt == CATALOG_LOAD_ATTEMPTS)
+                throw new AssertionException(
+                    $"The emote grid stopped at {loaded} of "
+                    + $"{ExplorePanelBackpackView.EmotesTab.GRID_ITEM_COUNT} tiles across "
+                    + $"{CATALOG_LOAD_ATTEMPTS} panel opens — the client never finished loading the "
+                    + "base-emote catalogue.");
+
+            Reporter.Log(
+                $"Emote grid stopped at {loaded} tiles; reopening the panel to reissue the catalogue fetch");
+            Views.ExplorePanel.Close();
+        }
     }
 
     /// <summary>
