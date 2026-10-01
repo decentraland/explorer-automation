@@ -910,9 +910,7 @@ jobs:
             # during startup and overwrites whatever -screen-* asked for.
             '--resolution', "$($env:EXPLORER_RENDER_WIDTH)x$($env:EXPLORER_RENDER_HEIGHT)"
           )
-          # A world realm keeps the run away from neighbouring third-party scenes: on the public
-          # map, a scene at 95,98 posting to a dead analytics host froze the client for minutes.
-          # --position stays as the parcel inside the world. A fixture realm, added below, wins.
+          # A world has no neighbouring third-party scenes; --position is the parcel inside it.
           if ($env:WORLD_INPUT -and -not $env:FIXTURE_BASE_URL) {
             $explorerArgs += @('--realm', $env:WORLD_INPUT)
             Write-Host "Spawning in world $($env:WORLD_INPUT) at $($env:SPAWN_POSITION_INPUT)"
