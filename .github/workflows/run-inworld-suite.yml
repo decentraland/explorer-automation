@@ -450,7 +450,7 @@ jobs:
     if: >-
       always() && inputs.macos &&
       (needs.fixture.result == 'success' || needs.fixture.result == 'skipped')
-    runs-on: macos-14
+    runs-on: macos-26
     # Shared context for the report job. Per-column results cannot travel this way
     # (the Windows matrix would overwrite them), so those come back as artifacts.
     outputs:
@@ -710,7 +710,7 @@ jobs:
             echo "## InWorld suite (macOS)"
             echo
             echo "- Leg: \`macOS\`"
-            echo "- Platform: \`macos-14\` (GitHub-hosted)"
+            echo "- Platform: \`macos-26\` (GitHub-hosted)"
             echo "- Runner: \`${RUNNER_NAME:-?}\`"
             echo "- Fixtures: \`whole selection\`"
             echo "- Planned: \`whole selection\`"
@@ -1433,7 +1433,7 @@ jobs:
           jq -n \
             --arg label   'macOS' \
             --arg result  "${STEP_RESULT:-skipped}" \
-            --arg runner  "macos-14" \
+            --arg runner  "macos-26" \
             --arg report  "${REPORT_URL}" \
             --arg kind    "${REPORT_KIND:-Open}" \
             --argjson passed "$PASSED" --argjson failed "$FAILED" \
@@ -1694,7 +1694,7 @@ jobs:
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
-            echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+            echo "<sub>macOS on \`macos-26\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > comment.md
 
           # The same result shaped as the inworld section of unity-explorer's
@@ -1716,7 +1716,7 @@ jobs:
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
-            echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+            echo "<sub>macOS on \`macos-26\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > section-body.md
 
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
