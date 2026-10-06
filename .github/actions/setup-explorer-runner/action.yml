@@ -1,6 +1,6 @@
 name: Set up Explorer test runner (macOS)
 description: >-
-  Install what `mf explorer test` needs on a GitHub-hosted macos-14 runner —
+  Install what `mf explorer test` needs on a GitHub-hosted macos-26 runner —
   .NET, AltTester Desktop, the allure CLI, MetaForge — and activate the
   AltTester license.
 
