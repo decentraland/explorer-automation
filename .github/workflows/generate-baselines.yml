@@ -134,7 +134,8 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          FIRST_LINE=$(printf '%s' "$COMMENT_BODY" | head -n1)
+          # The web editor submits CRLF and may leave trailing spaces; neither is an argument.
+          FIRST_LINE=$(printf '%s' "$COMMENT_BODY" | head -n1 | tr -d '\r' | sed -E 's/[[:space:]]+$//')
           REST="${FIRST_LINE#/generate-baselines}"
           REST="${REST# }"
 
