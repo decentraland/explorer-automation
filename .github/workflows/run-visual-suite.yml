@@ -98,7 +98,7 @@ permissions:
 jobs:
   run:
     name: Visual suite (${{ inputs.mode }} / ${{ inputs.platform }})
-    runs-on: ${{ inputs.platform == 'windows' && 'windows-latest' || 'macos-14' }}
+    runs-on: ${{ inputs.platform == 'windows' && 'windows-latest' || 'macos-26' }}
     timeout-minutes: 30
 
     env:

@@ -234,7 +234,7 @@ Recording a baseline:
 
 **The canonical path is CI.** Comment `/generate-baselines` on your explorer-automation PR. The `Generate Baselines` workflow runs the suite with `--record-baselines` against a deterministic Explorer build, then auto-commits the regenerated PNGs back to your PR branch as `github-actions[bot]`.
 
-Why CI rather than your laptop: GPU model, font subpixel hinting, color profile and OS version all affect rendered pixels. A baseline recorded on a dev machine can diverge from what CI renders, and every downstream unity-explorer PR would then fail visual regression against a baseline only your machine could reproduce. CI runs on a deterministic macOS-14 runner, so its baselines are the only ones the rest of the pipeline can trust.
+Why CI rather than your laptop: GPU model, font subpixel hinting, color profile and OS version all affect rendered pixels. A baseline recorded on a dev machine can diverge from what CI renders, and every downstream unity-explorer PR would then fail visual regression against a baseline only your machine could reproduce. CI runs on a deterministic GitHub-hosted macOS runner, so its baselines are the only ones the rest of the pipeline can trust.
 
 You can still record locally during iteration to sanity-check the *fixture* (does it set up correctly, does `Frame.WaitForStable` settle?):
 

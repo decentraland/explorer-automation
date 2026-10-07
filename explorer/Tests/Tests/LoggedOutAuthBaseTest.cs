@@ -89,7 +89,7 @@ public abstract class LoggedOutAuthBaseTest : BaseTest
     /// The original implementation polled <c>PressKey(I)</c> until ExplorePanel appeared, but
     /// while LoadingScreen is up the SidebarController has not wired its OnClick listeners yet
     /// and shortcut presses are silently dropped — so the poll can never succeed within its
-    /// budget on slow runners. On macos-14 paravirt the new-user world stream regularly runs
+    /// budget on slow runners. On the paravirt macOS runner the new-user world stream regularly runs
     /// 4+ minutes (asset bundle warmup + avatar creation + first realm comms), so the loading
     /// budget here is 360s — well past BaseTest's 300s default — to absorb the worst case.
     /// </remarks>

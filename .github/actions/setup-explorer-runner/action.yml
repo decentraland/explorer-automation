@@ -1,6 +1,6 @@
 name: Set up Explorer test runner (macOS)
 description: >-
-  Install what `mf explorer test` needs on a GitHub-hosted macos-14 runner —
+  Install what `mf explorer test` needs on a GitHub-hosted macOS runner —
   .NET, AltTester Desktop, the allure CLI, MetaForge — and activate the
   AltTester license.
 
@@ -96,10 +96,7 @@ runs:
         fi
         gh api repos/decentraland/MetaForge/releases/latest --jq '.tag_name'
 
-    # install.sh installs the latest release. v2.15.0+ launches Explorer via
-    # direct exec of Contents/MacOS/<binary> instead of /usr/bin/open, which is
-    # what lets the InWorld suite's DYLD wrapper survive into the Explorer
-    # process (LaunchServices strips DYLD_* at the SIP boundary).
+    # install.sh installs the latest release.
     - name: Install MetaForge
       shell: bash
       env:

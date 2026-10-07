@@ -1,7 +1,7 @@
 name: InWorld Suite
 
 # Reusable workflow that owns the mechanics of the InWorld NUnit suite on
-# GitHub-hosted `macos-14`: prereq install, audio workarounds, AltTester
+# GitHub-hosted macOS: prereq install, AltTester
 # license, Explorer install, `mf explorer test`, Allure upload, PR reporting.
 # Mirrors run-visual-suite.yml, which runs the same chassis.
 #
@@ -16,7 +16,7 @@ name: InWorld Suite
 #
 # Runs both platforms and reports them together:
 #
-#   run     macOS, GitHub-hosted macos-14, the whole selection on one runner
+#   run     macOS, GitHub-hosted macos-26, the whole selection on one runner
 #   windows windows-inworld-custom-image.yml, the same selection split across
 #           runners — that leg plans its own split, from `scope` when a caller
 #           resolved one and from `filter` otherwise
@@ -75,7 +75,7 @@ on:
         type: string
         required: true
       filter:
-        description: 'NUnit filter for `mf explorer test --filter`. Empty falls back to "Category=InWorld". Auth/OTP fixtures are excluded by that default — they need the email-OTP flow, unstable on macos-14; run them via an explicit filter.'
+        description: 'NUnit filter for `mf explorer test --filter`. Empty falls back to "Category=InWorld". Auth/OTP fixtures are excluded by that default — they need the email-OTP flow, unstable on the GitHub-hosted macOS runner; run them via an explicit filter.'
         type: string
         required: false
         default: ''
@@ -331,7 +331,7 @@ on:
         required: false
         default: 'main'
 
-# macos-14 runners are ephemeral, but serializing keeps concurrent runs for
+# macOS runners are ephemeral, but serializing keeps concurrent runs for
 # the same caller PR from racing on the S3 path. cancel-in-progress is safe:
 # there is no persistent runner state to unwind.
 #
@@ -710,7 +710,7 @@ jobs:
             echo "## InWorld suite (macOS)"
             echo
             echo "- Leg: \`macOS\`"
-            echo "- Platform: \`macos-14\` (GitHub-hosted)"
+            echo "- Platform: \`macos-26\` (GitHub-hosted)"
             echo "- Runner: \`${RUNNER_NAME:-?}\`"
             echo "- Fixtures: \`whole selection\`"
             echo "- Planned: \`whole selection\`"
@@ -823,12 +823,12 @@ jobs:
           # Explorer launch args forwarded via mf v2.12.0+ --app-args:
           #   --landscape-terrain-enabled false : the LandscapePlugin renderer
           #     registration (BushOptimized/Rock/TreeOptimized) is where the
-          #     macos-14 paravirt freezes; cutting terrain entirely sidesteps
+          #     paravirt runner freezes; cutting terrain entirely sidesteps
           #     the GPU stall.
           #   --skybox-time-enabled false : mirrors what Visual passes; the
           #     time-of-day skybox simulation isn't load-bearing for InWorld
           #     smoke and saves a bit of paravirt headroom.
-          #   --graphics low : on macos-14 this is redundant because
+          #   --graphics low : on the macOS runner this is redundant because
           #     EnforceLowPreset() already fires when MinimumSpecs fails
           #     (which it does on the paravirt GPU/VRAM/RAM), but it makes
           #     the intent explicit and reuses cleanly on Windows T4 (where
@@ -837,6 +837,8 @@ jobs:
           #     EnforceLowPreset path doesn't clobber an explicit higher
           #     preset on adequate hardware; also skips the modal that
           #     BaseTest.DismissMinimumSpecsModalIfPresent polls for.
+          #   --resolution 1280x720 : the runner's default window is too short
+          #     for Viewport.RequireUsable.
           # '=' form is mandatory — Spectre.Console parses the space form
           # ("--app-args ...") as a new option starting at --landscape...
           # See MetaForge ExplorerTestSettings.AppArgs description.
@@ -1262,7 +1264,7 @@ jobs:
           jq -n \
             --arg label   'macOS' \
             --arg result  "${STEP_RESULT:-skipped}" \
-            --arg runner  "macos-14" \
+            --arg runner  "macos-26" \
             --arg report  "${REPORT_URL}" \
             --arg kind    "${REPORT_KIND:-Open}" \
             --argjson passed "$PASSED" --argjson failed "$FAILED" \
@@ -1303,7 +1305,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # macos-14 is ephemeral so cleanup is best-effort; we still release the
+      # The macOS runner is ephemeral so cleanup is best-effort; we still release the
       # AltTester license slot and remove the metaforge test account so the
       # activation pool doesn't bloat with dead slots.
       #
@@ -1523,7 +1525,7 @@ jobs:
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
-            echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+            echo "<sub>macOS on \`macos-26\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > comment.md
 
           # The same result shaped as the inworld section of unity-explorer's
@@ -1545,7 +1547,7 @@ jobs:
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
-            echo "<sub>macOS on \`macos-14\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+            echo "<sub>macOS on \`macos-26\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > section-body.md
 
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
