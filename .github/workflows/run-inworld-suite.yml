@@ -16,7 +16,7 @@ name: InWorld Suite
 #
 # Runs both platforms and reports them together:
 #
-#   run     macOS, GitHub-hosted macos-26, the whole selection on one runner
+#   run     macOS, GitHub-hosted, the whole selection on one runner
 #   windows windows-inworld-custom-image.yml, the same selection split across
 #           runners — that leg plans its own split, from `scope` when a caller
 #           resolved one and from `filter` otherwise
@@ -458,6 +458,7 @@ jobs:
       commit_sha: ${{ env.COMMIT_SHA }}
       branch_label: ${{ env.BRANCH_LABEL }}
       test_filter: ${{ env.TEST_FILTER }}
+      runner_image: ${{ env.MACOS_IMAGE }}
     # Budgeted from the step caps below: 30m test + 12m self-preview pass +
     # ~1m40s setup + the on-failure tail (log dump, artifact upload, 2m-capped
     # cleanup) ≈ 47m. Measured green run 31177978453: 19m38s wall over 49 tests.
@@ -484,6 +485,28 @@ jobs:
       # polling chatter per run.
       ALT_VERBOSE_LOGS: 'false'
       EXPLORER_FAIL_FAST_INFRA: ${{ inputs.fixture_canary && '1' || '0' }}
+      # Explorer launch args, shared by both test steps:
+      #   --landscape-terrain-enabled false : the LandscapePlugin renderer
+      #     registration (BushOptimized/Rock/TreeOptimized) is where the
+      #     paravirt runner freezes; cutting terrain entirely sidesteps
+      #     the GPU stall.
+      #   --skybox-time-enabled false : mirrors what Visual passes; the
+      #     time-of-day skybox simulation isn't load-bearing for InWorld
+      #     smoke and saves a bit of paravirt headroom.
+      #   --graphics low : on the macOS runner this is redundant because
+      #     EnforceLowPreset() already fires when MinimumSpecs fails
+      #     (which it does on the paravirt GPU/VRAM/RAM), but it makes
+      #     the intent explicit and reuses cleanly on Windows T4 (where
+      #     specs may pass and the override actually wins).
+      #   --skip-minimum-specs-screen : pairs with --graphics so the
+      #     EnforceLowPreset path doesn't clobber an explicit higher
+      #     preset on adequate hardware; also skips the modal that
+      #     BaseTest.DismissMinimumSpecsModalIfPresent polls for.
+      #   --bug-report false : keeps the "Performance issue detected" modal,
+      #     whose backdrop swallows every click, from appearing mid-run.
+      #   --resolution 1280x720 : the runner's default window is too short
+      #     for Viewport.RequireUsable.
+      EXPLORER_APP_ARGS: --landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false --resolution 1280x720
 
     steps:
       - name: Validate inputs
@@ -698,6 +721,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           # Read back by Record suite result to report this job's wall clock.
           echo "MACOS_STARTED_AT=$(date -u +%s)" >> "$GITHUB_ENV"
+          # Report label for the runner image, read from the image itself so it
+          # follows runs-on (ImageOS "macos26" -> "macos-26").
+          echo "MACOS_IMAGE=$(sed -E 's/^macos([0-9]+)$/macos-\1/' <<<"${ImageOS:-macOS}")" >> "$GITHUB_ENV"
 
       # Same field set and order as the Windows leg's "Record benchmark context", so the
       # run summary reads the same for every leg. Keep the two in step.
@@ -710,7 +736,7 @@ jobs:
             echo "## InWorld suite (macOS)"
             echo
             echo "- Leg: \`macOS\`"
-            echo "- Platform: \`macos-26\` (GitHub-hosted)"
+            echo "- Platform: \`${MACOS_IMAGE}\` (GitHub-hosted)"
             echo "- Runner: \`${RUNNER_NAME:-?}\`"
             echo "- Fixtures: \`whole selection\`"
             echo "- Planned: \`whole selection\`"
@@ -820,25 +846,7 @@ jobs:
           EMAIL_DOMAIN: ${{ vars.EMAIL_DOMAIN || secrets.EMAIL_DOMAIN }}
         run: |
           set -euo pipefail
-          # Explorer launch args forwarded via mf v2.12.0+ --app-args:
-          #   --landscape-terrain-enabled false : the LandscapePlugin renderer
-          #     registration (BushOptimized/Rock/TreeOptimized) is where the
-          #     paravirt runner freezes; cutting terrain entirely sidesteps
-          #     the GPU stall.
-          #   --skybox-time-enabled false : mirrors what Visual passes; the
-          #     time-of-day skybox simulation isn't load-bearing for InWorld
-          #     smoke and saves a bit of paravirt headroom.
-          #   --graphics low : on the macOS runner this is redundant because
-          #     EnforceLowPreset() already fires when MinimumSpecs fails
-          #     (which it does on the paravirt GPU/VRAM/RAM), but it makes
-          #     the intent explicit and reuses cleanly on Windows T4 (where
-          #     specs may pass and the override actually wins).
-          #   --skip-minimum-specs-screen : pairs with --graphics so the
-          #     EnforceLowPreset path doesn't clobber an explicit higher
-          #     preset on adequate hardware; also skips the modal that
-          #     BaseTest.DismissMinimumSpecsModalIfPresent polls for.
-          #   --resolution 1280x720 : the runner's default window is too short
-          #     for Viewport.RequireUsable.
+          # Launch args come from EXPLORER_APP_ARGS (job env).
           # '=' form is mandatory — Spectre.Console parses the space form
           # ("--app-args ...") as a new option starting at --landscape...
           # See MetaForge ExplorerTestSettings.AppArgs description.
@@ -854,15 +862,8 @@ jobs:
           # open.
           # Teed so the result step can read the count metaforge reports, the same way
           # the Windows shards do, and both rows of the unified table come from one source.
-          # --bug-report false is load-bearing, not cosmetic. It clears FeatureId.BugReport, so
-          # DynamicWorldContainer never adds BugReportPlugin and PerformanceIssuePromptSystem is
-          # never injected -- the only way to guarantee the "Performance issue detected" modal
-          # cannot appear mid-run. That modal has a full-screen raycast-blocking Backdrop, so it
-          # swallows every click anywhere on screen, not just under the card: it silently ate
-          # sidebar and chat clicks and read as flaky UI. Explicit "false" wins without --debug,
-          # because ResolveFeatureFlagArg short-circuits on it before the debug gate.
           TEST_EXIT=0
-          APP_ARGS="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false --resolution 1280x720"
+          APP_ARGS="${EXPLORER_APP_ARGS}"
           if [ -n "${FIXTURE_APP_ARGS:-}" ]; then
             APP_ARGS="${APP_ARGS} ${FIXTURE_APP_ARGS}"
           fi
@@ -893,13 +894,12 @@ jobs:
           # A listening AltTester server makes MetaForge skip the relaunch, keeping the old args.
           pkill -9 -f "Decentraland.app/Contents/MacOS/Explorer" 2>/dev/null || true
           mf explorer server stop --non-interactive || true
-          # --bug-report false: same reason as the main leg above -- keep it.
           TEST_EXIT=0
           mf explorer test "$BUILD_URL" \
             --non-interactive \
             --filter "Category=SelfPreview" \
             --report-type None \
-            --app-args="--landscape-terrain-enabled false --skybox-time-enabled false --graphics low --skip-minimum-specs-screen --bug-report false --resolution 1280x720 --self-preview-wearables ${SELF_PREVIEW_WEARABLES}" \
+            --app-args="${EXPLORER_APP_ARGS} --self-preview-wearables ${SELF_PREVIEW_WEARABLES}" \
             2>&1 | tee "$RUNNER_TEMP/mf-selfpreview.log" \
             || TEST_EXIT=$?
           [ "$TEST_EXIT" = 0 ] || exit "$TEST_EXIT"
@@ -1264,7 +1264,7 @@ jobs:
           jq -n \
             --arg label   'macOS' \
             --arg result  "${STEP_RESULT:-skipped}" \
-            --arg runner  "macos-26" \
+            --arg runner  "${MACOS_IMAGE:-macOS}" \
             --arg report  "${REPORT_URL}" \
             --arg kind    "${REPORT_KIND:-Open}" \
             --argjson passed "$PASSED" --argjson failed "$FAILED" \
@@ -1460,6 +1460,7 @@ jobs:
           COMMIT_SHA: ${{ needs.run.outputs.commit_sha }}
           BRANCH_LABEL: ${{ needs.run.outputs.branch_label }}
           TEST_FILTER: ${{ needs.run.outputs.test_filter }}
+          MACOS_IMAGE: ${{ needs.run.outputs.runner_image || 'macOS' }}
         run: |
           set -euo pipefail
 
@@ -1525,7 +1526,7 @@ jobs:
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
-            echo "<sub>macOS on \`macos-26\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+            echo "<sub>macOS on \`${MACOS_IMAGE}\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > comment.md
 
           # The same result shaped as the inworld section of unity-explorer's
@@ -1547,7 +1548,7 @@ jobs:
             echo
             echo "Commit \`${COMMIT_SHA:-?}\` · branch \`${BRANCH_LABEL:-?}\` · filter \`${TEST_FILTER:-?}\` · [run #${GITHUB_RUN_ID}](${RUN_URL})"
             echo
-            echo "<sub>macOS on \`macos-26\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
+            echo "<sub>macOS on \`${MACOS_IMAGE}\`, Windows shards on \`win-gpu-t4-explorer\`. Updated on every run.</sub>"
           } > section-body.md
 
           cat comment.md >> "$GITHUB_STEP_SUMMARY"
