@@ -17,6 +17,10 @@ name: InWorld (PR)
 # The Visual suite (run-visual-suite.yml) runs beside it on every PR here. Baselines
 # and explorer/scenes/ are visual-suite inputs: they cannot change an InWorld result,
 # so they are dropped before the scope is resolved.
+#
+# `InWorld suite result` is the one check to require on main. It always reports: green
+# when nothing reaches the PR, otherwise the suites' verdict. Requiring the leg jobs
+# instead leaves a PR that runs no InWorld test waiting on checks that never start.
 
 on:
   pull_request:
@@ -258,3 +262,33 @@ jobs:
       commit_sha: ${{ needs.resolve.outputs.short_sha }}
       branch_label: ${{ github.head_ref }}
     secrets: inherit
+
+  result:
+    name: InWorld suite result
+    needs: [resolve, run-suite, visual-suite]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Gate on the suites
+        env:
+          RESOLVE: ${{ needs.resolve.result }}
+          SUITE: ${{ needs.run-suite.result }}
+          VISUAL: ${{ needs.visual-suite.result }}
+        run: |
+          set -euo pipefail
+          if [ "$RESOLVE" = "skipped" ]; then
+            echo "::notice::Draft or fork PR — the suites do not run here."
+            exit 0
+          fi
+          # A skipped InWorld suite means no fixture reaches the change, which is a pass.
+          if [ "$RESOLVE" = "success" ] \
+             && { [ "$SUITE" = "success" ] || [ "$SUITE" = "skipped" ]; } \
+             && [ "$VISUAL" = "success" ]; then
+            echo "::notice::InWorld: ${SUITE}; Visual: ${VISUAL}."
+            exit 0
+          fi
+          # Cancelled counts as failure: the superseding run reports its own result.
+          echo "::error::Gate failed — scope: ${RESOLVE}, InWorld: ${SUITE}, Visual: ${VISUAL}. See the Allure reports in the suites' job summaries."
+          exit 1
