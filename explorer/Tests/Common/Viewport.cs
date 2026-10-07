@@ -16,7 +16,8 @@ public static class Viewport
     /// <summary>
     /// Least vertical room the suite can drive, in the 1080-unit space panels are laid out in.
     /// The passport's close button and edit pencils sit 417 units above centre, so they leave the
-    /// screen below ~875; this rounds up. macOS CI launches at --resolution 1920x1080 (1080), the Windows runner 800.
+    /// screen below ~875; this rounds up. macOS CI launches at --resolution 1280x720 (1920x1080 left the
+    /// client at an unchanged 1920x642 viewport and failed this check), the Windows runner 800.
     /// </summary>
     public const int MIN_CANVAS_HEIGHT = 900;
 
