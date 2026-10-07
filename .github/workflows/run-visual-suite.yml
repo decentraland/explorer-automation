@@ -251,9 +251,6 @@ jobs:
           # to be generated in the single file mode!"), taking the whole publish
           # chain down with it. None also subsumes --skip-allure-open: nothing
           # is generated, so there is nothing to open.
-          #
-          # --bug-report false keeps the "Performance issue detected" modal out
-          # of the frame; the slower runner trips it mid-capture.
           TEST_EXIT=0
           mf explorer test "${BUILD_URL}" \
             --non-interactive \
@@ -261,7 +258,6 @@ jobs:
             $RECORD_FLAG \
             --filter "$TEST_FILTER" \
             --report-type None \
-            --app-args="--bug-report false" \
             || TEST_EXIT=$?
 
           mf explorer server stop --non-interactive || true
