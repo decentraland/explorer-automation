@@ -450,7 +450,7 @@ jobs:
     if: >-
       always() && inputs.macos &&
       (needs.fixture.result == 'success' || needs.fixture.result == 'skipped')
-    runs-on: macos-14
+    runs-on: macos-26
     # Shared context for the report job. Per-column results cannot travel this way
     # (the Windows matrix would overwrite them), so those come back as artifacts.
     outputs:
@@ -730,56 +730,10 @@ jobs:
           github-token: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           alttester-license: ${{ secrets.ALTTESTER_LICENSE }}
 
-      # rust_audio (com.decentraland.livekit-sdk) calls cpal::supports_input on
-      # every device returned by kAudioHardwarePropertyDevices during
-      # VoiceChatPlugin init. On GH-hosted macos-14 paravirt the "Apple Virtual
-      # Sound Device" answers enumeration but its AudioUnit blocks forever on
-      # mach_msg to coreaudiod, wedging the Unity main thread. BlackHole (here)
-      # plus the compiled CoreAudio shim (next step) are the fix: BlackHole
-      # gives cpal a working default device, the shim hides the paravirt one.
-      - name: Route audio to BlackHole (paravirt device is broken)
-        run: |
-          set -euo pipefail
-
-          # The cask installs the BlackHole AudioServerPlugin into
-          # /Library/Audio/Plug-Ins/HAL/; the formula provides SwitchAudioSource.
-          brew install --cask blackhole-2ch
-          brew install switchaudio-osx
-
-          # AudioServerPlugin is loaded by coreaudiod on demand. Restarting the
-          # daemon forces a rescan of /Library/Audio/Plug-Ins/HAL so BlackHole
-          # is visible before we set it as default.
-          sudo killall coreaudiod 2>/dev/null || true
-          sleep 3
-
-          # Default selection writes to
-          # ~/Library/Preferences/Audio/com.apple.audio.SystemSettings.plist and
-          # is picked up by coreaudiod immediately (no second restart, no reboot).
-          SwitchAudioSource -s "BlackHole 2ch" -t input
-          SwitchAudioSource -s "BlackHole 2ch" -t output
-          # -t system is the "Default System Output Device" slot used for alert
-          # sounds. Not load-bearing for the rust_audio hang (cpal doesn't query
-          # it), but the paravirt device otherwise keeps holding it — flip it so
-          # coreaudiod's state has as few references to it as possible.
-          SwitchAudioSource -s "BlackHole 2ch" -t system \
-            || echo "(system-default switch unsupported on this version — non-fatal)"
-
-          echo "::group::Default devices after switch"
-          echo "Default input:  $(SwitchAudioSource -c -t input)"
-          echo "Default output: $(SwitchAudioSource -c -t output)"
-          echo "Default system: $(SwitchAudioSource -c -t system 2>/dev/null || echo '(n/a)')"
-          echo "::endgroup::"
-
-          # ── Sanity checks. Fail fast if either piece didn't land. ──
-          system_profiler SPAudioDataType | grep -qi blackhole || {
-            echo "::error::BlackHole did not register with coreaudiod"
-            exit 1
-          }
-          DEFAULT_IN=$(SwitchAudioSource -c -t input)
-          case "$DEFAULT_IN" in
-            *BlackHole*) echo "✓ Default input is BlackHole" ;;
-            *) echo "::error::Default input is '$DEFAULT_IN', expected BlackHole"; exit 1 ;;
-          esac
+      # Voice chat enumerates every CoreAudio device at boot; a device that hangs
+      # on open wedges the client before AltTester connects. Listed for triage.
+      - name: List audio devices
+        run: system_profiler SPAudioDataType
 
       # ── Apply CI log matrix so InWorld runs get the verbose logging they
       # need. macOS LogMatrixStore path is ~/Library/Application Support/
@@ -809,123 +763,6 @@ jobs:
             exit 1
           fi
           mf explorer install "$BUILD_URL" --non-interactive
-
-      # Build the CoreAudio enumeration shim and prepare Explorer to load it
-      # via DYLD_INSERT_LIBRARIES.
-      #
-      # There is no OS-side lever on macos-14 GH runners: the Sealed System
-      # Volume blocks `sudo mv` of
-      # /System/Library/Audio/Plug-Ins/HAL/AppleVirtIOSound.driver even with
-      # SIP off, and kAudioDevicePropertyIsHidden is not client-settable.
-      # Interposing the enumeration call inside the Explorer process so cpal
-      # never sees the broken device is the only remaining CI-tunable lever.
-      #
-      # The shim (explorer/ci/audio_filter.c) interposes
-      # AudioObjectGetPropertyData; when called with
-      # kAudioHardwarePropertyDevices on kAudioObjectSystemObject it drops
-      # Apple Virtual Sound Device and Null Audio Device from the returned
-      # AudioDeviceID[]. All other property reads pass through unchanged.
-      #
-      # codesign --remove-signature on the Explorer binary is belt-and-braces:
-      # if Unity Cloud Build ever enables Hardened Runtime without
-      # com.apple.security.cs.allow-dyld-environment-variables, dyld would
-      # silently drop DYLD_INSERT_LIBRARIES even on direct-exec. Notarization
-      # and Gatekeeper aren't in play on a packaged-zip extraction anyway.
-      - name: Compile CoreAudio device-filter shim + strip Explorer signature
-        run: |
-          set -euo pipefail
-          SRC="$GITHUB_WORKSPACE/explorer/ci/audio_filter.c"
-          OUT=/tmp/audio_filter.dylib
-          [ -f "$SRC" ] || { echo "::error::shim source missing at $SRC"; exit 1; }
-
-          # Build a universal (arm64 + arm64e) dylib. macos-14 ships platform
-          # binaries (bash, /usr/bin/true, codesign, …) as arm64e (Apple
-          # Silicon pointer authentication); an arm64-only dylib refuses to
-          # load into them and dyld aborts the whole process. Any child
-          # process that inherits DYLD_INSERT_LIBRARIES must be able to load
-          # the shim, so ship both slices in one fat Mach-O: Explorer binds
-          # the arm64 slice, the bash/coreutils chain binds arm64e.
-          clang -dynamiclib -O2 \
-            -arch arm64 -arch arm64e \
-            -framework CoreAudio -framework CoreFoundation \
-            "$SRC" -o "$OUT"
-
-          echo "::group::Built dylib"
-          file "$OUT"
-          # A single-arch line here is easier to spot than a runtime dyld abort.
-          lipo -info "$OUT" || true
-          otool -L "$OUT"
-          # The __interpose section is what makes DYLD_INSERT_LIBRARIES
-          # actually rewrite the binding. If this is missing the shim is
-          # a no-op even though it loads.
-          otool -s __DATA __interpose "$OUT" || true
-          echo "::endgroup::"
-
-          # Quick smoke-load to ensure dyld accepts the dylib.
-          echo "::group::Smoke load via dotnet --version"
-          DYLD_INSERT_LIBRARIES="$OUT" dotnet --version 2>&1 || true
-          echo "::endgroup::"
-
-          # Locate the Explorer .app installed in the previous step and strip
-          # its signature so DYLD_INSERT_LIBRARIES is honoured even if
-          # Hardened Runtime is enabled.
-          # `find ... | head -1` under `set -o pipefail` is a trap: head
-          # closes stdin after one line, find writes again, gets SIGPIPE,
-          # and the pipeline returns non-zero. Use -print -quit so find
-          # exits cleanly after the first match instead.
-          #
-          # `|| true` is required because `mf explorer install` may store
-          # the .app under a path we don't predict here — find then returns
-          # non-zero and `set -e` would kill the step before we can fall
-          # through to the warning branch.
-          EXPLORER_ROOT="$HOME/Library/Application Support/Decentraland"
-          EXPLORER_APP=$(find "$EXPLORER_ROOT" \
-                              -maxdepth 8 -type d -name "Decentraland.app" \
-                              -print -quit 2>/dev/null || true)
-          if [ -z "$EXPLORER_APP" ]; then
-            echo "::warning::Decentraland.app not found under Explorer install — DYLD_INSERT may be silently dropped if HR is on"
-          else
-            BIN="$EXPLORER_APP/Contents/MacOS/Explorer"
-            echo "::group::codesign before strip"
-            codesign -dv --verbose=2 "$BIN" 2>&1 || true
-            echo "::endgroup::"
-            codesign --remove-signature "$BIN" 2>&1 || true
-            echo "::group::codesign after strip"
-            codesign -dv --verbose=2 "$BIN" 2>&1 || true
-            echo "::endgroup::"
-
-            # Replace the Explorer binary with a shell wrapper that injects
-            # DYLD_INSERT_LIBRARIES *only* for the real Explorer exec.
-            # Setting DYLD at workflow step `env` level leaks the shim into
-            # every child process — bash, mf, dotnet, MSBuild, AspectInjector —
-            # and AspectInjector crashes under it, taking `dotnet build` of the
-            # NUnit test project down with it.
-            #
-            # The wrapper exec's the real binary with `exec -a "$0"` so
-            # argv[0] still looks like .../Decentraland.app/Contents/MacOS/Explorer
-            # (Unity's CFBundle-aware paths and Player.log line prefix
-            # would otherwise change to "Explorer.real").
-            #
-            # The real binary must be named so it sorts AFTER "Explorer"
-            # by ordinal file name: MetaForge's direct-exec path selects
-            # the first non-dotfile under Contents/MacOS that way, and it
-            # has to land on our wrapper. "ExplorerReal" satisfies that.
-            REAL="$EXPLORER_APP/Contents/MacOS/ExplorerReal"
-            mv "$BIN" "$REAL"
-            cat > "$BIN" <<'EOF'
-          #!/bin/bash
-          # CI-only DYLD-injection wrapper. Lets the audio_filter shim
-          # load into Explorer without polluting sibling processes
-          # (mf / dotnet / MSBuild / AspectInjector).
-          export DYLD_INSERT_LIBRARIES=/tmp/audio_filter.dylib
-          exec -a "$0" "$(dirname "$0")/ExplorerReal" "$@"
-          EOF
-            chmod +x "$BIN"
-            echo "::group::Wrapper installed"
-            ls -la "$EXPLORER_APP/Contents/MacOS/"
-            cat "$BIN"
-            echo "::endgroup::"
-          fi
 
       # --env coupling: account/profile must live in the same catalyst env
       # that `mf explorer test` ships via --dclenv, otherwise auth lands in
@@ -960,14 +797,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
-          # DYLD_INSERT_LIBRARIES is intentionally NOT set here. At step-env
-          # scope it leaks into every child process — including AspectInjector,
-          # the IL post-processor in the dotnet test build chain, which crashes
-          # under it and takes `dotnet build` of the NUnit test project with it.
-          # The shim step instead replaces Contents/MacOS/Explorer with a
-          # wrapper that exports DYLD only for its own final `exec` of the real
-          # binary, so the shim loads into Explorer and nowhere else.
-          #
           # Perf capture is opt-in via record_perf. BaseTest only calls
           # PerfSampler when EXPLORER_PERF_RECORD is exactly '1', so the default
           # (and every push-triggered run, where inputs are empty) skips it and
