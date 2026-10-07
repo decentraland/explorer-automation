@@ -174,7 +174,10 @@ jobs:
           # keep the AltTester scripting define that release zips strip.
           ARTIFACT_BASE="https://explorer-artifacts.decentraland.org/@dcl/unity-explorer/branch"
           # The runs API has paged inconsistently within one run; union a few attempts.
-          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
+          # Without a date bound the runs API sometimes serves a months-old page; bound it so the union
+          # above can only ever contain recent builds.
+          SINCE=$(jq -rn 'now - 14 * 86400 | strftime("%Y-%m-%d")')
+          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&created=>=${SINCE}&per_page=10"
           CANDIDATES_JSON='[]'
           for _ in 1 2 3; do
             PAGE=$(gh api "$RUNS_QUERY" \

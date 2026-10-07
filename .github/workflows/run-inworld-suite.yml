@@ -555,7 +555,10 @@ jobs:
           # single run: 33616155055 resolved its three legs to three builds, the oldest
           # from May. Union a few attempts and keep the highest run_number, so one thin
           # page cannot decide the client under test.
-          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
+          # Without a date bound the runs API sometimes serves a months-old page; bound it so the union
+          # above can only ever contain recent builds.
+          SINCE=$(jq -rn 'now - 14 * 86400 | strftime("%Y-%m-%d")')
+          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&created=>=${SINCE}&per_page=10"
           CANDIDATES_JSON='[]'
           for attempt in 1 2 3; do
             PAGE=$(gh api "$RUNS_QUERY" \
