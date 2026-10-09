@@ -26,10 +26,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-# Scoped to the PR branch: a new commit supersedes the run in flight. With one
+# Scoped to the PR: a new commit supersedes the run in flight. With one
 # macOS runner, stale runs would otherwise queue ahead of the current code.
 concurrency:
-  group: inworld-pr-${{ github.head_ref }}
+  group: inworld-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -41,10 +41,8 @@ permissions:
 jobs:
   resolve:
     name: Resolve test scope
-    # Drafts skip CI. Fork PRs get no secrets, so the suite could only fail.
-    if: >-
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    # Drafts run once ready; fork changes are classified before any secret-bearing setup.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       relevant: ${{ steps.paths.outputs.relevant }}
@@ -72,6 +70,14 @@ jobs:
             echo "::notice::No suite inputs changed — skipping both suites."
             echo "relevant=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Require a trusted branch for suite changes
+        if: >-
+          steps.paths.outputs.relevant == 'true' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork PR changes suite inputs. Push the branch to decentraland/explorer-automation to validate it before merging."
+          exit 1
 
       - uses: actions/checkout@v6
         if: steps.paths.outputs.relevant == 'true'
@@ -294,7 +300,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$RESOLVE" = "skipped" ]; then
-            echo "::notice::Draft or fork PR — the suites do not run here."
+            echo "::notice::Draft PR — the suites run once it is ready for review."
             exit 0
           fi
           if [ "$RESOLVE" = "success" ] && [ "$RELEVANT" = "false" ] \

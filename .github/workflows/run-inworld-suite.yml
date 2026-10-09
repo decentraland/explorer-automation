@@ -596,7 +596,7 @@ jobs:
             echo "::warning::dev build pu-${RUN}-${SHA7} returned HTTP ${HTTP} — trying next."
           done
           if [ -z "$BUILD_URL" ]; then
-            echo "::error::No reachable unity-explorer dev build found in the last 10 successful dev push builds."
+            echo "::error::No reachable unity-explorer dev build found in the last 5 successful dev push builds."
             exit 1
           fi
           echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"

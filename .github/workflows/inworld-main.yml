@@ -53,19 +53,22 @@ jobs:
       inworld_should_run: ${{ steps.classify.outputs.inworld_should_run }}
       short_sha: ${{ steps.classify.outputs.short_sha }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Classify changed files
         id: classify
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
         run: |
           set -euo pipefail
           echo "short_sha=${AFTER::7}" >> "$GITHUB_OUTPUT"
           # Visual-only inputs cannot change an InWorld result. Anything else, or a
-          # diff the API cannot produce, runs the whole suite.
-          CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE}...${AFTER}" \
-            --paginate --jq '.files[].filename' 2>/dev/null || echo '<unknown>')
+          # unavailable diff, runs the whole suite. Git avoids the API's 300-file cap.
+          CHANGED=$(git diff --name-only --no-renames "$BEFORE" "$AFTER" -- \
+            2>/dev/null || echo '<unknown>')
           echo "::group::Changed files"
           echo "$CHANGED"
           echo "::endgroup::"
