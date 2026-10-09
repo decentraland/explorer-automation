@@ -640,6 +640,8 @@ jobs:
           BADGE_STYLE="?logo=github&logoColor=white&style=for-the-badge"
           if [ "$JOB_STATUS" = "success" ]; then
             BADGE="https://img.shields.io/badge/Automation-Passed!-3fb950${BADGE_STYLE}"; MSG="✅ Visual regression suite passed."
+          elif [ "$JOB_STATUS" = "cancelled" ]; then
+            BADGE="https://img.shields.io/badge/Automation-Cancelled-lightgrey${BADGE_STYLE}"; MSG="⏹️ Visual regression suite cancelled."
           else
             BADGE="https://img.shields.io/badge/Automation-Failed!-ff0000${BADGE_STYLE}"; MSG="❌ Visual regression suite failed."
           fi
@@ -731,7 +733,7 @@ jobs:
           body: |
             ## ${{ (inputs.mode == 'record' || inputs.mode == 'bootstrap') && 'Baseline regeneration' || 'Visual regression tests' }} (${{ inputs.platform }})
 
-            ${{ job.status == 'success' && ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**') }}
+            ${{ job.status == 'cancelled' && ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '⏹️ **Baseline regeneration cancelled.**' || '⏹️ **Visual tests cancelled.**') || (job.status == 'success' && ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '✅ **Baselines regenerated.**' || '✅ **All visual tests passed.**') || ((inputs.mode == 'record' || inputs.mode == 'bootstrap') && '❌ **Baseline regeneration failed.**' || '❌ **Visual tests failed.**')) }}
 
             | | |
             |---|---|
