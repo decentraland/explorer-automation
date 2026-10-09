@@ -12,7 +12,7 @@ name: Generate Baselines
 # Grammar:
 #   /generate-baselines                              → record every baseline (default mode)
 #   /generate-baselines --bootstrap                  → only record baselines that are missing today
-#   /generate-baselines --filter Category=Visual&... → restrict to matching tests
+#   /generate-baselines --filter FullyQualifiedName~UiFixture → record only this visual fixture
 #   /generate-baselines --bootstrap --filter ...     → both flags
 #
 # Restricted to OWNER / MEMBER / COLLABORATOR — anyone else's comment is
@@ -134,7 +134,8 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          FIRST_LINE=$(printf '%s' "$COMMENT_BODY" | head -n1)
+          # The web editor submits CRLF and may leave trailing spaces; neither is an argument.
+          FIRST_LINE=$(printf '%s' "$COMMENT_BODY" | head -n1 | tr -d '\r' | sed -E 's/[[:space:]]+$//')
           REST="${FIRST_LINE#/generate-baselines}"
           REST="${REST# }"
 
@@ -216,11 +217,17 @@ jobs:
               if [ "$ORIGINAL_EVENT" = "pull_request" ]; then
                 ARTIFACT_PATH="@dcl/unity-explorer/branch/${PAIRED_HEAD_REF}/pr-${RUN_NUMBER}-${SHORT_SHA}"
                 BUILD_URL="${PUBLIC_URL_PREFIX}/${ARTIFACT_PATH}/Decentraland_macos.zip"
-                echo "::notice::Recording against paired unity-explorer PR #${PAIRED_PR_NUMBER} (${SHORT_SHA})."
-                echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
-                exit 0
+                # A green run can skip the build itself (no Explorer/ changes), leaving no zip.
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" -I "$BUILD_URL" || true)
+                if [ "${HTTP:-000}" = "200" ]; then
+                  echo "::notice::Recording against paired unity-explorer PR #${PAIRED_PR_NUMBER} (${SHORT_SHA})."
+                  echo "build_url=${BUILD_URL}" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} has no macOS zip for ${SHORT_SHA} (HTTP ${HTTP:-000}); its build was likely skipped. Falling back to a dev build."
+              else
+                echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but its latest Unity Cloud Build for ${SHORT_SHA} was triggered by '${ORIGINAL_EVENT}', not pull_request. Falling back to a dev build."
               fi
-              echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but its latest Unity Cloud Build for ${SHORT_SHA} was triggered by '${ORIGINAL_EVENT}', not pull_request. Falling back to a dev build."
             else
               echo "::warning::Paired unity-explorer PR #${PAIRED_PR_NUMBER} found, but no successful Unity Cloud Build yet for ${SHORT_SHA}. Falling back to a dev build."
             fi
@@ -235,9 +242,12 @@ jobs:
           # single run: 33616155055 resolved its three legs to three builds, the oldest
           # from May. Union a few attempts and keep the highest run_number, so one thin
           # page cannot decide the client under test.
-          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&per_page=10"
+          # Without a date bound the runs API sometimes serves a months-old page; bound it so the union
+          # above can only ever contain recent builds.
+          SINCE=$(jq -rn 'now - 14 * 86400 | strftime("%Y-%m-%d")')
+          RUNS_QUERY="repos/decentraland/unity-explorer/actions/workflows/build-unitycloud.yml/runs?branch=dev&event=push&status=success&created=>=${SINCE}&per_page=10"
           CANDIDATES_JSON='[]'
-          for attempt in 1 2 3; do
+          for _ in 1 2 3; do
             PAGE=$(gh api "$RUNS_QUERY" \
               --jq '[.workflow_runs[] | {head_sha, run_number, created_at}]' || echo '[]')
             CANDIDATES_JSON=$(jq -c -n --argjson a "$CANDIDATES_JSON" --argjson b "$PAGE" \
