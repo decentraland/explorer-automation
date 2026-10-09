@@ -217,6 +217,8 @@ Pixel-diff tests run against custom SDK7 scenes hosted out of [`scenes/`](scenes
 
 In CI the suite runs wherever the InWorld suite runs: on every explorer-automation PR and merge to `main` that touches tests, baselines or scenes (`inworld-pr.yml`, `inworld-main.yml`), and on unity-explorer release and hotfix PRs into `main` (`in-world-tests.yml`). `/visual-tests` on any unity-explorer PR still runs it on demand.
 
+Explorer-automation runs use the newest instrumented unity-explorer `dev` build. A rendering change there can fail the Visual suite and the combined PR gate until matching baselines are regenerated. Changes limited to baselines, scenes or the Visual reusable workflow skip InWorld on both PRs and `main`.
+
 Two-command workflow:
 
 ```bash

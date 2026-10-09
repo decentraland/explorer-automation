@@ -13,8 +13,8 @@ name: InWorld (main)
 # here exactly as it does on a PR.
 #
 # The Visual suite (run-visual-suite.yml) runs beside it against the same dev build
-# rule. Baselines and explorer/scenes/ are visual-only inputs: a push touching nothing
-# else runs the Visual suite alone.
+# rule. Baselines, explorer/scenes/ and run-visual-suite.yml are visual-only inputs:
+# a push touching no other suite inputs runs the Visual suite alone.
 
 on:
   push:
@@ -59,18 +59,26 @@ jobs:
         run: |
           set -euo pipefail
           echo "short_sha=${AFTER::7}" >> "$GITHUB_OUTPUT"
-          # Visual-only inputs cannot change an InWorld result. Anything else, or a
-          # unavailable diff, runs the whole suite. Git avoids the API's 300-file cap.
+          # Classify the same suite inputs as PRs. An unavailable or empty diff runs
+          # the whole suite conservatively. Git avoids the API's 300-file cap.
           CHANGED=$(git diff --name-only --no-renames "$BEFORE" "$AFTER" -- \
             2>/dev/null || echo '<unknown>')
           echo "::group::Changed files"
           echo "$CHANGED"
           echo "::endgroup::"
-          if printf '%s\n' "$CHANGED" | grep -Evq '^explorer/(Tests/Baselines|scenes)/'; then
+          if [ -z "$CHANGED" ] || [ "$CHANGED" = '<unknown>' ]; then
             echo "inworld_should_run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Only visual-suite inputs changed — skipping the InWorld suite."
-            echo "inworld_should_run=false" >> "$GITHUB_OUTPUT"
+            RELEVANT='^(explorer/(Tests|scenes|ci)/|\.github/workflows/(inworld-pr|inworld-main|run-inworld-suite|run-visual-suite|windows-inworld-custom-image)\.yml$|\.github/actions/setup-explorer-runner/)'
+            VISUAL_ONLY='^(explorer/(Tests/Baselines|scenes)/|\.github/workflows/run-visual-suite\.yml$)'
+            SUITE_CHANGED=$(grep -E "$RELEVANT" <<< "$CHANGED" || true)
+            INWORLD_CHANGED=$(grep -Ev "$VISUAL_ONLY" <<< "$SUITE_CHANGED" || true)
+            if [ -n "$SUITE_CHANGED" ] && [ -n "$INWORLD_CHANGED" ]; then
+              echo "inworld_should_run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::No InWorld suite inputs changed — skipping the InWorld suite."
+              echo "inworld_should_run=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   run-suite:

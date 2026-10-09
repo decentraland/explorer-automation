@@ -14,9 +14,9 @@ name: InWorld (PR)
 # split across shards — this job resolves the scope and the Windows leg plans the split
 # from it, with the same tool, the same way every other origin of that leg does.
 #
-# The Visual suite (run-visual-suite.yml) runs beside it when suite inputs change. Baselines
-# and explorer/scenes/ are visual-suite inputs: they cannot change an InWorld result,
-# so they are dropped before the scope is resolved.
+# The Visual suite (run-visual-suite.yml) runs beside it when suite inputs change. Baselines,
+# explorer/scenes/ and run-visual-suite.yml are visual-only inputs: they cannot change
+# an InWorld result, so they are dropped before the scope is resolved.
 #
 # `InWorld suite result` is the one check to require on main. It always reports: green
 # when nothing reaches the PR, otherwise the suites' verdict. Requiring the leg jobs
@@ -62,7 +62,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
             --paginate --jq '.[].filename' > "$RUNNER_TEMP/changed-files.txt"
           echo "short_sha=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
-          RELEVANT='^(explorer/(Tests|scenes|ci)/|\.github/workflows/(inworld-pr|run-inworld-suite|run-visual-suite|windows-inworld-custom-image)\.yml$|\.github/actions/setup-explorer-runner/)'
+          RELEVANT='^(explorer/(Tests|scenes|ci)/|\.github/workflows/(inworld-pr|inworld-main|run-inworld-suite|run-visual-suite|windows-inworld-custom-image)\.yml$|\.github/actions/setup-explorer-runner/)'
           grep -E "$RELEVANT" "$RUNNER_TEMP/changed-files.txt" > "$RUNNER_TEMP/suite-inputs.txt" || true
           if [ -s "$RUNNER_TEMP/suite-inputs.txt" ]; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
@@ -131,7 +131,8 @@ jobs:
           echo "::endgroup::"
 
           # Visual-suite inputs cannot change an InWorld result; the Visual job runs regardless.
-          INWORLD_CHANGED=$(printf '%s\n' "$CHANGED" | grep -Ev '^explorer/(Tests/Baselines|scenes)/' || true)
+          VISUAL_ONLY='^(explorer/(Tests/Baselines|scenes)/|\.github/workflows/run-visual-suite\.yml$)'
+          INWORLD_CHANGED=$(grep -Ev "$VISUAL_ONLY" <<< "$CHANGED" || true)
           if [ -z "$INWORLD_CHANGED" ]; then
             echo "::notice::Only visual-suite inputs changed — nothing for the InWorld suite to run."
             echo "should_run=false" >> "$GITHUB_OUTPUT"
@@ -148,7 +149,7 @@ jobs:
           # that kills it before it can, and a failed golden check demotes the answer to
           # ALL as well.
           SCOPE=ALL
-          if printf '%s\n' "$INWORLD_CHANGED" | grep -Eq "$BROAD"; then
+          if grep -E "$BROAD" <<< "$INWORLD_CHANGED" > /dev/null; then
             echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
           elif [ "$GOLDEN" != 'success' ]; then
             echo "::warning::Golden closure check did not pass — running the whole InWorld suite."

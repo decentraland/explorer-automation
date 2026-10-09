@@ -142,8 +142,14 @@ jobs:
 
           # Unbalanced grouping could close the Visual constraint and add an outside OR.
           DEPTH=0
+          ESCAPED=false
           for ((i=0; i<${#FILTER_INPUT}; i++)); do
+            if [ "$ESCAPED" = "true" ]; then
+              ESCAPED=false
+              continue
+            fi
             case "${FILTER_INPUT:i:1}" in
+              '\') ESCAPED=true ;;
               '(') DEPTH=$((DEPTH + 1)) ;;
               ')')
                 if [ "$DEPTH" -eq 0 ]; then
@@ -154,8 +160,8 @@ jobs:
                 ;;
             esac
           done
-          if [ "$DEPTH" -ne 0 ]; then
-            echo "::error::Filter contains unbalanced parentheses."
+          if [ "$DEPTH" -ne 0 ] || [ "$ESCAPED" = "true" ]; then
+            echo "::error::Filter contains unbalanced parentheses or a trailing escape."
             exit 1
           fi
 
@@ -652,6 +658,7 @@ jobs:
           } > "$RUNNER_TEMP/section-body.md"
 
       - name: Fetch unity-explorer's CI status action
+        id: status-action
         if: always() && steps.compose.outcome == 'success'
         uses: actions/checkout@v6
         continue-on-error: true
@@ -665,7 +672,7 @@ jobs:
 
       - name: Fold results into the unified CI status comment
         id: section
-        if: always() && steps.compose.outcome == 'success'
+        if: always() && steps.compose.outcome == 'success' && steps.status-action.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
