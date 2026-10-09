@@ -123,6 +123,8 @@ jobs:
 
     steps:
       - name: Validate inputs
+        env:
+          FILTER_INPUT: ${{ inputs.filter }}
         run: |
           set -euo pipefail
           case "$MODE" in
@@ -137,6 +139,25 @@ jobs:
               ;;
             *) echo "::error::Unknown platform '$TARGET_OS'. Expected 'macos' or 'windows'."; exit 1 ;;
           esac
+
+          # Unbalanced grouping could close the Visual constraint and add an outside OR.
+          DEPTH=0
+          for ((i=0; i<${#FILTER_INPUT}; i++)); do
+            case "${FILTER_INPUT:i:1}" in
+              '(') DEPTH=$((DEPTH + 1)) ;;
+              ')')
+                if [ "$DEPTH" -eq 0 ]; then
+                  echo "::error::Filter contains unbalanced parentheses."
+                  exit 1
+                fi
+                DEPTH=$((DEPTH - 1))
+                ;;
+            esac
+          done
+          if [ "$DEPTH" -ne 0 ]; then
+            echo "::error::Filter contains unbalanced parentheses."
+            exit 1
+          fi
 
           for v_name in TESTS_REF BRANCH_LABEL; do
             v_val="${!v_name}"
@@ -600,7 +621,7 @@ jobs:
       # its automation section so the suite adds no second bot comment there, as
       # run-inworld-suite.yml does for its inworld section. Every other caller keeps
       # the standalone comment below, which is also the fallback when the section
-      # write exits non-zero (no unified comment yet, or an older dev format).
+      # write cannot be confirmed (no unified comment yet, or an older dev format).
       - name: Compose CI status section
         id: compose
         if: always() && env.PR_NUMBER != '' && github.repository == 'decentraland/unity-explorer' && inputs.mode == 'test'
@@ -633,6 +654,7 @@ jobs:
       - name: Fetch unity-explorer's CI status action
         if: always() && steps.compose.outcome == 'success'
         uses: actions/checkout@v6
+        continue-on-error: true
         with:
           repository: decentraland/unity-explorer
           ref: dev
@@ -652,7 +674,19 @@ jobs:
           if REPO="$PR_REPO" SECTION=automation NO_CREATE=1 \
              SECTION_BODY='' SECTION_BODY_FILE="$RUNNER_TEMP/section-body.md" \
              bash unity-explorer-ci/.github/actions/ci-status-comment/upsert-ci-status.sh; then
-            WRITTEN=true
+            LIVE_SECTION=$(gh api --paginate --slurp "repos/$PR_REPO/issues/$PR_NUMBER/comments" \
+              --jq 'flatten | map(select(.user.login == "github-actions[bot]"
+                                        and (.body | contains("<!-- ci-status -->"))))
+                    | sort_by(.id) | .[0].body // ""' \
+              | tr -d '\r' \
+              | awk '$0=="<!-- ci:automation:start -->" { grab=1; next }
+                     $0=="<!-- ci:automation:end -->" { grab=0; next }
+                     grab { print }') || LIVE_SECTION=""
+            if [ "$LIVE_SECTION" = "$(cat "$RUNNER_TEMP/section-body.md")" ]; then
+              WRITTEN=true
+            fi
+          fi
+          if [ "$WRITTEN" = "true" ]; then
             # Retire the standalone comment an earlier run left behind. Best-effort.
             (gh api --paginate "repos/$PR_REPO/issues/$PR_NUMBER/comments" \
               --jq '.[] | select(.user.login == "github-actions[bot]"

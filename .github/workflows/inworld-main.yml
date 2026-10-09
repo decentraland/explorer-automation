@@ -30,12 +30,6 @@ on:
       - '.github/workflows/windows-inworld-custom-image.yml'
       - '.github/actions/setup-explorer-runner/**'
 
-# A newer main supersedes the run in flight: the question this suite answers is
-# whether main is good now, and the newest commit contains the older one.
-concurrency:
-  group: inworld-main
-  cancel-in-progress: true
-
 permissions:
   # Must be a superset of run-inworld-suite.yml's, or the call dies at startup.
   contents: read
@@ -83,6 +77,10 @@ jobs:
     name: InWorld suite
     needs: resolve
     if: needs.resolve.outputs.inworld_should_run == 'true'
+    # Visual-only pushes must not cancel an InWorld change still being validated.
+    concurrency:
+      group: inworld-main-inworld
+      cancel-in-progress: true
     uses: ./.github/workflows/run-inworld-suite.yml
     with:
       # Empty build_url makes the reusable resolve the newest unity-explorer
@@ -122,6 +120,9 @@ jobs:
   visual-suite:
     name: Visual suite
     needs: resolve
+    concurrency:
+      group: inworld-main-visual
+      cancel-in-progress: true
     uses: ./.github/workflows/run-visual-suite.yml
     # Must be a superset of run-visual-suite.yml's, or the call dies at startup.
     permissions:
