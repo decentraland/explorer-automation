@@ -12,7 +12,7 @@ name: Generate Baselines
 # Grammar:
 #   /generate-baselines                              → record every baseline (default mode)
 #   /generate-baselines --bootstrap                  → only record baselines that are missing today
-#   /generate-baselines --filter Category=Visual&... → restrict to matching tests
+#   /generate-baselines --filter FullyQualifiedName~UiFixture → record only this visual fixture
 #   /generate-baselines --bootstrap --filter ...     → both flags
 #
 # Restricted to OWNER / MEMBER / COLLABORATOR — anyone else's comment is

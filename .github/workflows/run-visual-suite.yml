@@ -58,7 +58,7 @@ on:
         default: test
 
       filter:
-        description: 'NUnit filter expression passed to `mf explorer test --filter`. Empty falls back to "Category=Visual" (run the whole visual suite).'
+        description: 'Additional NUnit filter within Category=Visual, e.g. FullyQualifiedName~UiFixture. Empty runs the whole visual suite.'
         type: string
         required: false
         default: ''
@@ -115,8 +115,8 @@ jobs:
       # and tests_ref (or "main") when callers omit them (e.g. manual dispatch)
       COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || format('run-{0}', github.run_id) }}
       BRANCH_LABEL: ${{ inputs.branch_label != '' && inputs.branch_label || (inputs.tests_ref != '' && inputs.tests_ref || 'main') }}
-      # Filter passed to `mf explorer test --filter`. Defaults to the whole visual suite when caller doesnt supply one
-      TEST_FILTER: ${{ inputs.filter != '' && inputs.filter || 'Category=Visual' }}
+      # Visual mode needs an explicit category; parentheses keep custom OR filters within it.
+      TEST_FILTER: ${{ inputs.filter != '' && format('Category=Visual&({0})', inputs.filter) || 'Category=Visual' }}
       # vars.* inside a workflow_call run reads the *caller's* repo vars. Kept
       # in lockstep with the bucket secret selected below — see header.
       PUBLIC_URL_PREFIX: ${{ github.repository == 'decentraland/explorer-automation' && vars.DEV_EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL || vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
