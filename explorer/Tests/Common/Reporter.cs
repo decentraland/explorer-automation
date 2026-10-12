@@ -182,8 +182,8 @@ public static class Reporter
     [AllureBefore("Setup Unity log listener")]
     public static void SetupUnityLogListener()
     {
-        if (string.Equals(Environment.GetEnvironmentVariable("UNITY_LOG_NOTIFICATIONS"),
-                "false", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Environment.GetEnvironmentVariable("UNITY_LOG_NOTIFICATIONS"),
+                "true", StringComparison.OrdinalIgnoreCase))
         {
             Log("Unity log forwarding disabled; use the Player.log artifact.");
             return;

@@ -19,9 +19,9 @@ on:
         default: false
         type: boolean
       unity_log_notifications:
-        description: 'Forward Unity logs over AltTester for per-test attachments.'
+        description: 'Diagnostic opt-in: forward Unity logs over the AltTester command connection.'
         required: false
-        default: true
+        default: false
         type: boolean
       hang_dump_public_key:
         description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
@@ -111,9 +111,9 @@ on:
         default: false
         type: boolean
       unity_log_notifications:
-        description: 'Forward Unity logs over AltTester for per-test attachments.'
+        description: 'Diagnostic opt-in: forward Unity logs over the AltTester command connection.'
         required: false
-        default: true
+        default: false
         type: boolean
       hang_dump_public_key:
         description: 'Optional base64 RSA public-key XML for encrypted stack dumps during a progress stall.'
