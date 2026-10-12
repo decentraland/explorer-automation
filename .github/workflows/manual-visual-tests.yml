@@ -20,7 +20,7 @@ name: Manual Visual Tests
 #                 actually commits.
 #   - platform:   macos (default) or windows; windows fails fast inside the
 #                 reusable until its install steps exist.
-#   - filter:     NUnit filter; empty runs the whole Category=Visual suite.
+#   - filter:     additional NUnit filter within Visual; empty runs the whole suite.
 
 on:
   workflow_dispatch:
@@ -46,7 +46,7 @@ on:
         options: [macos, windows]
         default: macos
       filter:
-        description: 'NUnit filter for `mf explorer test --filter`. Empty = Category=Visual (whole suite).'
+        description: 'Additional NUnit filter within Visual, e.g. FullyQualifiedName~UiFixture. Empty runs the whole suite.'
         type: string
         required: false
         default: ''
