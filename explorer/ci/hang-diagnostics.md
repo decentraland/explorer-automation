@@ -23,5 +23,8 @@ Download the diagnostic artifact and decrypt locally:
 Inspect all thread stacks in WinDbg with the matching client and Unity symbols.
 A capture is evidence of a progress gap; it does not by itself establish a deadlock.
 
-For a controlled comparison, set `unity_log_notifications` to false. The normal
-Player.log artifact remains available; per-test forwarded log attachments stop.
+Unity log forwarding is off by default. The normal Player.log and
+AltTester-Server.log artifacts remain available without sending logs over the
+AltTester command connection. For a diagnostic comparison, set
+`unity_log_notifications` to true (or `UNITY_LOG_NOTIFICATIONS=true` locally)
+to restore per-test forwarded log attachments.
