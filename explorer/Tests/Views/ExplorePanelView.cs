@@ -40,6 +40,24 @@ public class ExplorePanelView() : BaseView(new(By.NAME, "ExplorePanelUI(Clone)")
 
     #region Helper methods
 
+    [AllureStep("Select explore panel tab")]
+    public void SelectTab(Clickable tab)
+    {
+        var target = tab.WaitFor(20D, verificationShot: false);
+        CommonStuff.AltDriver.MoveMouse(new AltVector2(target.x, target.y));
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (target.GetComponentProperty<bool>("DCL.UI.TabSelectorView",
+                   "UnselectedImage.gameObject.activeInHierarchy", "UI"))
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new AssertionException($"Tab {tab.name} did not enter its hover state");
+            Thread.Sleep(100);
+        }
+
+        target.Click();
+    }
+
     /// <summary>
     /// Closes the panel. Presses Escape first — it's the most reliable path because Unity's
     /// IClosable input handler catches it uniformly and every shortcut test (Map, Gallery,

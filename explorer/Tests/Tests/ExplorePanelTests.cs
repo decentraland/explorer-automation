@@ -75,31 +75,31 @@ public class ExplorePanelTests : BaseTest
         Views.MainMenu.EventsButton.Click(settleMs: 0);
         Views.ExplorePanel.WaitFor();
 
-        Views.ExplorePanel.EventsTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.EventsTabButton);
         Views.ExplorePanel.Events.WaitFor();
         Reporter.Log("Events tab opened successfully");
 
-        Views.ExplorePanel.PlacesTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.PlacesTabButton);
         Views.ExplorePanel.Places.WaitFor();
         Reporter.Log("Places tab opened successfully");
 
-        Views.ExplorePanel.CommunitiesTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.CommunitiesTabButton);
         Views.ExplorePanel.Communities.WaitFor();
         Reporter.Log("Communities tab opened successfully");
 
-        Views.ExplorePanel.MapTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.MapTabButton);
         Views.ExplorePanel.Navmap.WaitFor();
         Reporter.Log("Map tab opened successfully");
 
-        Views.ExplorePanel.BackpackTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.BackpackTabButton);
         Views.ExplorePanel.Backpack.WaitFor();
         Reporter.Log("Backpack tab opened successfully");
 
-        Views.ExplorePanel.GalleryTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.GalleryTabButton);
         Views.ExplorePanel.Gallery.WaitFor();
         Reporter.Log("Gallery tab opened successfully");
 
-        Views.ExplorePanel.SettingsTabButton.Click(settleMs: 0);
+        Views.ExplorePanel.SelectTab(Views.ExplorePanel.SettingsTabButton);
         Views.ExplorePanel.Settings.WaitFor();
         Reporter.Log("Settings tab opened successfully");
 
