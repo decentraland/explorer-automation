@@ -5,8 +5,9 @@ For a diagnostic dispatch of `windows-inworld-custom-image.yml`, set
 Keep the corresponding private-key XML locally, outside the repository.
 
 The workflow downloads and validates Microsoft ProcDump when capture is requested.
-The optional monitor captures up to two stack minidumps after 60 seconds without
-AltTester log progress. Idle tests can also trigger captures. It records process
+The optional monitor makes up to two stack-minidump capture attempts after 60 seconds without
+AltTester log progress. ProcDump output is retained, and a failed attempt does not stop the monitor.
+Idle tests can also trigger captures. It records process
 CPU, memory, and thread counts, and enables driver/desktop connection logs.
 Capture uses a process clone and a 20-second capture timeout. No heap is requested, but stacks can contain session data, so dumps are encrypted
 with AES and authenticated with HMAC before reaching the diagnostic artifact.
