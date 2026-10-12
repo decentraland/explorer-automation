@@ -14,25 +14,22 @@ name: InWorld (PR)
 # split across shards — this job resolves the scope and the Windows leg plans the split
 # from it, with the same tool, the same way every other origin of that leg does.
 #
-# Baselines are excluded — they are visual-suite inputs and cannot change an
-# InWorld result.
+# The Visual suite (run-visual-suite.yml) runs beside it when suite inputs change. Baselines,
+# explorer/scenes/ and run-visual-suite.yml are visual-only inputs: they cannot change
+# an InWorld result, so they are dropped before the scope is resolved.
+#
+# `InWorld suite result` is the one check to require on main. It always reports: green
+# when nothing reaches the PR, otherwise the suites' verdict. Requiring the leg jobs
+# instead leaves a PR that runs no InWorld test waiting on checks that never start.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'explorer/Tests/**'
-      - '!explorer/Tests/Baselines/**'
-      - 'explorer/ci/**'
-      - '.github/workflows/inworld-pr.yml'
-      - '.github/workflows/run-inworld-suite.yml'
-      - '.github/workflows/windows-inworld-custom-image.yml'
-      - '.github/actions/setup-explorer-runner/**'
 
-# Scoped to the PR branch: a new commit supersedes the run in flight. With one
+# Scoped to the PR: a new commit supersedes the run in flight. With one
 # macOS runner, stale runs would otherwise queue ahead of the current code.
 concurrency:
-  group: inworld-pr-${{ github.head_ref }}
+  group: inworld-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -44,21 +41,51 @@ permissions:
 jobs:
   resolve:
     name: Resolve test scope
-    # Drafts skip CI. Fork PRs get no secrets, so the suite could only fail.
-    if: >-
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    # Drafts run once ready; fork changes are classified before any secret-bearing setup.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
+      relevant: ${{ steps.paths.outputs.relevant }}
       should_run: ${{ steps.scope.outputs.should_run }}
       filter: ${{ steps.scope.outputs.filter }}
       scope: ${{ steps.scope.outputs.scope }}
+      short_sha: ${{ steps.paths.outputs.short_sha }}
     steps:
+      - name: Classify suite inputs
+        id: paths
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --paginate --jq '.[].filename' > "$RUNNER_TEMP/changed-files.txt"
+          echo "short_sha=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
+          RELEVANT='^(explorer/(Tests|scenes|ci)/|\.github/workflows/(inworld-pr|inworld-main|run-inworld-suite|run-visual-suite|windows-inworld-custom-image)\.yml$|\.github/actions/setup-explorer-runner/)'
+          grep -E "$RELEVANT" "$RUNNER_TEMP/changed-files.txt" > "$RUNNER_TEMP/suite-inputs.txt" || true
+          if [ -s "$RUNNER_TEMP/suite-inputs.txt" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No suite inputs changed — skipping both suites."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require a trusted branch for suite changes
+        if: >-
+          steps.paths.outputs.relevant == 'true' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork PR changes suite inputs. Push the branch to decentraland/explorer-automation to validate it before merging."
+          exit 1
+
       - uses: actions/checkout@v6
+        if: steps.paths.outputs.relevant == 'true'
 
       # No global.json in the repo, so the SDK the scope tool builds under is
       # pinned here rather than inherited from the runner image.
       - uses: actions/setup-dotnet@v5
+        if: steps.paths.outputs.relevant == 'true'
         with:
           dotnet-version: '10.0.x'
 
@@ -66,6 +93,7 @@ jobs:
       # most of this job's wall clock. No packages.lock.json, so setup-dotnet's
       # own cache option is unavailable.
       - uses: actions/cache@v6
+        if: steps.paths.outputs.relevant == 'true'
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('explorer/**/*.csproj') }}
@@ -74,12 +102,14 @@ jobs:
       # ScopeInWorldTests opens Tests.csproj through MSBuildWorkspace, which needs
       # the NuGet references resolved on disk or every symbol lookup comes back null.
       - name: Restore test project
+        if: steps.paths.outputs.relevant == 'true'
         run: dotnet restore explorer/Tests/Tests.csproj
 
       # The closure is only worth trusting while these hold. A drift forces the
       # broad path below instead of blocking the PR.
       - name: Verify scope resolver against golden closures
         id: golden
+        if: steps.paths.outputs.relevant == 'true'
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -88,19 +118,26 @@ jobs:
 
       - name: Classify changed files
         id: scope
+        if: steps.paths.outputs.relevant == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           GOLDEN: ${{ steps.golden.outcome }}
         run: |
           set -euo pipefail
           SCOPE_DLL=explorer/ci/ScopeInWorldTests/bin/Release/net10.0/ScopeInWorldTests.dll
 
-          CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-            --paginate --jq '.[].filename')
+          CHANGED=$(cat "$RUNNER_TEMP/suite-inputs.txt")
           echo "::group::Changed files"
           echo "$CHANGED"
           echo "::endgroup::"
+
+          # Visual-suite inputs cannot change an InWorld result; the Visual job runs regardless.
+          VISUAL_ONLY='^(explorer/(Tests/Baselines|scenes)/|\.github/workflows/run-visual-suite\.yml$)'
+          INWORLD_CHANGED=$(grep -Ev "$VISUAL_ONLY" <<< "$CHANGED" || true)
+          if [ -z "$INWORLD_CHANGED" ]; then
+            echo "::notice::Only visual-suite inputs changed — nothing for the InWorld suite to run."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           # None of this is symbol-reachable, so the closure below cannot see it and
           # must not be trusted with it. GlobalSetup is the sharpest case: it is an
@@ -112,12 +149,12 @@ jobs:
           # that kills it before it can, and a failed golden check demotes the answer to
           # ALL as well.
           SCOPE=ALL
-          if printf '%s\n' "$CHANGED" | grep -Eq "$BROAD"; then
+          if grep -E "$BROAD" <<< "$INWORLD_CHANGED" > /dev/null; then
             echo "::notice::CI or non-reachable test infrastructure changed — running the whole InWorld suite."
           elif [ "$GOLDEN" != 'success' ]; then
             echo "::warning::Golden closure check did not pass — running the whole InWorld suite."
           else
-            SCOPE=$(printf '%s\n' "$CHANGED" \
+            SCOPE=$(printf '%s\n' "$INWORLD_CHANGED" \
               | dotnet "$SCOPE_DLL" 2> "$RUNNER_TEMP/scope.log" \
               || echo ALL)
             SCOPE=$(printf '%s' "$SCOPE" | tail -n 1)
@@ -227,3 +264,59 @@ jobs:
       fixture_ref: ${{ vars.E2E_CATALYST_REF || 'main' }}
       real_livekit_smoke: true
     secrets: inherit
+
+  visual-suite:
+    name: Visual suite
+    needs: resolve
+    if: needs.resolve.outputs.relevant == 'true'
+    uses: ./.github/workflows/run-visual-suite.yml
+    # Must be a superset of run-visual-suite.yml's, or the call dies at startup.
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      mode: test
+      # Empty build_url resolves the newest unity-explorer dev build, as above.
+      build_url: ''
+      pr_number: ${{ github.event.pull_request.number }}
+      tests_ref: ${{ github.head_ref }}
+      commit_sha: ${{ needs.resolve.outputs.short_sha }}
+      branch_label: ${{ github.head_ref }}
+    secrets: inherit
+
+  result:
+    name: InWorld suite result
+    needs: [resolve, run-suite, visual-suite]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Gate on the suites
+        env:
+          RESOLVE: ${{ needs.resolve.result }}
+          RELEVANT: ${{ needs.resolve.outputs.relevant }}
+          SUITE: ${{ needs.run-suite.result }}
+          VISUAL: ${{ needs.visual-suite.result }}
+        run: |
+          set -euo pipefail
+          if [ "$RESOLVE" = "skipped" ]; then
+            echo "::notice::Draft PR — the suites run once it is ready for review."
+            exit 0
+          fi
+          if [ "$RESOLVE" = "success" ] && [ "$RELEVANT" = "false" ] \
+             && [ "$SUITE" = "skipped" ] && [ "$VISUAL" = "skipped" ]; then
+            echo "::notice::No suite inputs changed — both suites skipped."
+            exit 0
+          fi
+          # A skipped InWorld suite means no fixture reaches the change, which is a pass.
+          if [ "$RESOLVE" = "success" ] \
+             && [ "$RELEVANT" = "true" ] \
+             && { [ "$SUITE" = "success" ] || [ "$SUITE" = "skipped" ]; } \
+             && [ "$VISUAL" = "success" ]; then
+            echo "::notice::InWorld: ${SUITE}; Visual: ${VISUAL}."
+            exit 0
+          fi
+          # Cancelled counts as failure: the superseding run reports its own result.
+          echo "::error::Gate failed — scope: ${RESOLVE}, InWorld: ${SUITE}, Visual: ${VISUAL}. See the Allure reports in the suites' job summaries."
+          exit 1
