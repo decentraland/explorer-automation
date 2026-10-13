@@ -240,7 +240,7 @@ public abstract class BaseTest
 
         // Wait for any splash to clear first — both the cached-account flow and the
         // auto-login (token-bridge) flow start with the splash, but they diverge after.
-        // 180s ceiling (was 60s): GH-hosted macos-14 is a 3-core Apple Paravirtual VM
+        // 180s ceiling (was 60s): the GH-hosted macOS runner is a 3-core Apple Paravirtual VM
         // that fails all three MinimumSpecs checks (GPU/VRAM/RAM); Catalyst→realm→
         // first-frame on that hardware reliably takes 50-90s vs ~5-15s on real DevBox.
         // Local runs on adequate hardware return well before the cap, so the bump is
@@ -296,7 +296,7 @@ public abstract class BaseTest
         }
 
         // 240s (was 120s): same reason as the SplashScreen bump above — bootstrap
-        // tail on GH-hosted macos-14 paravirt can drag well past 2 min on a cold
+        // tail on the GH-hosted macOS paravirt VM can drag well past 2 min on a cold
         // load (asset bundle warmup, comms handshake, profile fetch). Real
         // hardware hits MainMenu in ~10-30s and never approaches this ceiling.
         Views.MainMenu.WaitFor(240);

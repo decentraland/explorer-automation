@@ -61,7 +61,7 @@ public class GlobalSetup
         // The SDK default for the test-side recvall ceiling is 60s. Any
         // WaitFor*/FindObject command whose Player-side `timeout` exceeds that
         // hits CommandResponseTimeoutException before the Unity-side wait
-        // resolves — which is exactly what we saw on GH-hosted macos-14 paravirt
+        // resolves — which is exactly what we saw on the GH-hosted macOS paravirt VM
         // (SplashScreen.WaitForGone(180) needs ~90s to succeed; the 60s SDK cap
         // fired first). 300s comfortably covers every wait we hand out in
         // EnsureInWorld (Splash 180s, Loading 300s, MainMenu 240s) and leaves

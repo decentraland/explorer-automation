@@ -240,7 +240,7 @@ Recording a baseline:
 
 To record one fixture, comment `/generate-baselines --filter FullyQualifiedName~MyFeatureFixture`. CI always restricts the filter to `Category=Visual`; omit `--filter` to record the whole visual suite.
 
-Why CI rather than your laptop: GPU model, font subpixel hinting, color profile and OS version all affect rendered pixels. A baseline recorded on a dev machine can diverge from what CI renders, and every downstream unity-explorer PR would then fail visual regression against a baseline only your machine could reproduce. CI runs on a deterministic macOS-14 runner, so its baselines are the only ones the rest of the pipeline can trust.
+Why CI rather than your laptop: GPU model, font subpixel hinting, color profile and OS version all affect rendered pixels. A baseline recorded on a dev machine can diverge from what CI renders, and every downstream unity-explorer PR would then fail visual regression against a baseline only your machine could reproduce. CI runs on a deterministic GitHub-hosted macOS runner, so its baselines are the only ones the rest of the pipeline can trust.
 
 You can still record locally during iteration to sanity-check the *fixture* (does it set up correctly, does `Frame.WaitForStable` settle?):
 

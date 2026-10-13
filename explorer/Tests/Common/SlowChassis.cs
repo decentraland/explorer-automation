@@ -1,7 +1,7 @@
 namespace ExplorerAutomation.Tests.Common;
 
 /// <summary>
-/// Wait ceilings sized for the slowest supported chassis — the GH-hosted macos-14
+/// Wait ceilings sized for the slowest supported chassis — the GH-hosted macOS
 /// runner, an Apple Paravirtual VM with 3 vCPU and no GPU.
 /// </summary>
 public static class SlowChassis

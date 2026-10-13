@@ -10,6 +10,9 @@ public class BackpackWearablePreviewTests : BaseTest
 {
     private const double THUMBNAIL_LOAD_TIMEOUT = 30;
     private const double EQUIP_CONFIRM_TIMEOUT = 8;
+    // A fresh client's first grid waits on the preview wearables' asset bundles, which queue behind
+    // the spawn scenes' bundles. Measured filling in 32-124s, past the shared page ceiling.
+    private const double COLD_GRID_TIMEOUT = 180;
     // CSV of wearable URNs the client was launched with via --self-preview-wearables.
     private const string SELF_PREVIEW_ENV = "SELF_PREVIEW_WEARABLES";
 
@@ -34,7 +37,7 @@ public class BackpackWearablePreviewTests : BaseTest
         OpenWearables();
         var wearables = Views.ExplorePanel.Backpack.Wearables;
 
-        var tile = wearables.FindGridItemWithUrn(urn);
+        var tile = wearables.FindGridItemWithUrn(urn, COLD_GRID_TIMEOUT);
         if (!tile.IsEquipped(verificationShot: false))
         {
             tile.Equip();

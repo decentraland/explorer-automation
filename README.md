@@ -58,7 +58,7 @@ Two GitHub Actions workflows for the web suite:
 
 **Additional secrets for `marketplace-onchain`**: `WALLET_A_PRIVATE_KEY`, `WALLET_B_PRIVATE_KEY` (testnet wallets funded with MANA on Polygon Amoy + ERC20 approval to OffChainMarketplaceV2 — one-time setup), and the test-item config: `MARKETPLACE_TEST_ITEM_CONTRACT`, `MARKETPLACE_TEST_ITEM_ID`, `MARKETPLACE_TEST_ITEM_TYPE`, optionally `MARKETPLACE_TEST_LISTING_PRICE_MANA`. Optional RPC overrides: `POLYGON_AMOY_RPC_URL`, `SEPOLIA_RPC_URL` (defaults are the public rate-limited endpoints).
 
-Two workflows run the desktop (C#) InWorld suite, both delegating to the reusable `run-inworld-suite.yml`, which runs macOS on GitHub-hosted `macos-14` and Windows on the `win-gpu-t4-explorer` pool and tabulates both legs together:
+Two workflows run the desktop (C#) InWorld suite, both delegating to the reusable `run-inworld-suite.yml`, which runs macOS on GitHub-hosted `macos-26` and Windows on the `win-gpu-t4-explorer` pool and tabulates both legs together:
 
 - **InWorld (PR)** (`.github/workflows/inworld-pr.yml`) — on every pull request touching `explorer/Tests/**` or `explorer/ci/**`. Picks which fixtures to run by Roslyn reachability, so the size of a run follows what the branch touches, and comments the result on the PR. Skips drafts and fork PRs.
 - **InWorld (main)** (`.github/workflows/inworld-main.yml`) — on every merge to `main` touching those same paths. Runs the whole `Category=InWorld` suite, so the wide run backs the scoped one the PR got. The result lands in the job summary.
