@@ -31,13 +31,21 @@ loadDotenv({ path: path.resolve(__dirname, '../.env') })
 // path and hit the root landing page.
 const MARKETPLACE_BASE_URL = process.env.MARKETPLACE_BASE_URL ?? `${getBaseUrl()}/marketplace/`
 
+// Same trailing-slash rule as MARKETPLACE_BASE_URL: relative `goto('collections')`
+// must resolve under /builder/.
+const BUILDER_BASE_URL = process.env.BUILDER_BASE_URL ?? `${getBaseUrl()}/builder/`
+
 /**
- * Five projects:
+ * Projects:
  *   - `web`                  → tests tagged @web    (auth + landing, headless, no GPU)
  *   - `cross`                → tests tagged @cross  (web → desktop handoff via auth-token-bridge.txt)
  *   - `webgpu`               → tests tagged @webgpu (Unity-rendered avatar editor; requires WebGPU)
  *   - `marketplace`          → marketplace off-chain specs (@marketplace, excluding @on-chain)
  *   - `marketplace-onchain`  → marketplace on-chain specs (@on-chain) — needs funded wallets
+ *   - `auth-onchain`         → auth-site on-chain specs (@on-chain under tests/auth)
+ *   - `builder-api`          → builder-server API security spec (@builder-api, local server only)
+ *   - `builder`              → builder dapp off-chain UI specs (@builder, excluding @on-chain)
+ *   - `builder-onchain`      → builder dapp on-chain specs (@on-chain under tests/builder)
  *
  * `cross` runs serially (workers: 1) because the handoff manipulates a single
  * shared file at ~/Library/Application Support/DecentralandLauncherLight/ and
@@ -91,7 +99,7 @@ export default defineConfig({
       // `testIgnore` keeps them off the scan path so a top-level marketplace
       // import error wouldn't trip discovery.
       testDir: './tests',
-      testIgnore: ['**/marketplace/**'],
+      testIgnore: ['**/marketplace/**', '**/builder/**'],
       // `\b` so `@web` doesn't match `@webgpu` — Playwright's project grep
       // is a substring match by default.
       grep: /@web\b/,
@@ -185,6 +193,49 @@ export default defineConfig({
       workers: 1,
       retries: 0,
       use: { ...devices['Desktop Chrome'] }
+    },
+    {
+      // API-level authorization regression against a LOCAL builder-server. No
+      // browser and no wallet mock — it signs a real DCL auth chain in-process
+      // and hits the HTTP API directly (see tests/builder/specs). Gated to
+      // local hosts by builder-api.ts; skips itself when unconfigured.
+      name: 'builder-api',
+      testDir: './tests/builder/specs',
+      grep: /@builder-api/,
+      retries: 0
+    },
+    {
+      // Builder dapp off-chain UI specs (create/upload/edit — builder-server
+      // writes only, no broadcast). Ephemeral wallets, no env required.
+      // `@builder` is a substring of `@builder-api` and `\b` does NOT separate
+      // them ('-' is a non-word char), so grepInvert is load-bearing here —
+      // same lesson as @web vs @webgpu.
+      name: 'builder',
+      testDir: './tests/builder/specs',
+      grep: /@builder/,
+      grepInvert: /@builder-api|@on-chain/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: BUILDER_BASE_URL
+      }
+    },
+    {
+      // Builder on-chain specs (publish/curation lifecycle, published-collection
+      // operations). Same serialization story as marketplace-onchain: the
+      // creator/curator wallets are fixed EOAs, so parallel meta-txs race on
+      // nonces. Long timeout: publish = allowance + createCollection meta-txs
+      // (1-3 min each on Amoy) + subgraph indexing before tokenIds land.
+      name: 'builder-onchain',
+      testDir: './tests/builder/specs',
+      grep: /@on-chain/,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      timeout: 600_000,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: BUILDER_BASE_URL
+      }
     }
   ]
 })
