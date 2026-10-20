@@ -47,6 +47,9 @@ public class GlobalSetup
     public void StartDriver()
     {
         DriverSession.Reset();
+        var driverAssembly = typeof(AltDriver).Assembly;
+        var driverHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(driverAssembly.Location)));
+        Reporter.Log($"AltTester driver: {driverAssembly.FullName}; SHA256={driverHash}; path={driverAssembly.Location}");
         Reporter.Log($"Connecting to AltTester at 127.0.0.1:13000");
 
         CommonStuff.AltDriver = new AltDriver(
