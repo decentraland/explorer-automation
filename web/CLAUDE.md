@@ -45,14 +45,17 @@ web/
     │       └── download.spec.ts                  # @web @landing — launcher .dmg download
     ├── auth/                       # browser-driven auth + cross-platform handoff
     │   ├── helpers/
-    │   │   ├── wallet.ts           # setupMockedWallet, mockNoProfileOnCatalysts, rebindWalletMock
-    │   │   ├── otp-mailbox.ts      # IMAP poller for Thirdweb OTPs
-    │   │   ├── auth-server.ts      # auth-api request/poll for RequestPage signing
-    │   │   ├── token-bridge.ts     # auth-token-bridge.txt path/read/wait for @cross handoff
-    │   │   └── explorer-runner.ts  # spawn metaforge + verify in-world via dotnet test
+    │   │   ├── wallet.ts                # setupMockedWallet, mockNoProfileOnCatalysts, rebindWalletMock
+    │   │   ├── otp-mailbox.ts           # IMAP poller for Thirdweb OTPs
+    │   │   ├── auth-server.ts           # auth-api request/poll for RequestPage signing
+    │   │   ├── token-bridge.ts          # auth-token-bridge.txt + expected-username.txt path/read/wait/write for Flow 2 (web → client)
+    │   │   ├── download-gateway.ts      # parses launcher-style auth-token UUID from a personalised download URL (Flow 2)
+    │   │   ├── auth-request-bridge.ts   # auth-handoff.json {url,code} path/read/wait for Flow 1 (client → web wallet device-pairing)
+    │   │   └── explorer-runner.ts       # spawn mf + runExplorerTest(filterName) for staged dotnet test shell-outs
     │   ├── pages/
     │   │   ├── AuthPage.ts
     │   │   ├── QuickSetupPage.ts
+    │   │   ├── PostSignupPage.ts   # post-QuickSetup personalised download CTA (Flow 2)
     │   │   └── AvatarSetupPage.ts  # @webgpu Unity avatar editor
     │   └── specs/                  # all tagged @web / @cross / @webgpu — auth specs additionally carry @auth
     │       ├── new-user.spec.ts                  # @web @auth — 3 web3 signup variants
@@ -64,7 +67,8 @@ web/
     │       ├── request-page-failure.spec.ts      # @web @auth — retired dcl_personal_sign → "update your app" (needs auth-site >= 5.0.0)
     │       ├── switch-method.spec.ts             # @web @auth — switch from OTP to web3 in same context
     │       ├── web3-avatar-setup.spec.ts         # @webgpu — Unity 3D avatar editor
-    │       └── web-to-inworld-handoff.spec.ts    # @cross — web → desktop (currently skipped)
+    │       ├── web-to-client-handoff.spec.ts     # @cross — Flow 2: web OTP → token-bridge → Explorer in-world + emote (skipped, see TODO)
+    │       └── explorer-wallet-login.spec.ts     # @cross — Flow 1: client Metamask → web device-pairing → in-world + emote (skipped, see TODO)
     └── marketplace/                # marketplace dapp tests
         ├── helpers/
         │   ├── wallet-setup.ts         # setupTestWallet — composes injectAuthIdentity + installInjectedWalletMock + mockExistingProfile + setupBroadcastWallet
@@ -310,14 +314,21 @@ Historically `?env=dev` wasn't a way out either: the dev RequestPage signed `per
 
 ## Cross-platform handoff (`@cross`)
 
-Currently skipped (`test.describe.skip`). When enabled:
+Two specs cover the handoff in both directions. Both currently `test.describe.skip` pending the manual UI-discovery steps documented at the top of each spec file.
 
-1. The dapp's "Jump Into Decentraland" CTA writes `auth-token-bridge.txt`.
-2. Path: `~/Library/Application Support/DecentralandLauncherLight/auth-token-bridge.txt` (macOS).
-3. The Decentraland Launcher's `TokenFileAuthenticator` reads + deletes the file on startup.
-4. Verification runs through `explorer/Tests/Tests/CrossPlatformVerificationTests.cs::TestExplorerIsInWorldFromTokenBridge`.
+**Flow 2 — web → client (`web-to-client-handoff.spec.ts`)**: fresh-user OTP signup on the dapp produces a **personalised** download CTA whose URL embeds an auth-redeemable session UUID — shape `https://download-gateway.decentraland.<tld>/<UUID>/decentraland.dmg?anon_user_id=<UUID>`. The spec captures the URL via Playwright's `download` event, cancels the actual `.dmg` transfer, runs the launcher's `auto_auth` UUID-pick algorithm in pure JS (`helpers/download-gateway.ts::parseAuthTokenFromDownloadUrl`, mirroring `launcher-rust core/src/auto_auth.rs::DownloadOriginData::from_url`), and writes the resulting UUID verbatim to `auth-token-bridge.txt` — skipping the launcher binary entirely while still exercising the dapp's URL-mint contract. The instrumented Explorer's `TokenFileAuthenticator` then boots authenticated. A second sibling file `expected-username.txt` (written by `writeExpectedUsername`, read by `WebFirstLoginUsernameAssert::TestInWorldUsernameMatches`) lets the C# fixture verify the in-world identity matches the QuickSetup username — catches stale-bridge / profile-cache regressions that "main menu visible + emote plays" would silently pass. Blocked on: (a) the post-signup CTA selector in `PostSignupPage.downloadSignedLauncher` (currently a permissive regex), and (b) the in-world username locator that backs `MainMenuView.UsernameLabel` (currently a TODO placeholder).
 
-If those move, update `tests/auth/helpers/token-bridge.ts` or `tests/auth/helpers/explorer-runner.ts`.
+**Flow 1 — client → web wallet device-pairing (`explorer-wallet-login.spec.ts`)**: a freshly-launched client lands on the auth screen. The C# `TestCaptureWalletAuthHandoff` fixture clicks Metamask (locator already exists at `AuthenticationMainScreenView.MetamaskButton`); the client posts to auth-api, gets back `{ requestId, code }`, displays the validation `code` in its UI, and opens the system browser at `<WEB_BASE_URL>/auth/requests/<requestId>`. C# captures `{ url, code }` and writes JSON to `auth-handoff.json`. The Playwright spec walks through web3 signup with a mocked wallet, navigates to the captured URL, **asserts the RequestPage renders the same code** (device-pairing safety check), approves the sign, and waits for the client to land in-world. Blocked on locating where the client surfaces the code and URL in its UI post-Metamask-click — needs an `alttester-explorer` session.
+
+Common across both flows:
+
+1. Paths (macOS): `~/Library/Application Support/DecentralandLauncherLight/{auth-token-bridge.txt,expected-username.txt}` for Flow 2; `<Explorer persistentDataPath>/{auth-url.txt,auth-verification-code.txt}` for Flow 1. Helpers: `tests/auth/helpers/token-bridge.ts` (Flow 2 + identity guard), `tests/auth/helpers/download-gateway.ts` (Flow 2 URL → token parser), `tests/auth/helpers/auth-request-bridge.ts` (Flow 1).
+2. Both shell out via `runExplorerTest(filterName)` in `tests/auth/helpers/explorer-runner.ts` to a long-running Explorer launched by `runExplorer({ alttester: true, clear? })`. Each invocation opens a fresh AltTester connection, so multiple staged dotnet test runs against the same Explorer is the supported pattern.
+3. The convergence test is `explorer/Tests/Tests/CrossWalletLoginTestsWithEmoteRun.cs::WalletLoginInWorldEmote::TestInWorldAndRunEmote` — asserts main menu visible + equips and triggers a Fist Pump emote. Both flows end with `await runExplorerTest('TestInWorldAndRunEmote')`.
+4. Flow 2 additionally runs `CrossWebFirstLoginTests.cs::WebFirstLoginUsernameAssert::TestInWorldUsernameMatches` at `[Order(17)]`, **before** the emote convergence at `[Order(18)]`. The order matters: a mismatch aborts the suite before any in-world side effects on the wrong account.
+5. Flow 1 capture lives in `CrossWalletLoginTests.cs` (`WalletLoginCapture` extends `LoggedOutAuthBaseTest`) because its `OneTimeSetUp` needs the logged-out auth screen, whereas the convergence test needs in-world.
+
+If any of those paths or names change, update both helpers + the spec headers + `explorer-runner.ts` together.
 
 ## Pitfalls observed
 

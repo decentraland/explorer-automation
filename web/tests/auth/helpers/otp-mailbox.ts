@@ -2,19 +2,23 @@ import { randomBytes } from 'node:crypto'
 import { ImapFlow } from 'imapflow'
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser'
 import { requireEnv, optionalEnv } from '../../../shared/helpers/env.js'
+import { sleep } from '../../../shared/helpers/async.js'
 
 const SIX_DIGIT_CODE = /\d{6}/
 
 /**
- * Generate a fresh test email of the form `<prefix><hash>@<EMAIL_DOMAIN>`.
+ * Generate a fresh test email of the form `<TEST_EMAIL_PREFIX><hash>@<EMAIL_DOMAIN>`.
  * Each call returns a distinct local-part so every signup looks like a
  * brand-new recipient to Thirdweb (its own per-address rate-limit bucket —
  * no curated fallback list needed).
  *
- * The prefix defaults to `qa-` and is overridable via `TEST_EMAIL_PREFIX`.
- * The domain defaults to `e2e.decentraland.org`, a Workspace catch-all whose
- * deliveries route to the inbox at `IMAP_USER`. Override the domain with
- * `EMAIL_DOMAIN` if you've pointed the suite at a different inbox.
+ * - `TEST_EMAIL_PREFIX` (default `qa-`) — the local-part prefix. Set to
+ *   something like `<work-user>+qa-` for Gmail-style sub-addressing routing
+ *   to a real personal inbox via `+alias`.
+ * - `EMAIL_DOMAIN` (default `e2e.decentraland.org`) — the recipient domain.
+ *   The Workspace catch-all at e2e.decentraland.org routes deliveries to
+ *   the inbox at `IMAP_USER`; with a `+alias`-style prefix you can instead
+ *   use a personal `decentraland.org` address directly.
  */
 export function generateFreshEmail(): string {
   // Trim + strip a stray leading '@' so a slightly-malformed EMAIL_DOMAIN
@@ -190,8 +194,4 @@ function extractCodeFromParsed(parsed: ParsedMail): string | undefined {
 function stripHtml(html: string | false | undefined): string {
   if (!html) return ''
   return html.replace(/<[^>]+>/g, ' ')
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }
