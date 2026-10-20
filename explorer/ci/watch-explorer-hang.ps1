@@ -20,7 +20,7 @@ function Save-EncryptedDump($process, [string]$stem) {
     try {
         Write-Output "Starting dump capture $stem at $([DateTime]::UtcNow.ToString('o'))"
         # Capture a clone so writing the dump does not hold the live player's threads.
-        & $ProcDumpPath -accepteula -r 1 -a -at 20 -mc 1020 $process.Id $rawPath | Out-Null
+        & $ProcDumpPath -accepteula -r 1 -a -at 20 -mc 1020 $process.Id $rawPath
         if ($LASTEXITCODE -notin @(0, 1) -or -not (Test-Path -LiteralPath $rawPath)) {
             throw "Clone dump capture failed with exit code $LASTEXITCODE"
         }
@@ -77,7 +77,11 @@ while ([DateTime]::UtcNow -lt $deadline -and $count -lt $MaxDumps) {
     [IO.File]::AppendAllText($csv, "$($now.ToString('o')),$cpu,$($target.WorkingSet64),$($target.PrivateMemorySize64),$($target.Threads.Count),$length,$([int]$idle)`n")
     if ($idle -ge $StallSeconds -and ($now - $lastDump).TotalSeconds -ge $StallSeconds) {
         $count++
-        Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count)
+        try {
+            Save-EncryptedDump $target ("explorer-hang-{0}-{1}" -f $ExplorerProcessId, $count)
+        } catch {
+            Write-Warning "Dump capture attempt $count failed: $($_.Exception.Message)"
+        }
         $lastDump = $now
     }
     Start-Sleep -Seconds 2
