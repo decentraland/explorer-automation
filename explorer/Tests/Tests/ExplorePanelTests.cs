@@ -8,7 +8,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenEventsFromSidebar()
     {
-        Views.MainMenu.EventsButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromDiscover(Views.MainMenu.Discover.EventsOption);
 
         Views.ExplorePanel.Events.WaitFor();
 
@@ -18,7 +18,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenPlacesFromSidebar()
     {
-        Views.MainMenu.PlacesButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromDiscover(Views.MainMenu.Discover.PlacesOption);
 
         Views.ExplorePanel.Places.WaitFor();
 
@@ -28,21 +28,18 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenCommunitiesFromSidebar()
     {
-        Views.MainMenu.CommunitiesButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromDiscover(Views.MainMenu.Discover.CommunitiesOption);
 
         Views.ExplorePanel.Communities.WaitFor();
 
         Views.ExplorePanel.Close();
     }
 
-    // NOTE: there is no TestOpenMapFromSidebar — this build's sidebar has no Map button
-    // (verified via UiDump `--all` dumps of the sidebar). Map coverage lives in
-    // ShortcutsTests.TestOpenMapWithShortcut and in TestSwitchBetweenAllTabs below (Map tab).
-
     [Test]
     public void TestOpenBackpackFromSidebar()
     {
-        Views.MainMenu.BackpackButton.Click(settleMs: 0);
+        Views.MainMenu.OpenSubMenu(Views.MainMenu.ProfileButton, Views.ProfileMenu);
+        Views.ProfileMenu.BackpackButton.Click(settleMs: 0);
 
         Views.ExplorePanel.Backpack.WaitFor();
 
@@ -52,7 +49,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenGalleryFromSidebar()
     {
-        Views.MainMenu.GalleryButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromGallery(Views.MainMenu.Gallery.GalleryOption);
 
         Views.ExplorePanel.Gallery.WaitFor();
 
@@ -62,7 +59,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestOpenSettingsFromSidebar()
     {
-        Views.MainMenu.SettingsButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromSystem(Views.MainMenu.System.SettingsOption);
 
         Views.ExplorePanel.Settings.WaitFor();
 
@@ -72,7 +69,7 @@ public class ExplorePanelTests : BaseTest
     [Test]
     public void TestSwitchBetweenAllTabs()
     {
-        Views.MainMenu.EventsButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromDiscover(Views.MainMenu.Discover.EventsOption);
         Views.ExplorePanel.WaitFor();
 
         Views.ExplorePanel.EventsTabButton.Click(settleMs: 0);

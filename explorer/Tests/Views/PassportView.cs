@@ -6,7 +6,7 @@ namespace ExplorerAutomation.Tests.Views;
 /// View for the user passport popup that displays a player's profile,
 /// with actions (add friend, chat, call) and tabs (overview, badges, photos, creations).
 /// The own passport opens from the sidebar profile button via the profile menu's
-/// "View PROFILE" entry (<see cref="ProfileMenuView.PreviewProfileButton"/>).
+/// "View PROFILE" entry (<see cref="ProfileMenuView.ViewProfileButton"/>).
 /// </summary>
 public class PassportView() : BaseView(new(By.NAME, "Passport(Clone)"))
 {

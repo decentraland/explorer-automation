@@ -1,7 +1,7 @@
 namespace ExplorerAutomation.Tests.Tests;
 
 // In-world camera (photo mode). The regular HUD is hidden while photo mode is on, so the
-// sidebar button can only open it — tests close with the C shortcut or Escape (Button_Close
+// sidebar gallery menu can only open it — tests close with the C shortcut or Escape (Button_Close
 // ignores synthetic clicks on this build, see InWorldCameraView.CloseButton).
 [AllureSuite("In-World Camera Tests")]
 [Category("InWorld")]
@@ -27,9 +27,9 @@ public class CameraTests : BaseTest
     [Test]
     public void TestOpenCameraFromSidebar()
     {
-        Views.MainMenu.InWorldCameraButton.Click(settleMs: 0);
+        Views.MainMenu.OpenFromGallery(Views.MainMenu.Gallery.TakeShotOption);
         Views.InWorldCamera.WaitFor();
-        Reporter.Log("Camera HUD opened from the sidebar camera button");
+        Reporter.Log("Camera HUD opened from the sidebar gallery menu");
 
         // The sidebar is hidden while photo mode is on, and when entered via the sidebar
         // button the fresh camera view eats keyboard input for a while (a C or Escape ~1s

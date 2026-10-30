@@ -89,6 +89,21 @@ public class MinimapTests : BaseTest
     }
 
     [Test]
+    public void TestToggleMinimapFromSidebar()
+    {
+        Views.Minimap.WaitFor();
+
+        // The Map button toggles the minimap; restore it open for the tests that follow.
+        Views.MainMenu.MapButton.Click(settleMs: 0);
+        Views.Minimap.WaitForGone();
+        Reporter.Log("Minimap hidden from the sidebar Map button");
+
+        Views.MainMenu.MapButton.Click(settleMs: 0);
+        Views.Minimap.WaitFor();
+        Reporter.Log("Minimap shown again from the sidebar Map button");
+    }
+
+    [Test]
     public void TestOpenMapFromMinimap()
     {
         Views.Minimap.WaitFor();

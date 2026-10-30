@@ -1,156 +1,211 @@
 namespace ExplorerAutomation.Tests.Views;
 
 /// <summary>
-/// View for the main menu sidebar that provides navigation buttons for all major sections
-/// of the Explorer (events, places, communities, backpack, gallery, settings, friends, chat, etc.).
+/// View for the sidebar nav rail; most icons open a submenu nested under their button.
 /// </summary>
 public class MainMenuView() : BaseView(new(By.NAME, "SidebarView"))
 {
     #region Elements
 
-    // Upper layout — buttons that ship as their own prefab (root GameObject keeps the prefab name).
-    public readonly Clickable ProfileButton            = new(By.NAME, "SidebarProfileButton");
-    public readonly Clickable NotificationsButton      = new(By.NAME, "SidebarNotificationsButton");
-    public readonly Clickable MarketplaceCreditsButton = new(By.NAME, "SidebarMarketplaceCreditsButton");
-    public readonly Clickable CommunitiesButton        = new(By.NAME, "SidebarCommunitiesButton");
-    public readonly Clickable BackpackButton           = new(By.NAME, "SidebarBackpackButton");
-    public readonly Clickable MarketplaceButton        = new(By.NAME, "SidebarMarketplaceButton");
-    public readonly Clickable GalleryButton            = new(By.NAME, "SidebarGalleryButton");
-    public readonly Clickable SettingsButton           = new(By.NAME, "SidebarSettingsButton");
-    public readonly Clickable HelpButton               = new(By.NAME, "SidebarHelpButton");
-    public readonly Clickable SidebarSettingsButton    = new(By.NAME, "SidebarConfigButton");
+    private const int RAIL_CLICK_ATTEMPTS = 2;
+    private const double RAIL_CLICK_TIMEOUT = 4D;
 
-    // Buttons whose GameObject names come from m_Name overrides in SidebarUI_UpperLayout.prefab.
-    public readonly Clickable EventsButton = new(By.NAME, "EventsButton");
-    public readonly Clickable PlacesButton = new(By.NAME, "PlacesButton");
+    // Scoped by path where the name is generic (SettingsButton, Places, Gallery...).
+    public readonly Clickable SettingsButton      = new(By.PATH, "//SidebarView/UpperLayout/SettingsButton");
+    public readonly Clickable ShopButton          = new(By.PATH, "//SidebarView/UpperLayout/ShopButton");
+    public readonly Clickable DiscoverButton      = new(By.PATH, "//SidebarView/UpperLayout/DiscoverButton");
+    public readonly Clickable NotificationsButton = new(By.PATH, "//SidebarView/UpperLayout/NotificationsButton");
+    public readonly Clickable MapButton           = new(By.PATH, "//SidebarView/UpperLayout/MapButton");
+    public readonly Clickable SidebarSettingsButton = new(By.PATH, "//SidebarView/UpperLayout/SidebarConfigButton");
 
-    // Bottom layout — voice chat, portable experiences, skybox, camera, emotes, social.
-    public readonly Clickable NearbyVoiceButton    = new(By.NAME, "NearbyVoice.Button");
-    public readonly Clickable SmartWearablesButton = new(By.NAME, "SidebarSmartWearablesButton");
-    public readonly Clickable SkyboxButton         = new(By.NAME, "SidebarSkyboxButton");
-    public readonly Clickable InWorldCameraButton  = new(By.NAME, "SidebarInWorldCameraButton");
-    public readonly Clickable EmoteWheelButton     = new(By.NAME, "SidebarEmoteWheelButton");
-    public readonly Clickable FriendsButton        = new(By.NAME, "SidebarFriendsButton");
+    // The press is wired to the OpenProfileButton child, not the widget root.
+    public readonly Clickable ProfileButton = new(By.PATH, "//SidebarView/UpperLayout/SidebarProfileButton/OpenProfileButton");
+
+    public readonly Clickable EmotesButton         = new(By.PATH, "//SidebarView/BottomLayout/EmotesButton");
+    public readonly Clickable FriendsButton        = new(By.PATH, "//SidebarView/BottomLayout/FriendsButton");
     public readonly Clickable ChatButton           = new(By.NAME, "SidebarChatButton");
+    public readonly Clickable GalleryButton        = new(By.PATH, "//SidebarView/BottomLayout/GalleryButton");
+    public readonly Clickable AudioSettingsButton  = new(By.PATH, "//SidebarView/BottomLayout/AudioSettingsButton");
+    public readonly Clickable SmartWearablesButton = new(By.NAME, "SidebarSmartWearablesButton");
+    public readonly Clickable NearbyVoiceButton    = new(By.NAME, "NearbyVoice.Button");
 
-    // NOTE: this build's sidebar has no Map button (SidebarMapButton) and no keyboard-shortcuts
-    // button (SidebarControlsScreenButton) — verified via UiDump `sub //SidebarView/UpperLayout/*
-    // --all` + `//SidebarView/BottomLayout/* --all` on build dev_b97439fc. The map is reachable
-    // via the M shortcut / explore-panel Map tab, and the controls panel via the help menu ([H]).
+    // Backpack, Events/Places/Communities, Marketplace(+Credits), Help, Camera and Skybox are no
+    // longer rail buttons: see ProfileMenuView, the submenus below and MinimapView.Skybox.
 
     #endregion
 
     #region Views
 
     public NotificationsPanel Notifications { get; } = new();
-    public HelpMenu Help { get; } = new();
-    public SkyboxMenu Skybox { get; } = new();
+    public DiscoverMenu Discover { get; } = new();
+    public ShopMenu Shop { get; } = new();
+    public SystemMenu System { get; } = new();
+    public AudioMenu Audio { get; } = new();
+    public GalleryMenu Gallery { get; } = new();
+
+    #endregion
+
+    #region Helper methods
+
+    /// <summary>
+    /// Opens a rail submenu; the icon toggles, so the submenu must start closed.
+    /// </summary>
+    [AllureStep("Open a sidebar submenu")]
+    public void OpenSubMenu(Clickable railButton, BaseView subMenu)
+    {
+        ClickRailButton(railButton, () => subMenu.IsPresent(verificationShot: false));
+        subMenu.WaitFor();
+    }
+
+    /// <summary>
+    /// Clicks a rail button, clicking once more if nothing opened.
+    /// </summary>
+    /// <remarks>
+    /// Opening the passport from the profile menu leaves that menu registered as open, and the
+    /// next rail click only closes it.
+    /// </remarks>
+    [AllureStep("Click a sidebar rail button")]
+    public void ClickRailButton(Clickable railButton, Func<bool> opened)
+    {
+        for (var attempt = 1; attempt <= RAIL_CLICK_ATTEMPTS; attempt++)
+        {
+            railButton.Click(settleMs: 0);
+
+            var deadline = DateTime.UtcNow.AddSeconds(RAIL_CLICK_TIMEOUT);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (opened())
+                    return;
+                Thread.Sleep(250);
+            }
+
+            Reporter.Log($"Rail click {attempt} opened nothing — a stale submenu likely consumed it");
+        }
+    }
+
+    /// <summary>Opens the Discover menu and picks one of its options.</summary>
+    [AllureStep("Open a Discover menu option")]
+    public void OpenFromDiscover(Clickable option)
+    {
+        OpenSubMenu(DiscoverButton, Discover);
+        option.Click(settleMs: 0);
+    }
+
+    /// <summary>Opens the System menu and picks one of its options.</summary>
+    [AllureStep("Open a System menu option")]
+    public void OpenFromSystem(Clickable option)
+    {
+        OpenSubMenu(SettingsButton, System);
+        option.Click(settleMs: 0);
+    }
+
+    /// <summary>Opens the Gallery menu and picks one of its options.</summary>
+    [AllureStep("Open a Gallery menu option")]
+    public void OpenFromGallery(Clickable option)
+    {
+        OpenSubMenu(GalleryButton, Gallery);
+        option.Click(settleMs: 0);
+    }
 
     #endregion
 
     #region Sub views
 
     /// <summary>
-    /// Dropdown panel listing the account's notifications. Opened by clicking the sidebar
-    /// notifications bell; a second click on the bell (or Escape) closes it again.
-    /// The GameObject lives under the bell button and is disabled while closed.
+    /// Notifications dropdown opened by the bell. No ViewName: the voice widget shares its view type.
     /// </summary>
-    public class NotificationsPanel() : BaseView(new(By.PATH, "//SidebarNotificationsButton/NotificationsMenu"))
+    public class NotificationsPanel() : BaseView(new(By.PATH, "//SidebarView//NotificationsButton/NotificationsMenu"))
     {
         #region Elements
 
-        public readonly Readable TitleLabel = new(By.PATH, "//SidebarNotificationsButton/NotificationsMenu/Title");
+        public readonly Readable TitleLabel = new(By.PATH, "//SidebarView//NotificationsButton/NotificationsMenu/Title");
 
         #endregion
     }
 
     /// <summary>
-    /// Context menu opened by the sidebar help button. Holds the "Mouse and Key Controls"
-    /// entry (opens the controls panel) plus external support links (FAQ, Contact Support,
-    /// Discord) that open the system browser. Closes on Escape or outside click.
+    /// Discover submenu: Places, Events and Communities.
     /// </summary>
-    public class HelpMenu() : BaseView(new(By.NAME, "SidebarHelpMenuView"))
+    public class DiscoverMenu() : BaseView(new(By.PATH, "//SidebarView//DiscoverButton/DiscoverMenu"))
     {
+        protected override string ViewName => "DiscoverMenuView";
+
         #region Elements
 
-        public readonly Clickable MouseAndKeyControlsButton = new(By.NAME, "MouseAndKeyControlsButton");
-        public readonly Clickable FaqButton                 = new(By.NAME, "FAQButton");
-        public readonly Clickable ContactSupportButton      = new(By.NAME, "ContactSupportButton");
-        public readonly Clickable DiscordButton             = new(By.NAME, "DiscordButton");
+        public readonly Readable  TitleLabel        = new(By.PATH, "//DiscoverMenu/Title");
+        public readonly Clickable PlacesOption      = new(By.PATH, "//DiscoverMenu/MenuLayout/Places");
+        public readonly Clickable EventsOption      = new(By.PATH, "//DiscoverMenu/MenuLayout/Events");
+        public readonly Clickable CommunitiesOption = new(By.PATH, "//DiscoverMenu/MenuLayout/Communities");
 
         #endregion
     }
 
     /// <summary>
-    /// "Night/day" skybox widget opened by the sidebar skybox button. Lives disabled under
-    /// SidebarSkyboxButton/SkyboxWidget while closed. Contains the Auto day-cycle toggle and
-    /// the custom time-of-day slider. Quirks verified live on build dev_b97439fc:
-    ///   - The slider's Increase/Decrease arrow buttons are dead UI (never wired up by
-    ///     SkyboxMenuController in this build) — change the time via the slider value instead.
-    ///   - The slider only reacts while the Auto toggle is off (interactable gating).
-    ///   - Rapidly re-opening right after an Escape-close can wedge the menu (it stops
-    ///     opening); opening any other panel and closing it un-wedges the state machine.
+    /// Shop submenu: credits and marketplace banners. Every entry opens the browser, so presence only.
     /// </summary>
-    public class SkyboxMenu() : BaseView(new(By.NAME, "SkyboxMenuView"))
+    public class ShopMenu() : BaseView(new(By.PATH, "//SidebarView//ShopButton/ShopMenu"))
+    {
+        protected override string ViewName => "ShopMenuView";
+
+        #region Elements
+
+        public readonly Readable  TitleLabel             = new(By.PATH, "//ShopMenu/Title");
+        public readonly Locatable CreditsPanel           = new(By.PATH, "//ShopMenu/CreditsContainer");
+        public readonly Locatable BuyCreditsButton       = new(By.PATH, "//ShopMenu/CreditsContainer/BuyCreditsButton");
+        public readonly Locatable ExploreWearablesBanner = new(By.PATH, "//ShopMenu/ExploreWearablesBanner");
+        public readonly Locatable ExploreEmotesBanner    = new(By.PATH, "//ShopMenu/ExploreEmotesBanner");
+
+        #endregion
+    }
+
+    /// <summary>
+    /// System submenu (gear icon). No ViewName: an unrelated client view shares the SystemMenuView name.
+    /// </summary>
+    public class SystemMenu() : BaseView(new(By.PATH, "//SidebarView//SettingsButton/SystemMenu"))
     {
         #region Elements
 
-        public readonly Readable  TitleLabel            = new(By.PATH, "//SkyboxMenuView/Title");
-        public readonly Clickable AutoProgressionToggle = new(By.NAME, "TimeProgressionToggle");
-        public readonly Locatable TimeSlider            = new(By.NAME, "TimeSlider");
-        public readonly Readable  TimeLabel             = new(By.PATH, "//SkyboxMenuView/Time/Text/Time");
+        public readonly Readable  TitleLabel           = new(By.PATH, "//SystemMenu/Title");
+        public readonly Clickable SettingsOption       = new(By.PATH, "//SystemMenu/TopMenuLayout/Settings");
+        public readonly Clickable ControlsOption       = new(By.PATH, "//SystemMenu/TopMenuLayout/Controls");
+        public readonly Clickable ContactSupportOption = new(By.PATH, "//SystemMenu/BottomMenuLayout/ContactSupport");
+        public readonly Clickable ReportBugOption      = new(By.PATH, "//SystemMenu/BottomMenuLayout/ReportBug");
+        public readonly Clickable DiscordOption        = new(By.PATH, "//SystemMenu/BottomMenuLayout/Discord");
+        public readonly Clickable FaqOption            = new(By.PATH, "//SystemMenu/BottomMenuLayout/FAQ");
 
         #endregion
+    }
 
-        #region Helper methods
+    /// <summary>
+    /// Audio submenu with the volume sliders.
+    /// </summary>
+    public class AudioMenu() : BaseView(new(By.PATH, "//SidebarView//AudioSettingsButton/AudioMenu"))
+    {
+        protected override string ViewName => "AudioMenuView";
 
-        /// <summary>
-        /// Reads the Auto day-cycle toggle's current state without changing it, so callers can
-        /// restore whatever the client started with.
-        /// </summary>
-        public bool IsAutoProgressionOn() =>
-            AutoProgressionToggle.WaitFor(20D, verificationShot: false)
-                .GetComponentProperty<bool>("UnityEngine.UI.Toggle", "isOn", "UnityEngine.UI");
+        #region Elements
 
-        /// <summary>
-        /// Ensures the Auto day-cycle toggle is in the requested state. Asserted through the
-        /// Toggle component's isOn (the On/Off visual children lag behind the click because
-        /// of the ToggleView animation, so they are not a reliable synchronous signal).
-        /// </summary>
-        [AllureStep("Set skybox auto time progression")]
-        public void SetAutoProgression(bool enabled)
-        {
-            // Shot-suppressed waits: the verified state is the Toggle's isOn value, so the
-            // single verification shot is taken once the toggle is confirmed in the requested
-            // state (either already there, or after the click's WaitForComponentProperty).
-            var isOn = IsAutoProgressionOn();
-            if (isOn == enabled)
-            {
-                Reporter.Log($"Auto time progression already {(enabled ? "on" : "off")}");
-                Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
-                return;
-            }
+        public readonly Readable  TitleLabel    = new(By.PATH, "//AudioMenu/Title");
+        public readonly Locatable MasterSlider  = new(By.PATH, "//AudioMenu/ConfigsLayout/Master");
+        public readonly Locatable UiSlider      = new(By.PATH, "//AudioMenu/ConfigsLayout/UI");
+        public readonly Locatable AvatarSlider  = new(By.PATH, "//AudioMenu/ConfigsLayout/AvatarEmotesSFX");
+        public readonly Locatable InWorldSlider = new(By.PATH, "//AudioMenu/ConfigsLayout/InWorld");
 
-            AutoProgressionToggle.Click(settleMs: 0);
-            AutoProgressionToggle.WaitFor(20D, verificationShot: false).WaitForComponentProperty(
-                "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI",
-                timeout: SlowChassis.SETTLE_TIMEOUT);
-            Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
-            Reporter.Log($"Auto time progression turned {(enabled ? "on" : "off")}");
-        }
+        #endregion
+    }
 
-        /// <summary>
-        /// Sets the time-of-day slider (0..1 over a 24h day; 0.5 = 12:00). Writing the Slider
-        /// value fires onValueChanged, which is exactly what a user drag does — the skybox
-        /// time and the HH:mm label update synchronously.
-        /// </summary>
-        [AllureStep("Set skybox time of day")]
-        public void SetTimeNormalized(float normalizedTime)
-        {
-            TimeSlider.WaitFor().SetComponentProperty(
-                "UnityEngine.UI.Slider", "value", normalizedTime, "UnityEngine.UI");
-            Reporter.Log($"Skybox time slider set to {normalizedTime:F2}");
-        }
+    /// <summary>
+    /// Gallery submenu (camera icon): camera reel and photo mode.
+    /// </summary>
+    public class GalleryMenu() : BaseView(new(By.PATH, "//SidebarView//GalleryButton/GalleryMenu"))
+    {
+        protected override string ViewName => "GalleryMenuView";
+
+        #region Elements
+
+        public readonly Readable  TitleLabel     = new(By.PATH, "//GalleryMenu/Title");
+        public readonly Clickable GalleryOption  = new(By.PATH, "//GalleryMenu/MenuLayout/Gallery");
+        public readonly Clickable TakeShotOption = new(By.PATH, "//GalleryMenu/MenuLayout/TakeShot");
 
         #endregion
     }

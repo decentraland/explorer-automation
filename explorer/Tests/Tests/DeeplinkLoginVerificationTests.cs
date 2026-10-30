@@ -66,7 +66,7 @@ public class DeeplinkLoginVerificationTests : BaseTest
         // Match BaseTest.EnsureInWorld(): SidebarView reporting Shown provably post-dates
         // SidebarController wiring its onClick listeners (OnViewInstantiated runs to
         // completion before ShowAsync is even awaited). The subsequent tests immediately
-        // click sidebar buttons (ProfileButton, BackpackButton), so wait on that signal.
+        // click sidebar buttons (ProfileButton), so wait on that signal.
         ViewSignal.WaitForShown("SidebarView", SIDEBAR_VIEW_SIGNAL_TIMEOUT);
         Reporter.Log("Player is in-world and main menu is ready");
     }
@@ -93,11 +93,12 @@ public class DeeplinkLoginVerificationTests : BaseTest
     [Test]
     public void TestBackpackAccessibleAfterDeeplinkLogin()
     {
-        Views.MainMenu.BackpackButton.Click(settleMs: 0);
+        Views.MainMenu.OpenSubMenu(Views.MainMenu.ProfileButton, Views.ProfileMenu);
+        Views.ProfileMenu.BackpackButton.Click(settleMs: 0);
         Views.ExplorePanel.WaitFor();
 
         Assert.That(Views.ExplorePanel.Backpack.IsPresent(), Is.True,
-            "Backpack section should load after clicking the sidebar button.");
+            "Backpack section should load after picking it from the sidebar profile menu.");
 
         Views.ExplorePanel.Close();
     }
@@ -105,8 +106,7 @@ public class DeeplinkLoginVerificationTests : BaseTest
     [Test]
     public void TestMapAccessibleAfterDeeplinkLogin()
     {
-        // This build's sidebar has no Map button (verified via UiDump `--all` dumps), so the
-        // M shortcut is the stable entry point to the navmap.
+        // The sidebar Map button only toggles the minimap; M is the entry point to the navmap.
         PressKey(AltKeyCode.M, delay: 0);
         Views.ExplorePanel.WaitFor();
 
