@@ -1,44 +1,44 @@
 namespace ExplorerAutomation.Tests.Views;
 
 /// <summary>
-/// View for the minimap HUD widget in the top-left corner of the in-world screen.
-/// Shows the circular map render with compass letters, the current place name and
-/// parcel coordinates, the favorite heart, the context-menu (kebab) button and the
-/// collapse/expand chevrons. Lives at //BodyUI/Minimap on build dev_b97439fc.
-/// Persistent-layer client view (Shown for the whole session) — carries no ViewName;
-/// this view's own waits stay on object presence.
+/// View for the minimap panel the sidebar Map button toggles: map render, place info and skybox controls.
+/// Persistent-layer client view — carries no ViewName; waits stay on object presence.
 /// </summary>
-public class MinimapView() : BaseView(new(By.PATH, "//BodyUI/Minimap"))
+public class MinimapView() : BaseView(new(By.PATH, "//SidebarView//Minimap"))
 {
     #region Elements
 
-    public readonly Readable  PlaceName         = new(By.PATH, "//BodyUI/Minimap//PlaceName");
-    public readonly Readable  PlaceCoordinates  = new(By.PATH, "//BodyUI/Minimap//PlaceCoordinates");
+    public readonly Readable  PlaceName         = new(By.PATH, "//SidebarView//Minimap//PlaceName");
+    public readonly Readable  PlaceCoordinates  = new(By.PATH, "//SidebarView//Minimap//PlaceCoordinates");
 
     // The circular map render. Clicking it opens the full navmap (ExplorePanel Map tab).
-    public readonly Clickable MapRenderButton   = new(By.PATH, "//BodyUI/Minimap//MinimapRendererButton");
+    public readonly Clickable MapRenderButton   = new(By.PATH, "//SidebarView//Minimap//MinimapRendererButton");
 
     // Compass letters drawn on the map render ring — presence proves the map is rendering.
     // They live under MapRendererContainer/MapRendererTargetImage (not the renderer button).
-    public readonly Locatable CompassNorth      = new(By.PATH, "//BodyUI/Minimap//MapRendererTargetImage/N");
+    public readonly Locatable CompassNorth      = new(By.PATH, "//SidebarView//Minimap//MapRendererTargetImage/N");
 
     // ToggleButtonWithDisabledState: the child ImageFill is active only while the current
     // place is favorited, so it doubles as the favorite-state readout.
-    public readonly Clickable FavoriteButton    = new(By.PATH, "//BodyUI/Minimap//FavoriteButton");
-    public readonly Locatable FavoriteHeartFill = new(By.PATH, "//BodyUI/Minimap//FavoriteButton/ImageFill");
+    public readonly Clickable FavoriteButton    = new(By.PATH, "//SidebarView//Minimap//FavoriteButton");
+    public readonly Locatable FavoriteHeartFill = new(By.PATH, "//SidebarView//Minimap//FavoriteButton/ImageFill");
 
     // Kebab button — opens the scene context menu (Set as Home / Copy Link / Reload Scene).
-    public readonly Clickable ContextMenuButton = new(By.PATH, "//BodyUI/Minimap//ContextMenuButton");
+    public readonly Clickable ContextMenuButton = new(By.PATH, "//SidebarView//Minimap//ContextMenuButton");
 
     // Collapse/Expand chevrons swap enabled state: only one of the pair is active at a time.
-    public readonly Clickable CollapseButton    = new(By.PATH, "//BodyUI/Minimap//Collapse");
-    public readonly Clickable ExpandButton      = new(By.PATH, "//BodyUI/Minimap//ExpandButton");
+    public readonly Clickable CollapseButton    = new(By.PATH, "//SidebarView//Minimap//Collapse");
+    public readonly Clickable ExpandButton      = new(By.PATH, "//SidebarView//Minimap//ExpandButton");
+
+    // Toggles the skybox widget; it is not an MVC view, so Escape does not close it.
+    public readonly Clickable SkyboxButton      = new(By.PATH, "//SidebarView//Minimap//SidebarSkyboxButton");
 
     #endregion
 
     #region Views
 
     public ContextMenuPopup ContextMenu { get; } = new();
+    public SkyboxWidget Skybox { get; } = new();
 
     #endregion
 
@@ -67,6 +67,28 @@ public class MinimapView() : BaseView(new(By.PATH, "//BodyUI/Minimap"))
 
         ContextMenu.WaitFor(10);
         Reporter.Log("Minimap context menu opened");
+    }
+
+    /// <summary>
+    /// Opens the skybox widget, leaving it as is when already open.
+    /// </summary>
+    [AllureStep("Open the minimap skybox widget")]
+    public void OpenSkybox()
+    {
+        // Escape does not close it, so a failed test can leave it open; the button toggles.
+        if (!Skybox.IsPresent(verificationShot: false))
+            SkyboxButton.Click(settleMs: 0);
+        Skybox.WaitFor();
+    }
+
+    /// <summary>
+    /// Closes the skybox widget with its toggle button.
+    /// </summary>
+    [AllureStep("Close the minimap skybox widget")]
+    public void CloseSkybox()
+    {
+        SkyboxButton.Click(settleMs: 0);
+        Skybox.WaitForGone();
     }
 
     /// <summary>
@@ -135,6 +157,74 @@ public class MinimapView() : BaseView(new(By.PATH, "//BodyUI/Minimap"))
             for (var i = 0; i < BUTTON_COUNT; i++)
                 ButtonLabels[i] = new Readable(By.PATH,
                     $"//GenericContextMenu(Clone)/ControlsContainer/ButtonWithTextAndIcon(Clone)[{i}]//Text (TMP)");
+        }
+
+        #endregion
+    }
+
+    /// <summary>
+    /// Skybox day-cycle widget: Auto toggle and time-of-day slider. The slider only reacts with Auto off.
+    /// </summary>
+    public class SkyboxWidget() : BaseView(new(By.PATH, "//SidebarView//Minimap//SkyboxWidget"))
+    {
+        #region Elements
+
+        public readonly Readable  TitleLabel            = new(By.PATH, "//Minimap//SkyboxWidget/TimeProgressionTitle");
+        public readonly Clickable AutoProgressionToggle = new(By.PATH, "//Minimap//SkyboxWidget/TimeProgressionToggle");
+        public readonly Locatable TimeSlider            = new(By.PATH, "//Minimap//SkyboxWidget/TimeSlider");
+        // Sits beside the widget, so it stays visible while the widget is closed. Read it with
+        // ReadTime: the client writes it through SetText, which leaves the text property stale.
+        public readonly Locatable TimeLabel             = new(By.PATH, "//Minimap//SkyboxConfig/Time");
+
+        #endregion
+
+        #region Helper methods
+
+        /// <summary>
+        /// Reads the time-of-day label as rendered.
+        /// </summary>
+        public string ReadTime() =>
+            TimeLabel.WaitFor(20D, verificationShot: false).CallComponentMethod<string>(
+                "TMPro.TextMeshProUGUI", "GetParsedText", "Unity.TextMeshPro", []);
+
+        /// <summary>
+        /// Reads the Auto toggle's state without changing it.
+        /// </summary>
+        public bool IsAutoProgressionOn() =>
+            AutoProgressionToggle.WaitFor(20D, verificationShot: false)
+                .GetComponentProperty<bool>("UnityEngine.UI.Toggle", "isOn", "UnityEngine.UI");
+
+        /// <summary>
+        /// Ensures the Auto toggle is in the requested state, asserted through Toggle.isOn.
+        /// </summary>
+        [AllureStep("Set skybox auto time progression")]
+        public void SetAutoProgression(bool enabled)
+        {
+            var isOn = IsAutoProgressionOn();
+            if (isOn == enabled)
+            {
+                Reporter.Log($"Auto time progression already {(enabled ? "on" : "off")}");
+                Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
+                return;
+            }
+
+            AutoProgressionToggle.Click(settleMs: 0);
+            AutoProgressionToggle.WaitFor(20D, verificationShot: false).WaitForComponentProperty(
+                "UnityEngine.UI.Toggle", "isOn", enabled, "UnityEngine.UI",
+                timeout: SlowChassis.SETTLE_TIMEOUT);
+            Reporter.TakeVerificationShot($"toggle_{(enabled ? "on" : "off")}_TimeProgressionToggle");
+            Reporter.Log($"Auto time progression turned {(enabled ? "on" : "off")}");
+        }
+
+        /// <summary>
+        /// Sets the time-of-day slider (0..1 over a 24h day) the way a drag does.
+        /// </summary>
+        [AllureStep("Set skybox time of day")]
+        public void SetTimeNormalized(float normalizedTime)
+        {
+            TimeSlider.WaitFor().SetComponentProperty(
+                "UnityEngine.UI.Slider", "value", normalizedTime, "UnityEngine.UI");
+            Reporter.Log($"Skybox time slider set to {normalizedTime:F2}");
         }
 
         #endregion

@@ -1,22 +1,20 @@
 namespace ExplorerAutomation.Tests.Views;
 
 /// <summary>
-/// View for the profile menu popup that opens when the sidebar profile button is clicked.
-/// Hosts account-level actions including View Profile (opens the own passport), Sign Out,
-/// Exit App, and links to Privacy Policy and Terms of Service.
+/// View for the profile submenu opened from the sidebar profile picture.
 /// </summary>
-public class ProfileMenuView() : BaseView(new(By.NAME, "ProfileMenuView"))
+public class ProfileMenuView() : BaseView(new(By.PATH, "//SidebarProfileButton/ProfileMenu"))
 {
-    protected override string ViewName => "ProfileMenuView";
+    protected override string ViewName => "SidebarProfileMenuView";
 
     #region Elements
 
-    // "View PROFILE" — opens the own passport (Passport(Clone)).
-    public readonly Clickable PreviewProfileButton  = new(By.NAME, "PreviewProfileButton");
-    public readonly Clickable SignOutButton         = new(By.NAME, "SignOutButton");
-    public readonly Clickable ExitButton            = new(By.NAME, "ExitButton");
-    public readonly Clickable PrivacyPolicyButton   = new(By.NAME, "PrivacyPolicyButton");
-    public readonly Clickable TermsOfServiceButton  = new(By.NAME, "TermsOfServiceButton");
+    public readonly Clickable BadgesButton    = new(By.PATH, "//SidebarProfileButton/ProfileMenu/MidMenuLayout/Badges");
+    // Opens the own passport.
+    public readonly Clickable ViewProfileButton = new(By.PATH, "//SidebarProfileButton/ProfileMenu/MidMenuLayout/Profile");
+    public readonly Clickable BackpackButton  = new(By.PATH, "//SidebarProfileButton/ProfileMenu/MidMenuLayout/Backpack");
+    public readonly Clickable SignOutButton   = new(By.PATH, "//SidebarProfileButton/ProfileMenu/BottomMenuLayout/SignOut");
+    public readonly Clickable ExitButton      = new(By.PATH, "//SidebarProfileButton/ProfileMenu/BottomMenuLayout/Exit");
 
     #endregion
 }

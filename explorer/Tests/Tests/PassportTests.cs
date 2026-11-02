@@ -153,9 +153,8 @@ public class PassportTests : BaseTest
 
     private void OpenOwnPassport()
     {
-        Views.MainMenu.ProfileButton.Click(settleMs: 0);
-        Views.ProfileMenu.WaitFor();
-        Views.ProfileMenu.PreviewProfileButton.Click(settleMs: 0);
+        Views.MainMenu.OpenSubMenu(Views.MainMenu.ProfileButton, Views.ProfileMenu);
+        Views.ProfileMenu.ViewProfileButton.Click(settleMs: 0);
         Views.Passport.WaitUntilReady();
     }
 }

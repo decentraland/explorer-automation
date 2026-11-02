@@ -10,7 +10,7 @@ public class ViewSignalSmokeTests : BaseTest
     {
         Assert.That(ViewSignal.GetState("ExplorePanelView"), Is.EqualTo("Hidden").Or.EqualTo("Unknown"));
 
-        Views.MainMenu.BackpackButton.Click();
+        Views.MainMenu.OpenFromSystem(Views.MainMenu.System.SettingsOption);
         ViewSignal.WaitForShown("ExplorePanelView", 40);
 
         Views.ExplorePanel.CloseButton.Click();
@@ -21,7 +21,7 @@ public class ViewSignalSmokeTests : BaseTest
     [Description("A view object with a ViewName waits on the signal, not on object presence.")]
     public void ExplorePanelViewObjectUsesTheSignal()
     {
-        Views.MainMenu.BackpackButton.Click();
+        Views.MainMenu.OpenFromSystem(Views.MainMenu.System.SettingsOption);
         Views.ExplorePanel.WaitFor(40);
         Assert.That(ViewSignal.IsShown("ExplorePanelView"), Is.True);
 
