@@ -16,6 +16,30 @@ public class BackpackEmotesTests : BaseTest
     // after the page reports full.
     private const double SETTLE_SAMPLE_INTERVAL = 5;
     private const int CATALOG_SETTLE_READS = 7;
+    // The first open after login fills its thumbnails while the world is still streaming; that
+    // took 87.8s on a passing run, against 6-8s once warm.
+    private const double COLD_GRID_TIMEOUT = 240;
+
+    /// <summary>Pays the cold grid load once, so no test inherits it.</summary>
+    [OneTimeSetUp]
+    [AllureBefore("Warm up the emote grid")]
+    public void WarmUpEmoteGrid()
+    {
+        if (ExceptionFromOneTimeSetUp != null || DriverSession.IsLost) return;
+
+        try
+        {
+            OpenEmotes(COLD_GRID_TIMEOUT);
+            Views.ExplorePanel.Close();
+        }
+        catch (Exception ex)
+        {
+            // Best effort: a throw here would hide every test entry in Allure, and each test
+            // still runs its own wait and fails with its own message.
+            if (!DriverSession.Record(ex))
+                Reporter.Log($"Emote grid warm-up did not finish: {DriverSession.Unwrap(ex).Message}");
+        }
+    }
 
     [Test]
     public void TestUnequipAndEquipAllEmoteSlots()
@@ -153,7 +177,7 @@ public class BackpackEmotesTests : BaseTest
         Views.ExplorePanel.Close();
     }
 
-    private void OpenEmotes()
+    private void OpenEmotes(double? gridTimeout = null)
     {
         // Open backpack via the keyboard shortcut: more reliable than the sidebar click
         // for the very first interaction post-warmup.
@@ -166,7 +190,10 @@ public class BackpackEmotesTests : BaseTest
         // index addressing cannot survive — clear it (after the tab click, since only the active
         // section's grid picks it up) and wait out the rebuild it triggers.
         Views.ExplorePanel.Backpack.ClearSearch();
-        Views.ExplorePanel.Backpack.Emotes.WaitForGridPageLoaded();
+        if (gridTimeout is { } timeout)
+            Views.ExplorePanel.Backpack.Emotes.WaitForGridPageLoaded(timeout);
+        else
+            Views.ExplorePanel.Backpack.Emotes.WaitForGridPageLoaded();
     }
 
     /// <summary>

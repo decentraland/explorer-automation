@@ -643,10 +643,10 @@ public class ExplorePanelBackpackView() : BaseSection(new(By.NAME, "BackpackSect
         /// and a blank tile reads as unequipped. Full pages only — a search shrinks the page.
         /// </summary>
         [AllureStep("Wait for the whole emote grid page to load")]
-        public void WaitForGridPageLoaded()
+        public void WaitForGridPageLoaded(double timeoutSeconds = GRID_PAGE_TIMEOUT)
         {
             // One budget shared across the tiles, not one ceiling each.
-            var deadline = DateTime.UtcNow.AddSeconds(GRID_PAGE_TIMEOUT);
+            var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
             foreach (var item in GridItems)
                 item.LoadedIndicator.WaitFor(
                     Math.Max((deadline - DateTime.UtcNow).TotalSeconds, 1D), verificationShot: false);
